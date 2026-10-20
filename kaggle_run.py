@@ -23,7 +23,7 @@ from pathlib import Path
 import pandas as pd
 
 from core.competition import ROOT, load_competition
-from models import KAGGLE_PIP
+from models import KAGGLE_PIP, base_name
 
 CODE_PATHS = ["core", "models", "run.py", "competitions"]
 
@@ -73,14 +73,14 @@ def bundle() -> str:
     return base64.b64encode(buf.getvalue()).decode()
 
 
-def kernel_id(comp: str, user: str) -> str:
-    return f"{user}/km-{comp}"[: len(user) + 51]  # slug 는 50자 제한
+def kernel_id(comp: str, user: str, tag: str = "") -> str:
+    return f"{user}/km-{tag + '-' if tag else ''}{comp}"[: len(user) + 51]  # slug 는 50자 제한
 
 
 def pip_args(models: list[str]) -> list[list[str]]:
     out = []
     for m in models:
-        out += [a for a in KAGGLE_PIP.get(m, []) if a not in out]
+        out += [a for a in KAGGLE_PIP.get(base_name(m), []) if a not in out]
     return out
 
 
@@ -137,16 +137,20 @@ def main():
     ap.add_argument("models", nargs="+")
     ap.add_argument("--max-folds", type=int)
     ap.add_argument("--note", default="")
+    ap.add_argument("--no-test", action="store_true", help="테스트 예측 생략 (run.py 로 전달)")
     ap.add_argument("--no-wait", action="store_true", help="push 만 하고 종료 (나중에 --fetch 로 수집)")
     ap.add_argument("--fetch", action="store_true", help="이미 끝난 kernel 의 결과만 받아오기")
+    ap.add_argument("--tag", default="", help="kernel 이름 태그 (km-<tag>-<comp>). 같은 대회를 동시에 돌릴 때 충돌 방지")
     args = ap.parse_args()
 
     load_competition(args.comp)  # 설정 존재 확인
-    kernel = kernel_id(args.comp, username())
+    kernel = kernel_id(args.comp, username(), args.tag)
     if not args.fetch:
         run_args = [*args.models, "--note", args.note]
         if args.max_folds:
             run_args += ["--max-folds", str(args.max_folds)]
+        if args.no_test:
+            run_args.append("--no-test")
         push(kernel, args.comp, run_args, args.models)
         print(f"push 완료: https://www.kaggle.com/code/{kernel}")
         if args.no_wait:

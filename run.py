@@ -27,7 +27,7 @@ def predict(model, X, task):
     return model.predict(X) if task == "regression" else model.predict_proba(X)
 
 
-def run_model(name, comp, X, y, X_test, cat_cols, folds, max_folds=None):
+def run_model(name, comp, X, y, X_test, cat_cols, folds, max_folds=None, no_test=False):
     n_splits = folds.max() + 1
     run_folds = range(n_splits if max_folds is None else max_folds)
     n_out = () if comp.task == "regression" else (len(np.unique(y)),)
@@ -42,7 +42,8 @@ def run_model(name, comp, X, y, X_test, cat_cols, folds, max_folds=None):
             model.max_rows = comp.tfm_max_rows
         model.fit(X[tr], y[tr])
         oof[va] = predict(model, X[va], comp.task)
-        test_pred += predict(model, X_test, comp.task) / len(run_folds)
+        if not no_test:
+            test_pred += predict(model, X_test, comp.task) / len(run_folds)
         fold_scores.append(score(comp.metric, y[va], oof[va]))
         print(f"  [{name}] fold {f}: {comp.metric}={fold_scores[-1]:.5f}  ({time.time() - t0:.0f}s)")
 
@@ -57,6 +58,7 @@ def main():
     ap.add_argument("models", nargs="+")
     ap.add_argument("--max-folds", type=int, default=None, help="빠른 확인용: 앞쪽 n개 fold만 실행")
     ap.add_argument("--note", default="", help="results.csv 에 남길 메모")
+    ap.add_argument("--no-test", action="store_true", help="실험용: 테스트 예측 생략 (test.npy 저장 안 함)")
     args = ap.parse_args()
 
     comp = load_competition(args.comp)
@@ -79,7 +81,7 @@ def main():
     for name in args.models:
         try:
             oof, test_pred, scores, fold_scores, secs = run_model(name, comp, X, y, X_test, cat_cols, folds,
-                                                                  args.max_folds)
+                                                                  args.max_folds, args.no_test)
         except Exception:  # 한 모델이 실패해도 나머지는 계속 실행
             traceback.print_exc()
             failed.append(name)
@@ -88,7 +90,8 @@ def main():
         out = RESULTS / comp.name / name
         out.mkdir(parents=True, exist_ok=True)
         np.save(out / "oof.npy", oof)
-        np.save(out / "test.npy", test_pred)
+        if not args.no_test:
+            np.save(out / "test.npy", test_pred)
         meta = dict(comp=comp.name, model=name, metric=comp.metric, scores=scores, fold_scores=fold_scores,
                     seconds=round(secs, 1), classes=classes, n_folds=len(fold_scores), note=args.note,
                     timestamp=datetime.now().isoformat(timespec="seconds"))
