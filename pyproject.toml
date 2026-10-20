@@ -1,0 +1,16 @@
+[project]
+name = "kaggle-master"
+version = "0.1.0"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "catboost>=1.2.10",
+    "kaggle>=2.2.4",
+    "lightgbm>=4.7.0",
+    "numpy>=2.4.6",
+    "pandas>=3.0.6",
+    "pyyaml>=6.0.3",
+    "scikit-learn>=1.9.1",
+    "tabicl>=2.2.0",
+    "tabpfn>=9.2.0",
+    "xgboost>=3.2.0",
+]

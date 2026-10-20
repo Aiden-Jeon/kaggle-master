@@ -1,0 +1,10 @@
+name: house-prices-advanced-regression-techniques
+task: regression
+target: SalePrice
+id_col: Id
+metric: rmse              # 리더보드는 log(SalePrice) 기준 RMSE
+target_transform: log1p   # 학습/평가는 log 스케일, 제출 시 역변환
+cv:
+  n_splits: 5
+  seed: 42
+  stratify: false

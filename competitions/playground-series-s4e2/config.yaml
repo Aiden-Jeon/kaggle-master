@@ -1,0 +1,9 @@
+name: playground-series-s4e2
+task: multiclass
+target: NObeyesdad
+id_col: id
+metric: accuracy
+cv:
+  n_splits: 5
+  seed: 42
+  stratify: true

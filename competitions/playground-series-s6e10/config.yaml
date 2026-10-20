@@ -1,0 +1,11 @@
+name: playground-series-s6e10
+task: binary
+target: satisfaction
+id_col: id
+metric: auc               # 제출이 확률값 → AUC 로 추정
+submit_proba: true        # 제출 파일에 양성 클래스 확률 기록
+tfm_max_rows: 10000       # 학습 ~56만 행/fold → TFM 컨텍스트는 1만 행 무작위 샘플
+cv:
+  n_splits: 5
+  seed: 42
+  stratify: true

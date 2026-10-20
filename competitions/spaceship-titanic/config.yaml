@@ -1,0 +1,9 @@
+name: spaceship-titanic
+task: binary          # binary | multiclass | regression
+target: Transported
+id_col: PassengerId
+metric: accuracy      # 리더보드 평가 지표
+cv:
+  n_splits: 5
+  seed: 42
+  stratify: true

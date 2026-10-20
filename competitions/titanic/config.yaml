@@ -1,0 +1,9 @@
+name: titanic
+task: binary
+target: Survived
+id_col: PassengerId
+metric: accuracy
+cv:
+  n_splits: 5
+  seed: 42
+  stratify: true
