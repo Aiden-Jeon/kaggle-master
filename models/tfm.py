@@ -8,6 +8,8 @@ from sklearn.base import BaseEstimator
 
 
 class _TFM(BaseEstimator):
+    PRED_CHUNK = 20000  # 예측 행을 나눠서 처리 (TabICL 등은 쿼리 전체의 중간 표현을 CPU 에 쌓아 대용량에서 RAM OOM)
+
     def __init__(self, build, cat_cols, max_rows=None, seed=0):
         self.build, self.cat_cols = build, cat_cols
         self.max_rows, self.seed = max_rows, seed  # max_rows: 컨텍스트(학습) 행 상한, 넘으면 무작위 샘플
@@ -27,11 +29,15 @@ class _TFM(BaseEstimator):
         self.model_.fit(self._prep(X), y)
         return self
 
+    def _chunked(self, fn, X):
+        X = self._prep(X)
+        return np.concatenate([fn(X[i:i + self.PRED_CHUNK]) for i in range(0, len(X), self.PRED_CHUNK)])
+
     def predict(self, X):
-        return self.model_.predict(self._prep(X))
+        return self._chunked(self.model_.predict, X)
 
     def predict_proba(self, X):
-        return self.model_.predict_proba(self._prep(X))
+        return self._chunked(self.model_.predict_proba, X)
 
 
 def _tabpfn(task, cat_cols, seed, version=None):

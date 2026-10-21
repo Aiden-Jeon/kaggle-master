@@ -44,7 +44,7 @@ p = subprocess.Popen([sys.executable, "-u", "run.py", COMP, *ARGS], cwd=SRC, std
                      stderr=subprocess.STDOUT, text=True)
 for line in p.stdout:  # 진행 상황을 셀 출력에 바로 표시
     print(line, end="")
-p.wait()
+print(f"run.py 종료 코드: {p.wait()}")  # 음수 = 시그널로 강제 종료 (-9 는 대개 RAM OOM)
 csv = SRC / "results" / "results.csv"
 print("BEGIN")
 print(csv.read_text() if csv.exists() else "")
