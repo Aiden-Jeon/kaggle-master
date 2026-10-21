@@ -43,3 +43,6 @@ timestamp,comp,model,metric,cv,cv_std,n_folds,seconds,cv_mae,note,where,cv_auc,c
 2026-10-21T02:37:39,playground-series-s4e2,tabpfn_v2@part1000_leaf,accuracy,0.8752288274400232,0.0144683303351428,5,105.9,,ctx phase1b s4e2 space/mode,colab,,0.4039630642713364
 2026-10-21T03:11:33,playground-series-s4e2,tabicl@knn1000_g16_leaf,accuracy,0.90731284324116,0.0038422134993397,5,2034.3,,ctx phase1b s4e2 space/mode,colab,,0.275317673386897
 2026-10-21T03:42:14,playground-series-s4e2,tabicl@knn1000_g16_imp_bal20,accuracy,0.9076018884285576,0.004143235309733,5,1841.4,,ctx phase1b s4e2 space/mode,colab,,0.2774076647197394
+2026-10-21T11:47:13,playground-series-s4e2,tabicl@knn1000_g64_imp_bal20,accuracy,0.9049041333461798,0.0043919345085795,5,490.0,,ctx phase1c s4e2 group size,colab,,0.2814702854631378
+2026-10-21T11:49:35,playground-series-s4e2,tabicl@knn1000_g256_imp_bal20,accuracy,0.9042778687734848,0.0047644977109625,5,141.6,,ctx phase1c s4e2 group size,colab,,0.287717264272144
+2026-10-21T11:51:52,playground-series-s4e2,tabicl@knn2000_g256_imp_bal20,accuracy,0.9078427594180556,0.003441336697994,5,137.3,,ctx phase1c s4e2 group size,colab,,0.2752429513321015
