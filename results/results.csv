@@ -38,3 +38,8 @@ timestamp,comp,model,metric,cv,cv_std,n_folds,seconds,cv_mae,note,where,cv_auc,c
 2026-10-21T01:48:04,playground-series-s4e2,tabicl@knn1000_g16_imp,accuracy,0.9064457076789671,0.004105305183952,5,1798.6,,ctx phase1 s4e2,colab,,0.2750357242128666
 2026-10-21T01:48:21,playground-series-s4e2,tabpfn_v2@rand1000,accuracy,0.8817805183543694,0.0063947369498416,5,17.3,,ctx phase1 s4e2,colab,,0.3493472958229734
 2026-10-21T02:10:04,playground-series-s4e2,tabpfn_v2@knn1000_g16_imp,accuracy,0.9054822237209752,0.0037408816059565,5,1302.5,,ctx phase1 s4e2,colab,,0.2918429035614604
+2026-10-21T02:33:43,playground-series-s4e2,tabicl@part1000_imp,accuracy,0.8944503324019655,0.0027111512057792,5,138.9,,ctx phase1b s4e2 space/mode,colab,,0.3182285630241951
+2026-10-21T02:35:53,playground-series-s4e2,tabicl@part1000_leaf,accuracy,0.8815878215627709,0.0108331536654455,5,129.5,,ctx phase1b s4e2 space/mode,colab,,0.3556369283565095
+2026-10-21T02:37:39,playground-series-s4e2,tabpfn_v2@part1000_leaf,accuracy,0.8752288274400232,0.0144683303351428,5,105.9,,ctx phase1b s4e2 space/mode,colab,,0.4039630642713364
+2026-10-21T03:11:33,playground-series-s4e2,tabicl@knn1000_g16_leaf,accuracy,0.90731284324116,0.0038422134993397,5,2034.3,,ctx phase1b s4e2 space/mode,colab,,0.275317673386897
+2026-10-21T03:42:14,playground-series-s4e2,tabicl@knn1000_g16_imp_bal20,accuracy,0.9076018884285576,0.004143235309733,5,1841.4,,ctx phase1b s4e2 space/mode,colab,,0.2774076647197394
