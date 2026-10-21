@@ -6,7 +6,13 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
+import os
+import queue
+import subprocess
+import sys
+import threading
 import time
 import traceback
 from datetime import datetime
@@ -25,6 +31,53 @@ RESULTS = ROOT / "results"
 
 def predict(model, X, task):
     return model.predict(X) if task == "regression" else model.predict_proba(X)
+
+
+def gpu_count() -> int:
+    try:
+        out = subprocess.run(["nvidia-smi", "-L"], capture_output=True, text=True, check=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return 0
+    return sum(line.startswith("GPU ") for line in out.splitlines())
+
+
+def run_parallel(argv_tail: list[str], models: list[str], n_gpus: int) -> list[str]:
+    """GPU 마다 작업자 하나. 각 작업자가 남은 모델을 하나씩 가져가 자기 GPU 에서 run.py 를 실행."""
+    todo: queue.Queue[str] = queue.Queue()
+    for m in models:
+        todo.put(m)
+    failed: list[str] = []
+
+    def worker(gpu: int):
+        while True:
+            try:
+                name = todo.get_nowait()
+            except queue.Empty:
+                return
+            env = {**os.environ, "CUDA_VISIBLE_DEVICES": str(gpu), "KM_WORKER": "1"}
+            proc = subprocess.Popen([sys.executable, "-u", __file__, *argv_tail[:1], name, *argv_tail[1:]],
+                                    env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            for line in proc.stdout:  # 어느 GPU 출력인지 접두어로 구분
+                print(f"[gpu{gpu}] {line}", end="", flush=True)
+            if proc.wait() != 0:
+                failed.append(name)
+
+    threads = [threading.Thread(target=worker, args=(g,)) for g in range(min(n_gpus, len(models)))]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    return failed
+
+
+def append_result(row: dict):
+    """여러 작업자가 동시에 쓰므로 잠금을 걸고 results.csv 에 한 줄 추가."""
+    csv = RESULTS / "results.csv"
+    csv.parent.mkdir(parents=True, exist_ok=True)
+    with open(RESULTS / ".results.lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        pd.concat([pd.read_csv(csv), pd.DataFrame([row])] if csv.exists() else [pd.DataFrame([row])]) \
+            .to_csv(csv, index=False)
 
 
 def run_model(name, comp, X, y, X_test, cat_cols, folds, max_folds=None):
@@ -57,6 +110,7 @@ def main():
     ap.add_argument("models", nargs="+")
     ap.add_argument("--max-folds", type=int, default=None, help="빠른 확인용: 앞쪽 n개 fold만 실행")
     ap.add_argument("--note", default="", help="results.csv 에 남길 메모")
+    ap.add_argument("--gpus", type=int, default=None, help="동시에 쓸 GPU 수 (기본: 감지된 전부)")
     args = ap.parse_args()
 
     comp = load_competition(args.comp)
@@ -72,8 +126,17 @@ def main():
         y = y_raw.to_numpy(dtype=float)
         if comp.target_transform:
             y = TRANSFORMS[comp.target_transform][0](y)
-    folds = get_folds(comp, y)
+    folds = get_folds(comp, y)  # 병렬 실행 전에 만들어 두어 모든 작업자가 같은 fold 사용
     print(f"{comp.name}: train {X.shape}, test {X_test.shape}, cats={cat_cols}")
+
+    n_gpus = gpu_count() if args.gpus is None else args.gpus
+    if n_gpus > 1 and len(args.models) > 1 and not os.environ.get("KM_WORKER"):
+        tail = [args.comp, "--note", args.note] + (["--max-folds", str(args.max_folds)] if args.max_folds else [])
+        print(f"GPU {n_gpus}장에서 모델 {len(args.models)}개 병렬 실행")
+        failed = run_parallel(tail, args.models, n_gpus)
+        if failed:
+            print(f"실패한 모델: {', '.join(failed)}")
+        return
 
     failed = []
     for name in args.models:
@@ -98,13 +161,13 @@ def main():
                    cv=scores[comp.metric], cv_std=float(np.std(fold_scores)), n_folds=len(fold_scores),
                    seconds=meta["seconds"], **{f"cv_{k}": v for k, v in scores.items() if k != comp.metric},
                    note=args.note)
-        csv = RESULTS / "results.csv"
-        pd.concat([pd.read_csv(csv), pd.DataFrame([row])] if csv.exists() else [pd.DataFrame([row])]) \
-            .to_csv(csv, index=False)
+        append_result(row)
         print(f"=> {name}: {comp.metric}={scores[comp.metric]:.5f} ± {row['cv_std']:.5f}  ({secs:.0f}s)\n")
 
     if failed:
         print(f"실패한 모델: {', '.join(failed)}")
+        if os.environ.get("KM_WORKER"):
+            sys.exit(1)  # 병렬 실행의 부모가 실패를 집계하도록
 
 
 if __name__ == "__main__":

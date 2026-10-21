@@ -52,8 +52,9 @@ subprocess.run(["rm", "-rf", str(SRC)])
 '''
 
 
-def kaggle(*args, capture=False):
-    return subprocess.run(["kaggle", *args], check=True, text=True, capture_output=capture)
+def kaggle(*args, capture=False, timeout=600):
+    # 네트워크가 멈추거나 맥이 잠자기에서 깨어날 때 무한 대기하지 않도록 시간 제한
+    return subprocess.run(["kaggle", *args], check=True, text=True, capture_output=capture, timeout=timeout)
 
 
 def username() -> str:
@@ -84,7 +85,7 @@ def pip_args(models: list[str]) -> list[list[str]]:
     return out
 
 
-def push(kernel: str, comp: str, run_args: list[str], models: list[str]):
+def push(kernel: str, comp: str, run_args: list[str], models: list[str], accelerator: str | None = None):
     work = Path(tempfile.mkdtemp())
     script = (f"CODE = {bundle()!r}\nCOMP = {comp!r}\nARGS = {run_args!r}\nPIP = {pip_args(models)!r}\n\n"
               + RUNNER)
@@ -93,6 +94,7 @@ def push(kernel: str, comp: str, run_args: list[str], models: list[str]):
         "id": kernel, "title": kernel.split("/")[1], "code_file": "run_kernel.py", "language": "python",
         "kernel_type": "script", "is_private": True, "enable_gpu": True, "enable_internet": True,
         "competition_sources": [comp], "dataset_sources": [], "kernel_sources": [],
+        **({"machine_shape": accelerator} if accelerator else {}),  # 예: NvidiaTeslaP100, NvidiaTeslaT4
     }))
     out = kaggle("kernels", "push", "-p", str(work), capture=True).stdout
     shutil.rmtree(work)
@@ -139,6 +141,7 @@ def main():
     ap.add_argument("--note", default="")
     ap.add_argument("--no-wait", action="store_true", help="push 만 하고 종료 (나중에 --fetch 로 수집)")
     ap.add_argument("--fetch", action="store_true", help="이미 끝난 kernel 의 결과만 받아오기")
+    ap.add_argument("--accelerator", help="GPU 종류 (NvidiaTeslaT4: 2장 / NvidiaTeslaP100: 1장), 기본은 Kaggle 기본값")
     args = ap.parse_args()
 
     load_competition(args.comp)  # 설정 존재 확인
@@ -147,7 +150,7 @@ def main():
         run_args = [*args.models, "--note", args.note]
         if args.max_folds:
             run_args += ["--max-folds", str(args.max_folds)]
-        push(kernel, args.comp, run_args, args.models)
+        push(kernel, args.comp, run_args, args.models, args.accelerator)
         print(f"push 완료: https://www.kaggle.com/code/{kernel}")
         if args.no_wait:
             return
