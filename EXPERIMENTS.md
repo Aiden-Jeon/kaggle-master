@@ -263,6 +263,20 @@ kNN 컨텍스트 모델 추가 제출 (2026-10-21):
 
 - 모두 기존 제출(limix2)보다 낮음. CV 순서와 LB 순서가 대체로 일치.
 
+앙상블 제출 (2026-10-21, 테스트 예측 단순 평균, 조합은 OOF 점수로 선택):
+
+| 대회 | 조합 | OOF | Public LB | 기존 최고 | 순위 변화 |
+|---|---|---|---|---|---|
+| House Prices | tabpfn_v2+kumo | 0.1161 | 0.10925 | 0.10895 (kumo) | 변화 없음 |
+| Spaceship | **limix2+kumo** | 0.8229 | **0.81949** | 0.81809 (limix2) | 38 → **35위** / 1,734 |
+| Spaceship | limix2+kumo+catboost | 0.8237 | 0.81739 | | |
+| Titanic | limix2m+limix2 | 0.8507 | 0.76794 | 0.77511 (exaone) | 변화 없음 |
+| S4E2 | limix2+tabicl+kumo@knn1000 | 0.9129 | 0.91184 (private **0.91194**) | 0.91437 (private 0.91076) | 종료 대회 |
+| S6E10 | **lgbm+catboost** | 0.9585 | **0.95800** | 0.95792 (lgbm) | 2,059 → **2,013위** / 2,592 |
+
+- 앙상블 이득은 작음 (+0.0001~0.0014). OOF 상 이득이 큰 조합(Titanic +0.45%p)이 LB 에서는 오히려 떨어짐 → 작은 데이터 accuracy 조합 선택은 과적합.
+- S4E2 는 public 은 낮지만 private 은 단일 limix2 보다 높음 → 최종 기준(private)에서는 앙상블이 더 좋음.
+
 - House Prices 는 이미 제출함 (위 표: kumo 0.10895, tabpfn_v2 0.11094).
 - Titanic 은 CV 와 LB 차이가 7%p — 418행 테스트라 변동이 크고, CV 1위 차이도 오차 범위였음.
 
