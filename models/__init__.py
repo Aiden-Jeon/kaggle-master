@@ -2,6 +2,8 @@
 
 새 모델 추가: 아래 REGISTRY 에 `이름: (모듈, 팩토리 함수명)` 등록, Kaggle 설치가 필요하면 KAGGLE_PIP 에도 추가.
 팩토리 시그니처: make(task: str, cat_cols: list[str], seed: int) -> estimator
+
+이름 뒤에 `@<spec>` 을 붙이면 컨텍스트 선택 래퍼로 감쌈 (예: tabpfn_v2@knn1000, models/context.py 참고).
 """
 
 from __future__ import annotations
@@ -40,8 +42,18 @@ KAGGLE_PIP = {
 }
 
 
+def base_name(name: str) -> str:
+    return name.partition("@")[0]
+
+
 def make_model(name: str, task: str, cat_cols: list[str], seed: int):
-    if name not in REGISTRY:
-        raise KeyError(f"알 수 없는 모델 '{name}'. 사용 가능: {', '.join(REGISTRY)}")
-    module, fn = REGISTRY[name]
-    return getattr(importlib.import_module(module), fn)(task, cat_cols, seed)
+    base, _, spec = name.partition("@")
+    if base not in REGISTRY:
+        raise KeyError(f"알 수 없는 모델 '{base}'. 사용 가능: {', '.join(REGISTRY)}")
+    module, fn = REGISTRY[base]
+    factory = getattr(importlib.import_module(module), fn)
+    if not spec:
+        return factory(task, cat_cols, seed)
+    from models.context import wrap
+
+    return wrap(lambda: factory(task, cat_cols, seed), spec, task, cat_cols, seed)

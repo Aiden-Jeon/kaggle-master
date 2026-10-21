@@ -23,7 +23,7 @@ from pathlib import Path
 import pandas as pd
 
 from core.competition import ROOT, load_competition
-from models import KAGGLE_PIP
+from models import KAGGLE_PIP, base_name
 
 CODE_PATHS = ["core", "models", "run.py", "competitions"]
 
@@ -80,7 +80,7 @@ def kernel_id(comp: str, user: str) -> str:
 def pip_args(models: list[str]) -> list[list[str]]:
     out = []
     for m in models:
-        out += [a for a in KAGGLE_PIP.get(m, []) if a not in out]
+        out += [a for a in KAGGLE_PIP.get(base_name(m), []) if a not in out]
     return out
 
 
