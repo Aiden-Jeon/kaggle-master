@@ -1,0 +1,11 @@
+name: bioresponse
+task: binary
+target: Activity
+id_col: null              # 테스트에 id 열 없음 → MoleculeId 는 1 부터 행 번호
+metric: logloss           # 리더보드 지표
+submit_proba: true
+submit_columns: [MoleculeId, PredictedProbability]
+cv:
+  n_splits: 5
+  seed: 42
+  stratify: true

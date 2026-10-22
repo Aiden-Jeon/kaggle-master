@@ -1,0 +1,14 @@
+name: GiveMeSomeCredit
+task: binary
+target: SeriousDlqin2yrs
+id_col: "Unnamed: 0"      # 첫 열(이름 없음)이 id
+metric: auc
+submit_proba: true
+submit_columns: [Id, Probability]
+train_file: cs-training.csv
+test_file: cs-test.csv
+tfm_max_rows: 10000       # 학습 12만 행/fold → TFM 컨텍스트는 1만 행 무작위 샘플
+cv:
+  n_splits: 5
+  seed: 42
+  stratify: true

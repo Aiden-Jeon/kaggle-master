@@ -10,6 +10,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from km.features import split
+
 SPEND = ["RoomService", "FoodCourt", "ShoppingMall", "Spa", "VRDeck"]
 CATS = ["HomePlanet", "Destination", "Deck", "Side"]
 
@@ -38,4 +40,4 @@ def build(train: pd.DataFrame, test: pd.DataFrame):
         df[c] = df[c].astype("category")
 
     cols = CATS + ["CryoSleep", "VIP", "Age", "CabinNum", "GroupSize", "FamilySize", "TotalSpend", "NoSpend"] + SPEND
-    return df.loc["train", cols].reset_index(drop=True), df.loc["test", cols].reset_index(drop=True), CATS
+    return *split(df[cols]), CATS
