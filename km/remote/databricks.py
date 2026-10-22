@@ -8,9 +8,11 @@
     profile: <~/.databrickscfg 프로필>
     volume: /Volumes/<catalog>/<schema>/<volume>   # 대회 데이터와 실행 결과를 둘 UC Volume
     accelerator: GPU_1xH100                         # 선택. 기본 GPU 종류 (--accelerator 가 우선)
+    image: <catalog>.<schema>.km-air:v4             # 선택. 패키지를 미리 설치한 이미지 (docker/air). 없으면 실행마다 pip 설치
 
 동작: 대회 데이터를 Volume 에 한 번 올려 두고 (없으면 로컬에서 kaggle 로 받아 업로드),
      코드 스냅샷과 함께 `databricks air run` 으로 제출 → 로그 스트리밍 → Volume 의 results/ 를 받아 병합.
+     모델 가중치는 Volume 의 cache/models.tar 에 모아 두고 실행마다 다시 받지 않음.
      Kaggle 토큰은 워크스페이스로 보내지 않음.
 """
 
@@ -38,9 +40,18 @@ DEFAULT_ACCELERATOR = "GPU_1xH100"  # A10G(24GB)는 TFM 이 OOM 재시도를 반
 RUNS = RESULTS / "_air" / "runs.json"  # run_id → 결과 위치 (나중에 --fetch 용)
 BASE_PIP = [["scikit-learn", "lightgbm", "xgboost", "catboost"]]  # AI Runtime 기본 환경에는 없음
 
+MODEL_CACHE = "cache/models.tar"  # Volume 안의 모델 가중치 캐시 (Hugging Face·TabPFN)
+
 RUNNER = '''\
-import shutil, subprocess, sys
+import importlib.metadata, os, shutil, subprocess, sys, tarfile, time
 from pathlib import Path
+
+T0 = time.time()
+
+
+def step(msg):
+    print(f"[runner] {msg} ({time.time() - T0:.0f}s)", flush=True)
+
 
 SRC = Path("/tmp/km")  # code_source 를 쓰기 가능한 곳으로 복사 (folds.csv, results/ 생성)
 shutil.copytree(Path(__file__).parent, SRC)
@@ -51,13 +62,44 @@ for f in Path(DATA).iterdir():
 
 out = Path(OUT)
 out.mkdir(parents=True, exist_ok=True)
-for args in PIP:  # 모델별 설치 실패는 해당 모델만 실패하도록 계속 진행
+for args in PIP:  # 이미지를 쓰면 비어 있음. 모델별 설치 실패는 해당 모델만 실패하도록 계속 진행
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", *args])
-subprocess.run([sys.executable, "-m", "pip", "list"], stdout=open(out / "pip_list.txt", "w"))
+(out / "pip_list.txt").write_text("\\n".join(sorted(f"{d.metadata['Name']}=={d.version}"
+                                                   for d in importlib.metadata.distributions())) + "\\n")
+step("패키지 준비")
+
+# 모델 가중치: Volume 의 tar 를 로컬 디스크에 풀어 쓰고 (XDG_CACHE_HOME 아래 huggingface/, tabpfn/),
+# 새로 받은 가중치가 있으면 tar 를 다시 만듦. 동시에 끝난 실행끼리는 나중 것이 덮어씀 (빠진 가중치는 다음에 다시 받음)
+cache = Path("/tmp/model_cache")
+cache.mkdir(parents=True, exist_ok=True)
+if Path(CACHE).exists():
+    with tarfile.open(CACHE) as tar:
+        tar.extractall(cache, filter="fully_trusted")  # HF 캐시는 snapshots → blobs 심볼릭 링크
+
+
+def weights():
+    return {p for d in ("huggingface", "tabpfn") for p in (cache / d).rglob("*")
+            if p.is_file() and ".locks" not in p.parts}
+
+
+before = weights()
+step(f"모델 캐시 복원 ({len(before)}개 파일)")
 subprocess.run(["nvidia-smi"])
-code = subprocess.run([sys.executable, "-u", "-m", "km", "run", COMP, *ARGS], cwd=SRC).returncode
+env = {**os.environ, "XDG_CACHE_HOME": str(cache)}
+code = subprocess.run([sys.executable, "-u", "-m", "km", "run", COMP, *ARGS], cwd=SRC, env=env).returncode
+step("km run 종료")
 if (SRC / "results").exists():
     shutil.copytree(SRC / "results", out / "results", dirs_exist_ok=True)
+new = weights() - before
+if new:
+    Path(CACHE).parent.mkdir(parents=True, exist_ok=True)
+    tmp = Path(f"{CACHE}.{os.getpid()}.tmp")
+    with tarfile.open(tmp, "w") as tar:
+        for d in ("huggingface", "tabpfn"):
+            if (cache / d).exists():
+                tar.add(cache / d, arcname=d, filter=lambda t: None if ".locks" in t.name else t)
+    os.replace(tmp, CACHE)
+    step(f"모델 캐시 갱신 (새 파일 {len(new)}개)")
 print(f"km run 종료 코드: {code}")
 sys.exit(code)
 '''
@@ -65,9 +107,11 @@ sys.exit(code)
 
 def settings(args) -> dict:
     cfg = yaml.safe_load(LOCAL_CONFIG.read_text()) if LOCAL_CONFIG.exists() else {}
-    cfg.update({k: v for k, v in dict(profile=args.profile, volume=args.volume, accelerator=args.accelerator).items()
-                if v})
+    cfg.update({k: v for k, v in dict(profile=args.profile, volume=args.volume, accelerator=args.accelerator,
+                                      image=args.image).items() if v})
     cfg.setdefault("accelerator", DEFAULT_ACCELERATOR)
+    if cfg.get("image") == "none":
+        cfg["image"] = None
     missing = [k for k in ("profile", "volume") if not cfg.get(k)]
     if missing:
         raise SystemExit(f"{', '.join(missing)} 설정 없음: {LOCAL_CONFIG.name} 에 적거나 --{missing[0]} 로 지정")
@@ -93,7 +137,7 @@ def ensure_data(comp, profile: str, volume: str) -> str:
     return remote
 
 
-def snapshot(work: Path, comp: str, run_args: list[str], models: list[str], data: str, out: str):
+def snapshot(work: Path, comp: str, run_args: list[str], pip: list[list[str]], data: str, out: str, cache: str):
     code = work / "km"
     for p in CODE_PATHS:
         src = ROOT / p
@@ -101,7 +145,7 @@ def snapshot(work: Path, comp: str, run_args: list[str], models: list[str], data
             shutil.copytree(src, code / p, ignore=shutil.ignore_patterns("__pycache__", "data"))
         else:
             shutil.copy(src, code / p)
-    consts = dict(COMP=comp, ARGS=run_args, PIP=BASE_PIP + pip_args(models), DATA=data, OUT=out)
+    consts = dict(COMP=comp, ARGS=run_args, PIP=pip, DATA=data, OUT=out, CACHE=cache)
     (code / "air_runner.py").write_text("".join(f"{k} = {v!r}\n" for k, v in consts.items()) + "\n" + RUNNER)
     return code
 
@@ -115,12 +159,15 @@ def submit(cfg: dict, comp: str, run_args: list[str], models: list[str], acceler
     out = f"{cfg['volume']}/runs/{key}"
     data = ensure_data(load_competition(comp), cfg["profile"], cfg["volume"])
 
+    # 이미지에는 패키지가 미리 설치돼 있음 (docker/air) → 실행 중 pip 설치 생략
+    image = cfg.get("image")
+    pip = [] if image else BASE_PIP + pip_args(models)
     work = Path(tempfile.mkdtemp())
-    code = snapshot(work, comp, run_args, models, data, out)
+    code = snapshot(work, comp, run_args, pip, data, out, f"{cfg['volume']}/{MODEL_CACHE}")
     (work / "air.yaml").write_text(yaml.safe_dump({
         "experiment_name": f"km-{comp}", "mlflow_run_name": key,
         "compute": {"accelerator_type": accelerator, "num_accelerators": int(n_gpus[1])},
-        "environment": {"version": 6},
+        "environment": {"unity_catalog_image": image} if image else {"version": 6},
         "code_source": {"type": "snapshot", "snapshot": {"root_path": str(code)}},
         "command": "python $CODE_SOURCE_PATH/air_runner.py",
         "timeout_minutes": timeout, "max_retries": 0,  # 실패 시 재시도하면 같은 실험을 반복하므로 끔
@@ -173,6 +220,8 @@ def main(argv: list[str] | None = None):
     ap.add_argument("--fetch", metavar="RUN_ID", help="이미 끝난 run 의 결과만 받아오기")
     ap.add_argument("--accelerator", help=f"GPU 종류 (GPU_1xA10, GPU_8xH100 등). 기본: {LOCAL_CONFIG.name} 의 "
                                           f"accelerator, 없으면 {DEFAULT_ACCELERATOR}")
+    ap.add_argument("--image", help=f"실행 이미지 <catalog>.<schema>.<image>:<tag> ({LOCAL_CONFIG.name} 의 image 를 "
+                                    "덮어씀). none 이면 기본 환경에서 pip 설치")
     ap.add_argument("--timeout", type=int, default=720, help="실행 시간 제한 (분)")
     ap.add_argument("--tag", default="", help="실행 이름 태그 (MLflow run 이름·결과 폴더에 붙음)")
     ap.add_argument("--profile", help=f"databricks 프로필 ({LOCAL_CONFIG.name} 값을 덮어씀)")
