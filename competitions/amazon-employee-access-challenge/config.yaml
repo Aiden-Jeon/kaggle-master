@@ -1,0 +1,12 @@
+name: amazon-employee-access-challenge
+task: binary
+target: ACTION
+id_col: id
+metric: auc
+submit_proba: true
+submit_columns: [Id, Action]
+tfm_max_rows: 10000       # 학습 ~2.6만 행/fold → TFM 컨텍스트는 1만 행 무작위 샘플
+cv:
+  n_splits: 5
+  seed: 42
+  stratify: true

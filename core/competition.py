@@ -21,12 +21,15 @@ class Competition:
     name: str
     task: str
     target: str
-    id_col: str
+    id_col: str | None  # 테스트 파일의 id 열. 없으면(null) 1 부터 매긴 행 번호
     metric: str
     cv: dict
     target_transform: str | None = None  # 회귀 타깃 변환 (예: log1p)
     submit_proba: bool = False  # 분류 대회에서 레이블 대신 양성 클래스 확률 제출
     tfm_max_rows: int | None = None  # TFM 컨텍스트 행 상한 (큰 데이터용), GBDT 에는 적용 안 함
+    train_file: str = "train.csv"
+    test_file: str = "test.csv"
+    submit_columns: list[str] | None = None  # 제출 파일 열 이름 [id, 예측]. 기본은 [id_col, target]
 
     @property
     def dir(self) -> Path:
@@ -50,11 +53,11 @@ def load_competition(name: str) -> Competition:
 
 
 def load_data(comp: Competition) -> tuple[pd.DataFrame, pd.DataFrame]:
-    if not (comp.data_dir / "train.csv").exists():
+    if not (comp.data_dir / comp.train_file).exists():
         raise FileNotFoundError(
-            f"{comp.data_dir}/train.csv 없음. 먼저 `uv run python download.py {comp.name}` 실행"
+            f"{comp.data_dir}/{comp.train_file} 없음. 먼저 `uv run python download.py {comp.name}` 실행"
         )
-    return pd.read_csv(comp.data_dir / "train.csv"), pd.read_csv(comp.data_dir / "test.csv")
+    return pd.read_csv(comp.data_dir / comp.train_file), pd.read_csv(comp.data_dir / comp.test_file)
 
 
 def load_features(comp: Competition) -> ModuleType:

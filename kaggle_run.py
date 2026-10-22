@@ -34,8 +34,8 @@ from pathlib import Path
 SRC = Path("/kaggle/working/km")
 tarfile.open(fileobj=io.BytesIO(base64.b64decode(CODE)), mode="r:gz").extractall(SRC)
 
-# 대회 데이터 위치는 Kaggle 이미지에 따라 다르므로 train.csv 를 찾아 연결
-train = next(Path("/kaggle/input").rglob("train.csv"))
+# 대회 데이터 위치는 Kaggle 이미지에 따라 다르므로 학습 파일을 찾아 연결
+train = next(Path("/kaggle/input").rglob(TRAIN))
 data = SRC / "competitions" / COMP / "data"
 data.mkdir(parents=True, exist_ok=True)
 for f in train.parent.iterdir():
@@ -87,8 +87,8 @@ def pip_args(models: list[str]) -> list[list[str]]:
 
 def push(kernel: str, comp: str, run_args: list[str], models: list[str], accelerator: str | None = None):
     work = Path(tempfile.mkdtemp())
-    script = (f"CODE = {bundle()!r}\nCOMP = {comp!r}\nARGS = {run_args!r}\nPIP = {pip_args(models)!r}\n\n"
-              + RUNNER)
+    script = (f"CODE = {bundle()!r}\nCOMP = {comp!r}\nTRAIN = {load_competition(comp).train_file!r}\n"
+              f"ARGS = {run_args!r}\nPIP = {pip_args(models)!r}\n\n" + RUNNER)
     (work / "run_kernel.py").write_text(script)
     (work / "kernel-metadata.json").write_text(json.dumps({
         "id": kernel, "title": kernel.split("/")[1], "code_file": "run_kernel.py", "language": "python",
@@ -122,15 +122,20 @@ def fetch(kernel: str):
     if not remote.exists():
         print(f"results 없음. 로그 확인: {log}")
         return
+    merge_results(remote, "kaggle")
+    print(f"\n로그: {log}")
+
+
+def merge_results(remote: Path, where: str):
+    """원격 실행의 results/ 를 로컬 results/ 에 병합 (results.csv 는 where 열을 붙여 행 추가)."""
     local = ROOT / "results"
     for d in remote.iterdir():
         if d.is_dir():
             shutil.copytree(d, local / d.name, dirs_exist_ok=True)
-    rows = pd.read_csv(remote / "results.csv").assign(where="kaggle")
+    rows = pd.read_csv(remote / "results.csv").assign(where=where)
     csv = local / "results.csv"
     pd.concat([pd.read_csv(csv), rows] if csv.exists() else [rows]).to_csv(csv, index=False)
     print(rows.to_string(index=False))
-    print(f"\n로그: {log}")
 
 
 def main():

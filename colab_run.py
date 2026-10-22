@@ -34,7 +34,7 @@ os.environ["KAGGLE_API_TOKEN"] = userdata.get("KAGGLE_API_TOKEN")
 for args in [["-U", "kaggle"], *PIP]:  # 모델별 설치 실패는 해당 모델만 실패하도록 계속 진행
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", *args])
 data = SRC / "competitions" / COMP / "data"
-if not (data / "train.csv").exists():
+if not (data / TRAIN).exists():
     subprocess.run(["kaggle", "competitions", "download", "-c", COMP, "-p", str(data)], check=True)
     for z in data.glob("*.zip"):
         zipfile.ZipFile(z).extractall(data)
@@ -53,8 +53,8 @@ print("END")
 
 
 def make(comp: str, models: list[str], run_args: list[str], out: Path):
-    load_competition(comp)  # 설정 존재 확인
-    src = f"CODE = {bundle()!r}\nCOMP = {comp!r}\nARGS = {run_args!r}\nPIP = {pip_args(models)!r}\n\n" + CELL
+    train = load_competition(comp).train_file  # 설정 존재 확인 겸
+    src = f"CODE = {bundle()!r}\nCOMP = {comp!r}\nTRAIN = {train!r}\nARGS = {run_args!r}\nPIP = {pip_args(models)!r}\n\n" + CELL
     nb = {
         "nbformat": 4, "nbformat_minor": 0,
         "metadata": {"accelerator": "GPU", "colab": {"provenance": [], "gpuType": "T4"},
