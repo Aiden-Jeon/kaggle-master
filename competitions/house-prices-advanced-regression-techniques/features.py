@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import pandas as pd
 
+from core.features import auto_types, split
+
 DROP = ["Id", "SalePrice"]
 
 
@@ -20,10 +22,5 @@ def build(train: pd.DataFrame, test: pd.DataFrame):
 
     # MSSubClass 는 숫자로 인코딩된 범주
     df["MSSubClass"] = df["MSSubClass"].astype(str)
-    cat_cols = [c for c in df.columns if df[c].dtype == object or str(df[c].dtype) in ("string", "str")]
-    for c in cat_cols:
-        df[c] = df[c].astype("category")
-    for c in df.columns.difference(cat_cols):
-        df[c] = df[c].astype(float)
-
-    return df.loc["train"].reset_index(drop=True), df.loc["test"].reset_index(drop=True), cat_cols
+    df, cat_cols = auto_types(df)
+    return *split(df), cat_cols

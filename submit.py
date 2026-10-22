@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 
 from core.competition import TRANSFORMS, load_competition, load_data
-from run import RESULTS
+from core.results import RESULTS
 
 
 def main():

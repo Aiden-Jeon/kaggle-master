@@ -50,14 +50,20 @@ def base_name(name: str) -> str:
     return name.partition("@")[0]
 
 
-def make_model(name: str, task: str, cat_cols: list[str], seed: int):
+def make_model(name: str, task: str, cat_cols: list[str], seed: int, max_rows: int | None = None):
+    """max_rows: TFM 컨텍스트 행 상한 (대회 설정 tfm_max_rows). GBDT 와 `@spec` 래퍼(컨텍스트를 직접 고름)에는 적용 안 함."""
     base, _, spec = name.partition("@")
     if base not in REGISTRY:
         raise KeyError(f"알 수 없는 모델 '{base}'. 사용 가능: {', '.join(REGISTRY)}")
     module, fn = REGISTRY[base]
     factory = getattr(importlib.import_module(module), fn)
     if not spec:
-        return factory(task, cat_cols, seed)
+        from models.tfm import _TFM
+
+        model = factory(task, cat_cols, seed)
+        if max_rows and isinstance(model, _TFM):
+            model.set_params(max_rows=max_rows)
+        return model
     from models.context import wrap
 
     return wrap(lambda: factory(task, cat_cols, seed), spec, task, cat_cols, seed)
