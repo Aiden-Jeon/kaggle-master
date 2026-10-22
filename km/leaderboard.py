@@ -41,8 +41,8 @@ def me() -> str:
 
 
 def submissions(comp: str) -> list[dict]:
-    out = json.loads(kaggle("competitions", "submissions", "-c", comp, "--format", "json", "--page-size", "200")
-                     or "[]")
+    text = kaggle("competitions", "submissions", "-c", comp, "--format", "json", "--page-size", "200").strip()
+    out = json.loads(text) if text.startswith("[") else []  # 제출이 없으면 "No submissions found" 출력
     if len(out) == 200:
         print(f"{comp}: 제출이 200개 이상 → 최근 200개만 반영")
     return out

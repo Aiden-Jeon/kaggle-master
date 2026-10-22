@@ -1,4 +1,8 @@
 comp,model,metric,cv,public,private,rank,teams,top_pct,date,description,ref
+GiveMeSomeCredit,catboost,auc,0.8659546771974531,0.86271,0.86886,27,926,2.9,2026-10-22,catboost | 5-fold CV 0.86595,57513135
+GiveMeSomeCredit,lgbm,auc,0.8653352819383563,0.86195,0.86797,64,926,6.9,2026-10-22,lgbm | 5-fold CV 0.86534,57513142
+amazon-employee-access-challenge,catboost,auc,0.8957373076349873,0.91582,0.911,64,1689,3.8,2026-10-22,catboost | 5-fold CV 0.89574,57513127
+amazon-employee-access-challenge,xgb,auc,0.8733991580929394,0.89187,0.88595,529,1689,31.3,2026-10-22,xgb | 5-fold CV 0.87340,57513131
 house-prices-advanced-regression-techniques,kumo,rmse,0.1190980989041099,0.10895,,79,4372,1.8,2026-10-19,kumo 5-fold (CV rmse from EXPERIMENTS.md),57399774
 house-prices-advanced-regression-techniques,tabpfn_v2+kumo,rmse,,0.10925,,80,4372,1.8,2026-10-21,ensemble avg: tabpfn_v2+kumo (OOF-selected),57480050
 house-prices-advanced-regression-techniques,tabpfn_v2,rmse,0.115126771919351,0.11094,,91,4372,2.1,2026-10-19,tabpfn_v2 5-fold (CV rmse from EXPERIMENTS.md),57399770
