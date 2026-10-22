@@ -114,7 +114,7 @@ tabpfn_v2 0.1177 / tabicl 0.1269 / catboost 0.1284 / lgbm 0.1359 / xgb 0.1363
 | limix2m | 0.8971 | 0.006 | 0.3050 | 5분 |
 | mitra_ft | 0.8969 | 0.007 | 0.2973 | 185분 |
 
-- `@knn1000` = 전체 학습 데이터 대신 쿼리 16개 묶음마다 가장 가까운 1000행만 컨텍스트로 사용 (2026-10-21, `models/context.py`). 전체로는 메모리/한도 초과였던 3개 모델이 모두 GBDT 수준 이상으로 돌아감. limix2 는 넘지 못함.
+- `@knn1000` = 전체 학습 데이터 대신 쿼리 16개 묶음마다 가장 가까운 1000행만 컨텍스트로 사용 (2026-10-21, `km/models/context.py`). 전체로는 메모리/한도 초과였던 3개 모델이 모두 GBDT 수준 이상으로 돌아감. limix2 는 넘지 못함.
 
 - LimiX-2 가 1위지만 8시간 소요 (TabICL 은 2분에 2위). 비용 대비로는 TabICL 이 압도적.
 - 상위 4개(limix2, tabicl, xgb, lgbm) 차이는 fold std 수준.
@@ -182,7 +182,7 @@ TFM 은 fold 마다 학습 데이터에서 1만 행만 무작위로 뽑아 컨�
 ## 컨텍스트 선택 실험 (kNN 컨텍스트, 브랜치 `knn-context`)
 
 가설: 쿼리와 비슷한 학습 샘플 k개만 컨텍스트로 넣어도 전체 데이터만큼 추론할 수 있다 → 대용량에서도 TFM 사용 가능.
-구현: `models/context.py` (`<모델>@knn1000_g8_imp` 형식). 실행: Colab 무료 T4 (`colab_run.py`), 테스트 예측 생략.
+구현: `km/models/context.py` (`<모델>@knn1000_g8_imp` 형식). 실행: Colab 무료 T4 (`km colab`), 테스트 예측 생략.
 
 ### Spaceship 5-fold (2026-10-20, 학습 fold 약 6,950행) — accuracy / AUC / logloss
 
@@ -268,7 +268,7 @@ TabPFN v2 part leaf: 0.8752 / 0.4040 (kNN imp 0.9055 대비 크게 낮음).
 - 비용: 검증 14만 행 → 묶음 629개라 TFM fit 629회, lgbm 의 12~18배 시간.
 - 첫 시도는 일반 tabicl 이 14만 행을 한 번에 예측하다 RAM OOM 으로 프로세스가 강제 종료 → `_TFM` 예측을 2만 행 단위로 나눠 해결.
 
-## 모델 목록 (`models/`)
+## 모델 목록 (`km/models/`)
 
 | 이름 | 모델 | 비고 |
 |---|---|---|
@@ -339,9 +339,9 @@ kNN 컨텍스트 모델 추가 제출 (2026-10-21):
 - 전화번호 미인증 계정은 Notebook 인터넷/GPU 가 조용히 꺼짐 (`ajagent` 계정에서 pip 설치 실패, GPU 사용량 0). 현재 `deepmachine` 계정 사용.
 - 대회 데이터를 노트북에 붙이려면 해당 계정으로 Rules 동의 필요 (Spaceship, House Prices 동의 완료).
 - 배치 GPU 세션은 계정당 동시 2개까지. 가끔 버전이 QUEUED 에서 진행되지 않음 → 커널 삭제 후 재 push 로 해결된 적 있음.
-- `kaggle kernels push` 는 실패해도 exit code 0 → `kaggle_run.py` 에서 출력 문자열로 검사.
+- `kaggle kernels push` 는 실패해도 exit code 0 → `km kaggle` (`km/remote/kaggle.py`) 에서 출력 문자열로 검사.
 - Kaggle 기본 환경 (2026-10-19): Python 3.13, torch 2.11.0+cu128, numpy 2.1.3, pandas 2.3.3, scikit-learn 1.6.1.
-- Kaggle 세션에는 T4 가 2장 → `run.py` 가 GPU 수를 감지해 GPU 마다 작업자를 두고 모델을 나눠 동시 실행 (`--gpus N` 으로 조절). 큐에 대기 중인 버전도 동시 실행 2개 한도에 포함됨.
+- Kaggle 세션에는 T4 가 2장 → `km run` 이 GPU 수를 감지해 GPU 마다 작업자를 두고 모델을 나눠 동시 실행 (`--gpus N` 으로 조절). 큐에 대기 중인 버전도 동시 실행 2개 한도에 포함됨.
 - `machine_shape: NvidiaTeslaP100` 으로 올렸지만 실제로는 T4 ×2 에서 실행됨 (S6E10 로그 기준) → GPU 종류 지정이 반영되지 않는 것으로 보임.
 - zsh 에서 모델 목록을 변수로 넘길 때는 배열(`"${M[@]}"`) 사용. 따옴표 없는 `$M` 은 단어 분리가 안 돼 인자 하나로 전달됨.
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from core.features import split
+from km.features import split
 
 SPEND = ["RoomService", "FoodCourt", "ShoppingMall", "Spa", "VRDeck"]
 CATS = ["HomePlanet", "Destination", "Deck", "Side"]

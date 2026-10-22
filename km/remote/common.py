@@ -1,4 +1,4 @@
-"""run.py 를 다른 곳(GPU 별 작업자 프로세스, Kaggle Notebook, Colab)에서 실행할 때 공유하는 인자와 코드 묶음."""
+"""`km run` 을 다른 곳(GPU 별 작업자 프로세스, Kaggle·Colab·Databricks)에서 실행할 때 공유하는 인자와 코드 묶음."""
 
 from __future__ import annotations
 
@@ -7,14 +7,14 @@ import base64
 import io
 import tarfile
 
-from core.competition import ROOT, load_competition
-from models import KAGGLE_PIP, base_name
+from km.competition import ROOT, load_competition
+from km.models import KAGGLE_PIP, base_name
 
-CODE_PATHS = ["core", "models", "run.py", "competitions"]
+CODE_PATHS = ["km", "competitions"]  # 원격에서는 이 위치를 cwd 로 두고 `python -m km run` 실행
 
 
 def add_run_args(ap: argparse.ArgumentParser, models_nargs: str = "+"):
-    """run.py 로 그대로 전달되는 인자. 새 인자를 추가하면 run_argv 에도 반영."""
+    """`km run` 으로 그대로 전달되는 인자. 새 인자를 추가하면 run_argv 에도 반영."""
     ap.add_argument("comp")
     ap.add_argument("models", nargs=models_nargs)
     ap.add_argument("--max-folds", type=int, default=None, help="빠른 확인용: 앞쪽 n개 fold만 실행")
@@ -23,7 +23,7 @@ def add_run_args(ap: argparse.ArgumentParser, models_nargs: str = "+"):
 
 
 def run_argv(args: argparse.Namespace, models: list[str] | None = None) -> list[str]:
-    """add_run_args 로 받은 인자를 run.py 명령행으로 되돌림 (대회 이름 제외)."""
+    """add_run_args 로 받은 인자를 `km run` 명령행으로 되돌림 (대회 이름 제외)."""
     out = [*(args.models if models is None else models), "--note", args.note]
     if args.max_folds:
         out += ["--max-folds", str(args.max_folds)]
@@ -49,6 +49,6 @@ def pip_args(models: list[str]) -> list[list[str]]:
 
 
 def remote_script(args: argparse.Namespace, body: str) -> str:
-    """원격 실행 코드: body 앞에 CODE(코드 묶음)·COMP·TRAIN(학습 파일 이름)·ARGS(run.py 인자)·PIP(설치 목록) 변수를 붙임."""
+    """원격 실행 코드: body 앞에 CODE(코드 묶음)·COMP·TRAIN(학습 파일 이름)·ARGS(`km run` 인자)·PIP(설치 목록) 변수를 붙임."""
     return (f"CODE = {bundle()!r}\nCOMP = {args.comp!r}\nTRAIN = {load_competition(args.comp).train_file!r}\n"
             f"ARGS = {run_argv(args)!r}\nPIP = {pip_args(args.models)!r}\n\n" + body)

@@ -1,8 +1,8 @@
 """Kaggle 제출 기록을 모아 리더보드 순위를 계산 → results/leaderboard.csv
 
-예: uv run python leaderboard.py                 # competitions/ 아래 대회 전부
-    uv run python leaderboard.py spaceship-titanic titanic
-    uv run python leaderboard.py bioresponse --submit 2   # 아직 제출 안 한 모델을 CV 좋은 순으로 2개 제출 후 집계
+예: uv run km lb                 # competitions/ 아래 대회 전부
+    uv run km lb spaceship-titanic titanic
+    uv run km lb bioresponse --submit 2   # 아직 제출 안 한 모델을 CV 좋은 순으로 2개 제출 후 집계
 
 순위: 다운로드한 public 리더보드에서 우리 팀을 뺀 뒤 (점수가 더 좋은 팀 수 + 1).
      Kaggle API 는 private 리더보드를 주지 않으므로 종료된 대회도 public 점수 기준이고, private 점수는 따로 기록.
@@ -22,11 +22,11 @@ from pathlib import Path
 
 import pandas as pd
 
-from core.competition import COMP_DIR, load_competition
-from core.metrics import METRICS
-from models import REGISTRY, base_name
-from core.results import RESULTS
-from submit import make_submission, push
+from km.competition import COMP_DIR, load_competition
+from km.metrics import METRICS
+from km.models import REGISTRY, base_name
+from km.results import RESULTS
+from km.submit import make_submission, push
 
 
 def kaggle(*args) -> str:
@@ -123,12 +123,12 @@ def rank_rows(comp_name: str, user: str) -> list[dict]:
     return rows
 
 
-def main():
-    ap = argparse.ArgumentParser()
+def main(argv: list[str] | None = None):
+    ap = argparse.ArgumentParser(prog="km lb")
     ap.add_argument("comps", nargs="*", help="기본: competitions/ 아래 전부 (_ 로 시작하는 것 제외)")
     ap.add_argument("--submit", type=int, default=0, metavar="N",
                     help="대회마다 미제출 모델을 CV 순으로 N 개 제출 (대회별 하루 제출 한도 주의)")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
     comps = args.comps or sorted(p.name for p in COMP_DIR.iterdir()
                                  if (p / "config.yaml").exists() and not p.name.startswith("_"))
     user = me()
@@ -151,6 +151,3 @@ def main():
     print(df.drop(columns=["description", "ref"]).to_string(index=False))
     print(f"\n저장: {path}")
 
-
-if __name__ == "__main__":
-    main()

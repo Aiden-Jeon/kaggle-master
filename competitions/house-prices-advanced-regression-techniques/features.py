@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from core.features import auto_types, split
+from km.features import auto_types, split
 
 DROP = ["Id", "SalePrice"]
 

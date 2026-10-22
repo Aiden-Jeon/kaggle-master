@@ -1,6 +1,6 @@
 """고정 CV fold 로 모델을 돌려 OOF/테스트 예측과 점수를 저장.
 
-예: uv run python run.py spaceship-titanic lgbm catboost tabpfn_v2 tabicl
+예: uv run km run spaceship-titanic lgbm catboost tabpfn_v2 tabicl
 """
 
 from __future__ import annotations
@@ -20,11 +20,11 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 
-from core.competition import TRANSFORMS, get_folds, load_competition, load_data, load_features
-from core.launch import add_run_args, run_argv
-from core.metrics import EXTRA, score
-from core.results import RESULTS, append_rows
-from models import make_model
+from km.competition import TRANSFORMS, get_folds, load_competition, load_data, load_features
+from km.remote.common import add_run_args, run_argv
+from km.metrics import EXTRA, score
+from km.results import RESULTS, append_rows
+from km.models import make_model
 
 
 def predict(model, X, task):
@@ -40,7 +40,7 @@ def gpu_count() -> int:
 
 
 def run_parallel(args: argparse.Namespace, n_gpus: int) -> list[str]:
-    """GPU 마다 작업자 하나. 각 작업자가 남은 모델을 하나씩 가져가 자기 GPU 에서 run.py 를 실행."""
+    """GPU 마다 작업자 하나. 각 작업자가 남은 모델을 하나씩 가져가 자기 GPU 에서 `km run` 을 실행."""
     todo: queue.Queue[str] = queue.Queue()
     for m in args.models:
         todo.put(m)
@@ -53,7 +53,7 @@ def run_parallel(args: argparse.Namespace, n_gpus: int) -> list[str]:
             except queue.Empty:
                 return
             env = {**os.environ, "CUDA_VISIBLE_DEVICES": str(gpu), "KM_WORKER": "1"}
-            proc = subprocess.Popen([sys.executable, "-u", __file__, args.comp, *run_argv(args, [name])],
+            proc = subprocess.Popen([sys.executable, "-u", "-m", "km", "run", args.comp, *run_argv(args, [name])],
                                     env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             for line in proc.stdout:  # 어느 GPU 출력인지 접두어로 구분
                 print(f"[gpu{gpu}] {line}", end="", flush=True)
@@ -91,11 +91,11 @@ def run_model(name, comp, X, y, X_test, cat_cols, folds, max_folds=None, no_test
     return oof, test_pred, scores, fold_scores, time.time() - t0
 
 
-def main():
-    ap = argparse.ArgumentParser()
+def main(argv: list[str] | None = None):
+    ap = argparse.ArgumentParser(prog="km run")
     add_run_args(ap)
     ap.add_argument("--gpus", type=int, default=None, help="동시에 쓸 GPU 수 (기본: 감지된 전부)")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     comp = load_competition(args.comp)
     train, test = load_data(comp)
@@ -153,6 +153,3 @@ def main():
         if os.environ.get("KM_WORKER"):
             sys.exit(1)  # 병렬 실행의 부모가 실패를 집계하도록
 
-
-if __name__ == "__main__":
-    main()

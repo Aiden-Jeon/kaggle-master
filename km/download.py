@@ -1,15 +1,15 @@
-"""대회 데이터 다운로드: uv run python download.py spaceship-titanic
+"""대회 데이터 다운로드: uv run km download spaceship-titanic
 
 사전 준비: Kaggle API 토큰 설정 + 대회 페이지에서 Rules 동의.
 """
 
 from __future__ import annotations
 
+import argparse
 import subprocess
-import sys
 import zipfile
 
-from core.competition import Competition, load_competition
+from km.competition import Competition, load_competition
 
 
 def download(comp: Competition):
@@ -22,5 +22,7 @@ def download(comp: Competition):
     print(sorted(p.name for p in comp.data_dir.iterdir()))
 
 
-if __name__ == "__main__":
-    download(load_competition(sys.argv[1]))
+def main(argv: list[str] | None = None):
+    ap = argparse.ArgumentParser(prog="km download")
+    ap.add_argument("comp")
+    download(load_competition(ap.parse_args(argv).comp))

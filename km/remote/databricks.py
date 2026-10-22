@@ -1,8 +1,8 @@
-"""Databricks AI Runtime(서버리스 GPU)에서 run.py 를 실행하고 결과를 로컬 results/ 로 받아옴.
+"""Databricks AI Runtime(서버리스 GPU)에서 `km run` 을 실행하고 결과를 로컬 results/ 로 받아옴.
 
-예: uv run python databricks_run.py spaceship-titanic lgbm catboost tabpfn_v2 tabicl
-    uv run python databricks_run.py playground-series-s6e10 tabpfn_v2 --accelerator GPU_8xH100 --no-wait
-    uv run python databricks_run.py playground-series-s6e10 --fetch <run_id>
+예: uv run km databricks spaceship-titanic lgbm catboost tabpfn_v2 tabicl
+    uv run km databricks playground-series-s6e10 tabpfn_v2 --accelerator GPU_8xH100 --no-wait
+    uv run km databricks playground-series-s6e10 --fetch <run_id>
 
 준비: databricks CLI 로그인 + databricks.local.yaml (환경별 설정이라 git 에서 제외)
     profile: <~/.databrickscfg 프로필>
@@ -27,10 +27,10 @@ from pathlib import Path
 
 import yaml
 
-from core.competition import ROOT, load_competition
-from core.launch import CODE_PATHS, add_run_args, pip_args, run_argv
-from core.results import RESULTS, merge_results
-from download import download
+from km.competition import ROOT, load_competition
+from km.remote.common import CODE_PATHS, add_run_args, pip_args, run_argv
+from km.results import RESULTS, merge_results
+from km.download import download
 
 LOCAL_CONFIG = ROOT / "databricks.local.yaml"
 RUNS = RESULTS / "_air" / "runs.json"  # run_id → 결과 위치 (나중에 --fetch 용)
@@ -53,10 +53,10 @@ for args in PIP:  # 모델별 설치 실패는 해당 모델만 실패하도록 
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", *args])
 subprocess.run([sys.executable, "-m", "pip", "list"], stdout=open(out / "pip_list.txt", "w"))
 subprocess.run(["nvidia-smi"])
-code = subprocess.run([sys.executable, "-u", "run.py", COMP, *ARGS], cwd=SRC).returncode
+code = subprocess.run([sys.executable, "-u", "-m", "km", "run", COMP, *ARGS], cwd=SRC).returncode
 if (SRC / "results").exists():
     shutil.copytree(SRC / "results", out / "results", dirs_exist_ok=True)
-print(f"run.py 종료 코드: {code}")
+print(f"km run 종료 코드: {code}")
 sys.exit(code)
 '''
 
@@ -162,8 +162,8 @@ def fetch(profile: str, run_id: str):
     shutil.rmtree(dl)
 
 
-def main():
-    ap = argparse.ArgumentParser()
+def main(argv: list[str] | None = None):
+    ap = argparse.ArgumentParser(prog="km databricks")
     add_run_args(ap, models_nargs="*")  # --fetch 일 때는 models 생략
     ap.add_argument("--no-wait", action="store_true", help="제출만 하고 종료 (나중에 --fetch 로 수집)")
     ap.add_argument("--fetch", metavar="RUN_ID", help="이미 끝난 run 의 결과만 받아오기")
@@ -172,7 +172,7 @@ def main():
     ap.add_argument("--tag", default="", help="실행 이름 태그 (MLflow run 이름·결과 폴더에 붙음)")
     ap.add_argument("--profile", help=f"databricks 프로필 ({LOCAL_CONFIG.name} 값을 덮어씀)")
     ap.add_argument("--volume", help=f"UC Volume 경로 ({LOCAL_CONFIG.name} 값을 덮어씀)")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     cfg = settings(args)
     load_competition(args.comp)  # 설정 존재 확인
@@ -186,6 +186,3 @@ def main():
         print(f"최종 상태: {wait(cfg['profile'], run_id)}")
     fetch(cfg["profile"], run_id)
 
-
-if __name__ == "__main__":
-    main()

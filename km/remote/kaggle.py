@@ -1,7 +1,7 @@
-"""Kaggle Notebook(GPU)에서 run.py 를 실행하고 결과를 로컬 results/ 로 받아옴.
+"""Kaggle Notebook(GPU)에서 `km run` 을 실행하고 결과를 로컬 results/ 로 받아옴.
 
-예: uv run python kaggle_run.py spaceship-titanic lgbm xgb catboost tabpfn_v2 tabicl
-    uv run python kaggle_run.py spaceship-titanic tabicl --max-folds 1 --no-wait
+예: uv run km kaggle spaceship-titanic lgbm xgb catboost tabpfn_v2 tabicl
+    uv run km kaggle spaceship-titanic tabicl --max-folds 1 --no-wait
 
 동작: 프로젝트 코드를 tar+base64 로 스크립트 하나에 담아 private kernel 로 push
      → 완료까지 대기 → 출력(results/) 다운로드 후 로컬 results/ 에 병합.
@@ -17,9 +17,9 @@ import tempfile
 import time
 from pathlib import Path
 
-from core.competition import load_competition
-from core.launch import add_run_args, remote_script
-from core.results import merge_results
+from km.competition import load_competition
+from km.remote.common import add_run_args, remote_script
+from km.results import merge_results
 
 RUNNER = '''\
 import base64, io, os, subprocess, sys, tarfile
@@ -39,7 +39,7 @@ for args in PIP:  # 모델별 설치 실패는 해당 모델만 실패하도록 
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", *args])
 subprocess.run([sys.executable, "-m", "pip", "list"], stdout=open("/kaggle/working/pip_list.txt", "w"))
 subprocess.run(["nvidia-smi"])
-subprocess.run([sys.executable, "run.py", COMP, *ARGS], cwd=SRC)
+subprocess.run([sys.executable, "-m", "km", "run", COMP, *ARGS], cwd=SRC)
 if (SRC / "results").exists():
     subprocess.run(["cp", "-r", str(SRC / "results"), "/kaggle/working/results"], check=True)
 subprocess.run(["rm", "-rf", str(SRC)])
@@ -102,14 +102,14 @@ def fetch(kernel: str):
     print(f"\n로그: {log}")
 
 
-def main():
-    ap = argparse.ArgumentParser()
+def main(argv: list[str] | None = None):
+    ap = argparse.ArgumentParser(prog="km kaggle")
     add_run_args(ap)
     ap.add_argument("--no-wait", action="store_true", help="push 만 하고 종료 (나중에 --fetch 로 수집)")
     ap.add_argument("--fetch", action="store_true", help="이미 끝난 kernel 의 결과만 받아오기")
     ap.add_argument("--accelerator", help="GPU 종류 (NvidiaTeslaT4: 2장 / NvidiaTeslaP100: 1장), 기본은 Kaggle 기본값")
     ap.add_argument("--tag", default="", help="kernel 이름 태그 (km-<tag>-<comp>). 같은 대회를 동시에 돌릴 때 충돌 방지")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     load_competition(args.comp)  # 설정 존재 확인
     kernel = kernel_id(args.comp, username(), args.tag)
@@ -122,6 +122,3 @@ def main():
         print(f"최종 상태: {wait(kernel)}")
     fetch(kernel)
 
-
-if __name__ == "__main__":
-    main()

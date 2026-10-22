@@ -11,20 +11,20 @@ from __future__ import annotations
 import importlib
 
 REGISTRY = {
-    "lgbm": ("models.gbdt", "make_lgbm"),
-    "xgb": ("models.gbdt", "make_xgb"),
-    "catboost": ("models.gbdt", "make_catboost"),
-    "tabpfn": ("models.tfm", "make_tabpfn"),  # 최신 기본 버전 (첫 실행 시 브라우저 라이선스 동의 필요)
-    "tabpfn_v2": ("models.tfm", "make_tabpfn_v2"),  # 라이선스 동의 없이 사용 가능
-    "tabpfn35": ("models.tfm", "make_tabpfn35"),  # TabPFN-3.5 명시 (라이선스 동의 필요)
-    "tabicl": ("models.tfm", "make_tabicl"),
-    "limix2": ("models.tfm", "make_limix2"),  # 400M, 비상업 라이선스
-    "limix2m": ("models.tfm", "make_limix2m"),  # 2M 경량판, 비상업 라이선스
-    "mitra": ("models.tfm", "make_mitra"),  # Mitra-v2 zero-shot
-    "mitra_ft": ("models.tfm", "make_mitra_ft"),  # Mitra-v2 + 50 step fine-tuning
-    "exaone": ("models.tfm", "make_exaone"),  # 가중치 비상업 라이선스
-    "kumo": ("models.tfm", "make_kumo"),  # NVIDIA Kumo-Tabular (large)
-    "causilo": ("models.tfm", "make_causilo"),  # Nums AI Causilo, 가중치 비상업 라이선스
+    "lgbm": ("km.models.gbdt", "make_lgbm"),
+    "xgb": ("km.models.gbdt", "make_xgb"),
+    "catboost": ("km.models.gbdt", "make_catboost"),
+    "tabpfn": ("km.models.tfm", "make_tabpfn"),  # 최신 기본 버전 (첫 실행 시 브라우저 라이선스 동의 필요)
+    "tabpfn_v2": ("km.models.tfm", "make_tabpfn_v2"),  # 라이선스 동의 없이 사용 가능
+    "tabpfn35": ("km.models.tfm", "make_tabpfn35"),  # TabPFN-3.5 명시 (라이선스 동의 필요)
+    "tabicl": ("km.models.tfm", "make_tabicl"),
+    "limix2": ("km.models.tfm", "make_limix2"),  # 400M, 비상업 라이선스
+    "limix2m": ("km.models.tfm", "make_limix2m"),  # 2M 경량판, 비상업 라이선스
+    "mitra": ("km.models.tfm", "make_mitra"),  # Mitra-v2 zero-shot
+    "mitra_ft": ("km.models.tfm", "make_mitra_ft"),  # Mitra-v2 + 50 step fine-tuning
+    "exaone": ("km.models.tfm", "make_exaone"),  # 가중치 비상업 라이선스
+    "kumo": ("km.models.tfm", "make_kumo"),  # NVIDIA Kumo-Tabular (large)
+    "causilo": ("km.models.tfm", "make_causilo"),  # Nums AI Causilo, 가중치 비상업 라이선스
 }
 
 _LIMIX = [["--no-deps", "git+https://github.com/limix-ldm-ai/LimiX.git"], ["einops", "kditransform", "nvtx"],
@@ -58,12 +58,12 @@ def make_model(name: str, task: str, cat_cols: list[str], seed: int, max_rows: i
     module, fn = REGISTRY[base]
     factory = getattr(importlib.import_module(module), fn)
     if not spec:
-        from models.tfm import _TFM
+        from km.models.tfm import _TFM
 
         model = factory(task, cat_cols, seed)
         if max_rows and isinstance(model, _TFM):
             model.set_params(max_rows=max_rows)
         return model
-    from models.context import wrap
+    from km.models.context import wrap
 
     return wrap(lambda: factory(task, cat_cols, seed), spec, task, cat_cols, seed)

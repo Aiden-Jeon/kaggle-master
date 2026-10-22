@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from core.competition import ROOT
+from km.competition import ROOT
 
 RESULTS = ROOT / "results"
 

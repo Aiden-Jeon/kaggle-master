@@ -55,7 +55,7 @@ def load_competition(name: str) -> Competition:
 def load_data(comp: Competition) -> tuple[pd.DataFrame, pd.DataFrame]:
     if not (comp.data_dir / comp.train_file).exists():
         raise FileNotFoundError(
-            f"{comp.data_dir}/{comp.train_file} 없음. 먼저 `uv run python download.py {comp.name}` 실행"
+            f"{comp.data_dir}/{comp.train_file} 없음. 먼저 `uv run km download {comp.name}` 실행"
         )
     return pd.read_csv(comp.data_dir / comp.train_file), pd.read_csv(comp.data_dir / comp.test_file)
 
