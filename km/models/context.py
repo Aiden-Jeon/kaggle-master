@@ -55,6 +55,24 @@ def parse_spec(spec: str) -> dict:
     return out
 
 
+def fit_lgbm(X: pd.DataFrame, y, task: str, seed: int, **params):
+    """거리 공간·피처 선택용 보조 LightGBM (5만 행 넘으면 무작위 샘플로 학습)."""
+    import lightgbm as lgb
+
+    cls = lgb.LGBMRegressor if task == "regression" else lgb.LGBMClassifier
+    if len(X) > 50_000:
+        idx = np.random.default_rng(seed).choice(len(X), 50_000, replace=False)
+        X, y = X.iloc[idx], np.asarray(y)[idx]
+    return cls(random_state=seed, verbose=-1, **params).fit(X, y)
+
+
+def gain_importance(X: pd.DataFrame, y, task: str, seed: int) -> pd.Series:
+    """LightGBM gain 중요도, 평균 1 로 정규화."""
+    model = fit_lgbm(X, y, task, seed, n_estimators=200, importance_type="gain")
+    imp = pd.Series(model.feature_importances_, index=X.columns).clip(lower=0)
+    return imp / imp.mean() if imp.sum() > 0 else imp * 0 + 1
+
+
 class _Encoder:
     """kNN 거리 공간: 수치형은 중앙값 대체 후 표준화, 범주형은 원핫 × 1/√2 (불일치 시 거리² 1).
 
@@ -72,26 +90,12 @@ class _Encoder:
         owner = self.num_ + [c for c in self.cat_cols for _ in self.levels_[c]]  # 출력 열마다 원래 피처
         self.scale_ = np.ones(len(owner), dtype=np.float32)
         if self.space == "imp":
-            imp = self._importance(X, y)
+            imp = gain_importance(X, y, self.task, self.seed)
             self.scale_ = np.sqrt([imp[c] for c in owner]).astype(np.float32)
         elif self.space == "leaf":
             per_iter = len(np.unique(y)) if self.task == "multiclass" else 1
-            self.gbdt_ = self._lgbm(X, y, n_estimators=max(10, _LEAF_TREES // per_iter))
+            self.gbdt_ = fit_lgbm(X, y, self.task, self.seed, n_estimators=max(10, _LEAF_TREES // per_iter))
         return self
-
-    def _lgbm(self, X, y, **params):
-        import lightgbm as lgb
-
-        cls = lgb.LGBMRegressor if self.task == "regression" else lgb.LGBMClassifier
-        if len(X) > 50_000:
-            idx = np.random.default_rng(self.seed).choice(len(X), 50_000, replace=False)
-            X, y = X.iloc[idx], np.asarray(y)[idx]
-        return cls(random_state=self.seed, verbose=-1, **params).fit(X, y)
-
-    def _importance(self, X, y) -> pd.Series:
-        model = self._lgbm(X, y, n_estimators=200, importance_type="gain")
-        imp = pd.Series(model.feature_importances_, index=X.columns).clip(lower=0)
-        return imp / imp.mean() if imp.sum() > 0 else imp * 0 + 1  # 평균 1 로 정규화
 
     def transform(self, X: pd.DataFrame) -> np.ndarray:
         if self.space == "leaf":
@@ -112,6 +116,11 @@ class ContextSelect(BaseEstimator):
         self.make_base, self.task, self.cat_cols = make_base, task, cat_cols
         self.mode, self.k, self.group, self.space, self.seed = mode, k, group, space, seed
         self.mix, self.bal = mix, bal
+
+    @property
+    def joint_predict(self):
+        """검증·테스트를 합쳐 예측해도 되는지 (km run). knn/part 는 쿼리 묶음·난수 순서가 쿼리 집합에 따라 달라져 따로 예측."""
+        return self.mode in ("full", "rand")
 
     @property
     def _is_clf(self):

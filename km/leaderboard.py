@@ -6,7 +6,8 @@
 
 순위: 다운로드한 public 리더보드에서 우리 팀을 뺀 뒤 (점수가 더 좋은 팀 수 + 1).
      Kaggle API 는 private 리더보드를 주지 않으므로 종료된 대회도 public 점수 기준이고, private 점수는 따로 기록.
-모델 이름: 제출 설명에서 `lgbm`, `limix2+kumo`, `exaone@knn1000` 처럼 모델 이름으로 해석되는 첫 토큰.
+모델 이름: 제출 설명에서 `lgbm`, `kumo+catboost`, `exaone@knn1000` 처럼 모델 이름으로 해석되는 첫 토큰.
+         RETIRED 모델(limix2)이 들어간 제출은 순위 집계·자동 제출에서 뺌.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ import pandas as pd
 
 from km.competition import COMP_DIR, load_competition
 from km.metrics import METRICS
-from km.models import REGISTRY, base_name
+from km.models import REGISTRY, RETIRED, base_name
 from km.results import RESULTS
 from km.submit import make_submission, push
 
@@ -58,9 +59,14 @@ def public_leaderboard(comp: str) -> pd.DataFrame:
 
 def model_of(sub: dict) -> str:
     for tok in re.findall(r"[\w.@+-]+", sub["description"] or ""):
-        if all(base_name(p) in REGISTRY for p in tok.split("+")):
+        if all(base_name(p) in REGISTRY or base_name(p) in RETIRED for p in tok.split("+")):
             return tok
     return Path(sub["fileName"]).stem  # 설명에 모델 이름이 없으면 파일 이름 ('+', '@' 는 Kaggle 이 지움)
+
+
+def is_retired(model: str) -> bool:
+    """RETIRED 모델이 들어간 모델·앙상블 (예: limix2+kumo) → 리더보드 집계와 자동 제출에서 뺌."""
+    return any(base_name(p) in RETIRED for p in model.split("+"))
 
 
 def latest_cv(comp, model: str) -> float | None:
@@ -78,7 +84,8 @@ def submit_pending(comp_name: str, n: int) -> int:
     comp = load_competition(comp_name)
     done = {model_of(s) for s in submissions(comp_name)}
     todo = [(latest_cv(comp, d.name), d.name) for d in (RESULTS / comp_name).glob("*/")
-            if (d / "test.npy").exists() and d.name not in done and latest_cv(comp, d.name) is not None]
+            if (d / "test.npy").exists() and d.name not in done and not is_retired(d.name)
+            and latest_cv(comp, d.name) is not None]
     todo.sort(reverse=METRICS[comp.metric][1])
     sent = 0
     for cv, model in todo[:n]:
@@ -116,6 +123,8 @@ def rank_rows(comp_name: str, user: str) -> list[dict]:
         pub = float(s["publicScore"])
         rank = int(((others > pub) if higher else (others < pub)).sum()) + 1
         model = model_of(s)
+        if is_retired(model):
+            continue
         rows.append(dict(comp=comp_name, model=model, metric=comp.metric, cv=latest_cv(comp, model), public=pub,
                          private=float(s["privateScore"]) if s["privateScore"] not in (None, "") else None,
                          rank=rank, teams=len(others) + 1, top_pct=round(100 * rank / (len(others) + 1), 1),
@@ -146,7 +155,8 @@ def main(argv: list[str] | None = None):
     path = RESULTS / "leaderboard.csv"
     if args.comps and path.exists():  # 일부 대회만 갱신할 때는 나머지 대회 행 유지
         old = pd.read_csv(path)
-        df = pd.concat([old[~old.comp.isin(comps)], df]).sort_values(["comp", "rank", "date"])
+        old = old[~old.comp.isin(comps) & ~old.model.astype(str).map(is_retired)]
+        df = pd.concat([old, df]).sort_values(["comp", "rank", "date"])
     df.to_csv(path, index=False)
     print(df.drop(columns=["description", "ref"]).to_string(index=False))
     print(f"\n저장: {path}")

@@ -43,7 +43,9 @@ uv run km colab make spaceship-titanic tabicl --max-folds 1 -o run.ipynb
 uv run km colab collect output.txt
 
 # Databricks AI Runtime(서버리스 GPU)에서 실행 — databricks.local.yaml 에 profile, volume 지정 (git 제외)
-uv run km databricks spaceship-titanic lgbm catboost tabpfn_v2 --accelerator GPU_1xA10
+# GPU 종류는 --accelerator 또는 databricks.local.yaml 의 accelerator (기본 GPU_1xH100).
+# GPU 1장이어도 모델마다 새 프로세스로 실행, GPU_8xH100 이면 모델을 GPU별로 나눠 동시 실행
+uv run km databricks spaceship-titanic lgbm catboost tabpfn_v2 --accelerator GPU_8xH100
 
 # 제출
 uv run km submit spaceship-titanic catboost tabicl --push -m "cb+tabicl"

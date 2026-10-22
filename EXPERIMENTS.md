@@ -268,6 +268,31 @@ TabPFN v2 part leaf: 0.8752 / 0.4040 (kNN imp 0.9055 대비 크게 낮음).
 - 비용: 검증 14만 행 → 묶음 629개라 TFM fit 629회, lgbm 의 12~18배 시간.
 - 첫 시도는 일반 tabicl 이 14만 행을 한 번에 예측하다 RAM OOM 으로 프로세스가 강제 종료 → `_TFM` 예측을 2만 행 단위로 나눠 해결.
 
+## TFM 추론 속도 (2026-10-22, Databricks, fold 0, 테스트 예측 포함) — 초
+
+TabArena 대회를 A10G(24GB)에서 돌렸더니 TFM 이 GBDT 의 10~100배 → 원인을 나눠 개선.
+
+| 대회 | 모델 | 이전 (A10G) | 코드 개선 후 (A10G) | 피처 500개 (A10G) | H100 + 피처 500개 | 점수 (마지막 열) |
+|---|---|---|---|---|---|---|
+| bioresponse (1,776 피처) | tabpfn_v2 | 497 | 458 (fit 380) | 34 | **23** | logloss 0.4486 → 0.4400 |
+| bioresponse | tabicl | -9 로 강제 종료 | 106 | 19 | **14** | logloss 0.3981 |
+| bioresponse | kumo | — | — | — | **23** | logloss 0.3942 |
+| GiveMeSomeCredit (ctx 1만, 쿼리 13만) | tabpfn_v2 | ~57 | 44 | — | **20** | AUC 0.8572 |
+| GiveMeSomeCredit | tabicl | ~20 | — | — | **10** | AUC 0.8613 |
+| GiveMeSomeCredit | kumo | ~250 | — | — | **36** | AUC 0.8641 |
+| GiveMeSomeCredit | kumo_e4 (estimator 4개) | — | — | — | **15** | AUC 0.8641 |
+| GiveMeSomeCredit | limix2 | 1,490 | 1,422 | — | 제거 | AUC 0.8639 |
+
+- "이전" 중 ~ 는 5-fold 총 시간 / 5.
+- 코드 개선: fold 당 검증·테스트를 한 번에 예측 (컨텍스트 계산 1회), TabPFN 컨텍스트 KV 캐시(GPU 에 들어갈 때만),
+  Kumo 는 sdm `fit()`/`predict()` 로 컨텍스트 1회 인코딩, 모델마다 새 프로세스 (tabicl -9 해결).
+  lgbm / tabpfn_v2 / tabicl 은 합쳐 예측해도 출력이 완전히 같음 (로컬 확인).
+- 넓은 데이터는 피처 수가 결정적: TabPFN v2 프리셋은 피처 서브샘플링이 없어 1,776개 × 8 estimator. `tfm_max_features: 500`
+  (LightGBM 중요도 상위)로 14배 빨라지고 점수도 좋아짐 (tabpfn_v2 0.4486→0.4400, tabicl 0.4276→0.3981).
+- bioresponse tabpfn_v2 의 fit 380s 는 CPU 전처리. 로컬 맥은 같은 버전으로 12s → 원인 미확인, 피처 500개면 8s 라 보류.
+- limix2 는 OOM 재시도를 없애도 1,422s (파이프라인 32개 × 쿼리 13만 행 연산 자체가 큼) → 실행·리더보드에서 제거.
+- H100 에서는 OOM 경고 0회. kumo_e4 는 AUC 차이 0.00004 로 2.4배 빠름 (fold 하나, 대회 하나 기준).
+
 ## 모델 목록 (`km/models/`)
 
 | 이름 | 모델 | 비고 |
@@ -275,7 +300,7 @@ TabPFN v2 part leaf: 0.8752 / 0.4040 (kNN imp 0.9055 대비 크게 낮음).
 | lgbm / xgb / catboost | GBDT 베이스라인 | 고정 파라미터, early stopping 없음 |
 | tabpfn_v2 | TabPFN v2 | v2.5 이상은 브라우저 라이선스 동의 필요 → Kaggle 에서 사용 불가 |
 | tabicl | TabICL v2 | |
-| limix2 / limix2m | LimiX-2 (400M) / LimiX-2M | 비상업 라이선스. `--no-deps` 설치 (torch==2.9.1 고정 회피) |
+| limix2m | LimiX-2M | 비상업 라이선스. `--no-deps` 설치 (torch==2.9.1 고정 회피). limix2(400M)는 느려서 제거 (2026-10-22) |
 | mitra / mitra_ft | Mitra-v2 zero-shot / +50 step fine-tune | AutoGluon sklearn 인터페이스. **회귀는 v1 체크포인트** |
 | exaone | EXAONE-Tabular (LG) | 가중치 비상업 라이선스 |
 | kumo | NVIDIA Kumo-Tabular (large) | 회귀는 999 분위수 평균 사용 |

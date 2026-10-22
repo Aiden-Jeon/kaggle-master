@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
@@ -11,28 +13,42 @@ PREDICT_CHUNK = 20_000  # 예측 행을 이 크기로 나눠 처리 (큰 테스�
 
 
 class _TFM(BaseEstimator):
-    def __init__(self, build, cat_cols, max_rows=None, seed=0, chunk=PREDICT_CHUNK):
+    """max_rows: 컨텍스트(학습) 행 상한, 넘으면 무작위 샘플.
+    max_features: 피처 상한, 넘으면 LightGBM gain 중요도 상위만 사용 (task 필요).
+    chunk: 예측 행 분할 크기. None 이면 한 번에 넘김 (내부에서 쿼리 배치를 나누는 모델용)."""
+
+    def __init__(self, build, cat_cols, max_rows=None, seed=0, chunk=PREDICT_CHUNK, max_features=None, task=None):
         self.build, self.cat_cols = build, cat_cols
-        self.max_rows, self.seed = max_rows, seed  # max_rows: 컨텍스트(학습) 행 상한, 넘으면 무작위 샘플
+        self.max_rows, self.seed = max_rows, seed
         self.chunk = chunk
+        self.max_features, self.task = max_features, task
 
     def _prep(self, X: pd.DataFrame) -> np.ndarray:
-        X = X.copy()
+        X = X[self.cols_].copy()
         for c in self.cat_cols:
-            X[c] = X[c].cat.codes.replace(-1, np.nan)
+            if c in X:
+                X[c] = X[c].cat.codes.replace(-1, np.nan)
         return X.to_numpy(dtype=np.float32)
 
     def fit(self, X, y):
         if self.max_rows and len(X) > self.max_rows:
             idx = np.random.default_rng(self.seed).choice(len(X), self.max_rows, replace=False)
             X, y = X.iloc[idx], np.asarray(y)[idx]
-        cat_idx = [X.columns.get_loc(c) for c in self.cat_cols]
+        self.cols_ = list(X.columns)
+        if self.max_features and X.shape[1] > self.max_features:
+            from km.models.context import gain_importance
+
+            top = set(gain_importance(X, y, self.task, self.seed).nlargest(self.max_features).index)
+            self.cols_ = [c for c in X.columns if c in top]  # 원래 열 순서 유지
+        cat_idx = [i for i, c in enumerate(self.cols_) if c in self.cat_cols]
         self.model_ = self.build(cat_idx)
         self.model_.fit(self._prep(X), y)
         return self
 
     def _chunked(self, fn, X):
         A = self._prep(X)
+        if self.chunk is None:
+            return fn(A)
         return np.concatenate([fn(A[i:i + self.chunk]) for i in range(0, len(A), self.chunk)])
 
     def predict(self, X):
@@ -42,33 +58,82 @@ class _TFM(BaseEstimator):
         return self._chunked(self.model_.predict_proba, X)
 
 
-def _tabpfn(task, cat_cols, seed, version=None):
+KV_CACHE_BYTES_PER_CELL = 50_000  # TabPFN KV 캐시 크기 추정: 컨텍스트 (행 × 피처) 한 칸당, estimator 8개 기준
+KV_CACHE_GPU_FRACTION = 0.3  # 추정 캐시가 GPU 메모리의 이 비율 안일 때만 캐시 사용
+
+
+def _gpu_bytes() -> int:
+    import torch
+
+    return torch.cuda.get_device_properties(0).total_memory if torch.cuda.is_available() else 0
+
+
+class _TabPFN(BaseEstimator):
+    """컨텍스트 KV 캐시(fit_with_cache)가 GPU 에 들어갈 크기면 켬 → 예측 청크마다 컨텍스트를 다시 계산하지 않음.
+
+    캐시 크기는 컨텍스트 행 × 피처 수에 비례 (bioresponse 처럼 넓은 데이터는 GPU 에 안 들어감 → 끔).
+    추정이 빗나가 fit 에서 OOM 이 나면 캐시 없이 다시 fit.
+    """
+
+    def __init__(self, make, n_estimators):
+        self.make, self.n_estimators = make, n_estimators
+
+    def fit(self, X, y):
+        import torch
+
+        n_est = 8 if self.n_estimators == "auto" else self.n_estimators
+        need = X.shape[0] * X.shape[1] * KV_CACHE_BYTES_PER_CELL * n_est / 8
+        if need < KV_CACHE_GPU_FRACTION * _gpu_bytes():
+            try:
+                self.model_ = self.make(fit_mode="fit_with_cache").fit(X, y)
+                return self
+            except torch.cuda.OutOfMemoryError:
+                self.model_ = None
+                torch.cuda.empty_cache()
+                print("    [tabpfn] KV 캐시 OOM → 캐시 없이 fit", flush=True)
+        self.model_ = self.make(fit_mode="fit_preprocessors").fit(X, y)
+        return self
+
+    def predict(self, X):
+        return self.model_.predict(X)
+
+    def predict_proba(self, X):
+        return self.model_.predict_proba(X)
+
+
+def _tabpfn(task, cat_cols, seed, version=None, n_estimators="auto"):
     from tabpfn import TabPFNClassifier, TabPFNRegressor
 
     cls = TabPFNRegressor if task == "regression" else TabPFNClassifier
 
     def build(cat_idx):
         # 공식 지원(1만 행)을 넘는 컨텍스트도 허용 — 큰 데이터는 tfm_max_rows 로 따로 제한
-        kwargs = dict(categorical_features_indices=cat_idx, random_state=seed, ignore_pretraining_limits=True)
-        if version is None:
-            return cls(**kwargs)
-        from tabpfn.constants import ModelVersion
+        # n_preprocessing_jobs: estimator 별 전처리를 스레드로 병렬 (결과 동일). 넓은 데이터에서 fit 대부분이 전처리
+        kwargs = dict(categorical_features_indices=cat_idx, random_state=seed, ignore_pretraining_limits=True,
+                      n_estimators=n_estimators, n_preprocessing_jobs=os.cpu_count() or 1)
 
-        return cls.create_default_for_version(ModelVersion(version), **kwargs)
+        def make(**extra):
+            if version is None:
+                return cls(**kwargs, **extra)
+            from tabpfn.constants import ModelVersion
+
+            return cls.create_default_for_version(ModelVersion(version), **kwargs, **extra)
+
+        return _TabPFN(make, n_estimators)
 
     return _TFM(build, cat_cols)
 
 
-def make_tabpfn(task, cat_cols, seed):
-    return _tabpfn(task, cat_cols, seed)
+def make_tabpfn(task, cat_cols, seed, **kw):
+    return _tabpfn(task, cat_cols, seed, **kw)
 
 
-def make_tabpfn_v2(task, cat_cols, seed):
-    return _tabpfn(task, cat_cols, seed, version="v2")
+def make_tabpfn_v2(task, cat_cols, seed, **kw):
+    return _tabpfn(task, cat_cols, seed, version="v2", **kw)
 
 
-def make_tabpfn35(task, cat_cols, seed):
-    return _tabpfn(task, cat_cols, seed, version="v3.5")
+def make_tabpfn35(task, cat_cols, seed, **kw):
+    return _tabpfn(task, cat_cols, seed, version="v3.5", **kw)
 
 
 def make_tabicl(task, cat_cols, seed):
@@ -112,9 +177,9 @@ class _Transductive(BaseEstimator):
 
 
 class _LimiX(_Transductive):
-    def __init__(self, task, cat_idx, repo, filename, v2):
+    def __init__(self, task, cat_idx, repo, filename):
         super().__init__(task, cat_idx)
-        self.repo, self.filename, self.v2 = repo, filename, v2
+        self.repo, self.filename = repo, filename
 
     def _run(self, X):
         import os
@@ -130,8 +195,7 @@ class _LimiX(_Transductive):
                      "MASTER_ADDR": "127.0.0.1", "MASTER_PORT": str(port)}.items():
             os.environ.setdefault(k, v)
         kind = "reg" if self.task == "regression" else "cls"
-        cfg = os.path.join(os.path.dirname(limix_config.__file__),
-                           f"{kind}_default_noretrieval{'_v2' if self.v2 else ''}.json")
+        cfg = os.path.join(os.path.dirname(limix_config.__file__), f"{kind}_default_noretrieval.json")
         if not hasattr(self, "predictor_"):  # 청크마다 다시 불러오지 않도록 재사용
             self.predictor_ = LimiXPredictor(device=torch.device(_device()),
                                              model_path=hf_hub_download(self.repo, self.filename),
@@ -141,6 +205,8 @@ class _LimiX(_Transductive):
 
 
 class _Kumo(_Transductive):
+    """컨텍스트는 sdm 의 fit() 으로 한 번만 인코딩해 KV 캐시에 두고, 쿼리 청크마다 predict() 로 재사용."""
+
     def __init__(self, task, cat_idx, n_estimators=8):
         super().__init__(task, cat_idx)
         self.n_estimators = n_estimators
@@ -152,35 +218,32 @@ class _Kumo(_Transductive):
         dev = torch.device(_device())
         cols = [f"f{i}" for i in range(X.shape[1])]
         stypes = {c: "numerical" for c in cols}  # Kumo 는 수치형 피처만 지원 → 범주형은 정수 코드
+        autocast = torch.amp.autocast(dev.type, dtype=torch.float16, enabled=dev.type == "cuda")
         if not hasattr(self, "model_"):  # 청크마다 다시 만들지 않도록 재사용
             ctx = pd.DataFrame(self.X_, columns=cols).assign(target=self.y_)
             target_stype = "numerical" if self.task == "regression" else "categorical"
-            self.ctx_ = sdm.TableTensor.from_pandas(ctx, stypes={**stypes, "target": target_stype}, device=dev)
+            ctx = sdm.TableTensor.from_pandas(ctx, stypes={**stypes, "target": target_stype}, device=dev)
             self.model_ = sdm.models.KumoTabular(
                 task="regression" if self.task == "regression" else "classification", device=dev)
+            with autocast:
+                self.model_.fit(ctx.drop_columns("target"), ctx[:, "target"], num_estimators=self.n_estimators)
         query = sdm.TableTensor.from_pandas(pd.DataFrame(X, columns=cols), stypes=stypes, device=dev)
-        with torch.amp.autocast(dev.type, dtype=torch.float16, enabled=dev.type == "cuda"):
-            out = self.model_(x_context=self.ctx_.drop_columns("target"), y_context=self.ctx_[:, "target"],
-                              x_query=query, num_estimators=self.n_estimators)
+        with autocast:
+            out = self.model_.predict(query)
         out = out.to_pandas() if hasattr(out, "to_pandas") else pd.DataFrame(out.float().cpu().numpy())
         if self.task == "regression":  # 999개 분위수(q001~q999) 평균 ≈ 기대값
             return out.to_numpy(dtype=float).mean(1)
         return out[sorted(out.columns, key=lambda c: int(c) if str(c).isdigit() else str(c))].to_numpy(float)
 
 
-def make_limix2(task, cat_cols, seed):
-    return _TFM(lambda cat_idx: _LimiX(task, cat_idx, "stable-ai/LimiX-2", "LimiX-2.ckpt", v2=True), cat_cols)
-
-
 def make_limix2m(task, cat_cols, seed):
     # stable-ai/LimiX-2M 의 체크포인트는 현재 LimiX 코드와 설정 키가 맞지 않음 → README 가 가리키는 1_2M 사용
-    return _TFM(lambda cat_idx: _LimiX(task, cat_idx, "stable-ai/LimiX-1_2M", "LimiX-1_2M.ckpt", v2=False),
-                cat_cols)
+    return _TFM(lambda cat_idx: _LimiX(task, cat_idx, "stable-ai/LimiX-1_2M", "LimiX-1_2M.ckpt"), cat_cols)
 
 
-def make_kumo(task, cat_cols, seed):
+def make_kumo(task, cat_cols, seed, n_estimators=8):
     # 컨텍스트가 1만 행을 넘으면 질의 2만 행으로는 T4 메모리를 넘음 (S4E2 에서 13.7GiB 요청)
-    return _TFM(lambda cat_idx: _Kumo(task, cat_idx), cat_cols, chunk=2048)
+    return _TFM(lambda cat_idx: _Kumo(task, cat_idx, n_estimators), cat_cols, chunk=2048)
 
 
 class _Causilo(BaseEstimator):
