@@ -11,7 +11,7 @@
 
 동작: 대회 데이터를 Volume 에 한 번 올려 두고 (없으면 로컬에서 kaggle 로 받아 업로드),
      코드 스냅샷과 함께 `databricks air run` 으로 제출 → 로그 스트리밍 → Volume 의 results/ 를 받아 병합.
-     Kaggle 토큰은 워크스페이스로 보내지 않음.
+     Kaggle·HF 토큰은 워크스페이스로 보내지 않음 (HF gated 가중치는 로컬에서 받아 Volume 의 weights/ 에 올림).
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ from pathlib import Path
 import yaml
 
 from km.competition import ROOT, load_competition
+from km.models import GATED, base_name
 from km.remote.common import CODE_PATHS, add_run_args, pip_args, run_argv
 from km.results import RESULTS, merge_results
 from km.download import download
@@ -39,7 +40,7 @@ RUNS = RESULTS / "_air" / "runs.json"  # run_id → 결과 위치 (나중에 --f
 BASE_PIP = [["scikit-learn", "lightgbm", "xgboost", "catboost"]]  # AI Runtime 기본 환경에는 없음
 
 RUNNER = '''\
-import shutil, subprocess, sys
+import os, shutil, subprocess, sys
 from pathlib import Path
 
 SRC = Path("/tmp/km")  # code_source 를 쓰기 가능한 곳으로 복사 (folds.csv, results/ 생성)
@@ -55,7 +56,8 @@ for args in PIP:  # 모델별 설치 실패는 해당 모델만 실패하도록 
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", *args])
 subprocess.run([sys.executable, "-m", "pip", "list"], stdout=open(out / "pip_list.txt", "w"))
 subprocess.run(["nvidia-smi"])
-code = subprocess.run([sys.executable, "-u", "-m", "km", "run", COMP, *ARGS], cwd=SRC).returncode
+env = {**os.environ, "KM_WEIGHTS": WEIGHTS}  # gated 가중치 위치 (km/models/tfm.py gated_file)
+code = subprocess.run([sys.executable, "-u", "-m", "km", "run", COMP, *ARGS], cwd=SRC, env=env).returncode
 if (SRC / "results").exists():
     shutil.copytree(SRC / "results", out / "results", dirs_exist_ok=True)
 print(f"km run 종료 코드: {code}")
@@ -93,7 +95,23 @@ def ensure_data(comp, profile: str, volume: str) -> str:
     return remote
 
 
-def snapshot(work: Path, comp: str, run_args: list[str], models: list[str], data: str, out: str):
+def ensure_weights(models: list[str], profile: str, volume: str) -> str:
+    """모델이 쓰는 HF gated 가중치가 Volume 에 없으면 로컬(HF 로그인)에서 받아 업로드. weights 폴더 경로를 반환."""
+    remote = f"{volume}/weights"
+    for repo, filename in dict.fromkeys(f for m in models for f in GATED.get(base_name(m), [])):
+        dst = f"dbfs:{remote}/{repo}/{filename}"
+        ls = databricks(profile, "fs", "ls", f"dbfs:{remote}/{repo}", capture=True, check=False)
+        if ls.returncode == 0 and filename in ls.stdout.splitlines():  # 파일 경로 ls 는 실패하므로 폴더를 봄
+            continue
+        from huggingface_hub import hf_hub_download
+
+        print(f"가중치 업로드: {repo}/{filename} → {remote}")
+        databricks(profile, "fs", "mkdir", f"dbfs:{remote}/{repo}")  # 파일 cp 는 상위 폴더를 만들지 않음
+        databricks(profile, "fs", "cp", "--overwrite", hf_hub_download(repo, filename), dst, timeout=3600)
+    return remote
+
+
+def snapshot(work: Path, comp: str, run_args: list[str], models: list[str], data: str, out: str, weights: str):
     code = work / "km"
     for p in CODE_PATHS:
         src = ROOT / p
@@ -101,7 +119,7 @@ def snapshot(work: Path, comp: str, run_args: list[str], models: list[str], data
             shutil.copytree(src, code / p, ignore=shutil.ignore_patterns("__pycache__", "data"))
         else:
             shutil.copy(src, code / p)
-    consts = dict(COMP=comp, ARGS=run_args, PIP=BASE_PIP + pip_args(models), DATA=data, OUT=out)
+    consts = dict(COMP=comp, ARGS=run_args, PIP=BASE_PIP + pip_args(models), DATA=data, OUT=out, WEIGHTS=weights)
     (code / "air_runner.py").write_text("".join(f"{k} = {v!r}\n" for k, v in consts.items()) + "\n" + RUNNER)
     return code
 
@@ -116,7 +134,7 @@ def submit(cfg: dict, comp: str, run_args: list[str], models: list[str], acceler
     data = ensure_data(load_competition(comp), cfg["profile"], cfg["volume"])
 
     work = Path(tempfile.mkdtemp())
-    code = snapshot(work, comp, run_args, models, data, out)
+    code = snapshot(work, comp, run_args, models, data, out, ensure_weights(models, cfg["profile"], cfg["volume"]))
     (work / "air.yaml").write_text(yaml.safe_dump({
         "experiment_name": f"km-{comp}", "mlflow_run_name": key,
         "compute": {"accelerator_type": accelerator, "num_accelerators": int(n_gpus[1])},

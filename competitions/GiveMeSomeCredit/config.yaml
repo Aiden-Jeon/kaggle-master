@@ -12,3 +12,10 @@ cv:
   n_splits: 5
   seed: 42
   stratify: true
+llm:                      # LLM 결정 모델(llm*) 질문
+  description: >-
+    Consumer credit record. RevolvingUtilizationOfUnsecuredLines is the balance / credit limit on cards and
+    personal lines, DebtRatio is monthly debt payments / monthly gross income, the NumberOfTime... columns count
+    past-due events in the last 2 years.
+  question: Will this borrower experience 90+ days past-due delinquency or worse within the next 2 years?
+  labels: {0: "No", 1: "Yes, serious delinquency"}

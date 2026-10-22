@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -275,6 +276,56 @@ class _Causilo(BaseEstimator):
 
 def make_causilo(task, cat_cols, seed):
     return _TFM(lambda cat_idx: _Causilo(task, cat_idx, seed), cat_cols)
+
+
+def gated_file(repo: str, filename: str) -> str:
+    """gated 가중치(models.GATED) 경로. 원격에서는 KM_WEIGHTS(로컬에서 Volume 에 올려 둔 폴더), 없으면 HF 에서 받음
+    (HF 로그인 + 모델 페이지 사용 동의 필요)."""
+    local = Path(os.environ.get("KM_WEIGHTS", "/nonexistent")) / repo / filename
+    if local.exists():
+        return str(local)
+    from huggingface_hub import hf_hub_download
+
+    return hf_hub_download(repo, filename)
+
+
+class _SapRPT(BaseEstimator):
+    """SAP-RPT-1-OSS (구 ConTextTab). 열 이름·셀 값을 문장 임베딩으로 쓰는 ICL 모델이라
+    정수 코드(_TFM)가 아니라 DataFrame 을 그대로 전달. 컨텍스트 상한·bagging 은 모델이 직접 처리."""
+
+    def __init__(self, task, cat_cols, max_context_size, bagging):
+        self.task, self.cat_cols = task, cat_cols
+        self.max_context_size, self.bagging = max_context_size, bagging
+
+    def _df(self, X):
+        # SAP-RPT 는 X 와 y(0 부터 새 인덱스의 Series)를 인덱스 기준으로 concat → fold 로 자른 원래 인덱스면 라벨이 어긋남
+        X = X.reset_index(drop=True)
+        for c in self.cat_cols:
+            X[c] = X[c].astype(object)  # category dtype 대신 문자열 값 (결측은 NaN 유지)
+        return X
+
+    def fit(self, X, y):
+        import sap_rpt_oss.rpt as rpt
+
+        rpt.hf_hub_download = lambda repo_id, filename: gated_file(repo_id, filename)
+        cls = rpt.SAP_RPT_OSS_Regressor if self.task == "regression" else rpt.SAP_RPT_OSS_Classifier
+        self.model_ = cls(max_context_size=self.max_context_size, bagging=self.bagging).fit(self._df(X), y)
+        return self
+
+    def predict(self, X):
+        return np.asarray(self.model_.predict(self._df(X)))
+
+    def predict_proba(self, X):
+        return self.model_.predict_proba(self._df(X))
+
+
+def make_sap_rpt(task, cat_cols, seed):
+    # README 의 기본값(컨텍스트 8192, bagging 8)은 80GB GPU 기준 → A10/T4 용 경량 설정
+    return _SapRPT(task, cat_cols, max_context_size=2048, bagging=8)
+
+
+def make_sap_rpt8k(task, cat_cols, seed):
+    return _SapRPT(task, cat_cols, max_context_size=8192, bagging=8)  # H100/A100 80GB
 
 
 def _patch_exaone_sdpa():

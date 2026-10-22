@@ -7,3 +7,13 @@ cv:
   n_splits: 5
   seed: 42
   stratify: true
+llm:                      # LLM 결정 모델(llm*) 질문
+  description: >-
+    Passenger record from the Spaceship Titanic, an interstellar liner that collided with a spacetime anomaly;
+    almost half of the passengers were transported to an alternate dimension.
+    CryoSleep = 1 means the passenger was in suspended animation and confined to their cabin.
+    RoomService, FoodCourt, ShoppingMall, Spa, VRDeck and TotalSpend are log(1 + amount billed);
+    NoSpend = 1 means nothing was billed. Deck / CabinNum / Side come from the cabin id (Side P = Port, S = Starboard).
+    GroupSize is the travel group size, FamilySize the number of passengers sharing the surname.
+  question: Was this passenger transported to another dimension?
+  labels: {false: "No", true: "Yes, transported"}

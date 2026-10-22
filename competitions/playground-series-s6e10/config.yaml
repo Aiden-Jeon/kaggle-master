@@ -9,3 +9,6 @@ cv:
   n_splits: 5
   seed: 42
   stratify: true
+llm:                      # LLM 결정 모델(llm*) 질문
+  description: Airline passenger survey record. Service ratings are 0-5 (0 = not applicable), delays in minutes.
+  question: How did this passenger rate their overall satisfaction with the flight?

@@ -2,6 +2,7 @@
 
 새 모델 추가: 아래 REGISTRY 에 `이름: (모듈, 팩토리 함수명)` 등록, Kaggle 설치가 필요하면 KAGGLE_PIP 에도 추가.
 팩토리 시그니처: make(task: str, cat_cols: list[str], seed: int, **설정) -> estimator (설정은 VARIANTS 에서 전달)
+  (LLM 결정 모델은 prompt: dict 도 받음 — Competition.llm_prompt, models/llm.py 참고)
 
 이름 뒤에 `@<spec>` 을 붙이면 컨텍스트 선택 래퍼로 감쌈 (예: tabpfn_v2@knn1000, models/context.py 참고).
 """
@@ -9,6 +10,7 @@
 from __future__ import annotations
 
 import importlib
+import inspect
 
 REGISTRY = {
     "lgbm": ("km.models.gbdt", "make_lgbm"),
@@ -24,6 +26,12 @@ REGISTRY = {
     "exaone": ("km.models.tfm", "make_exaone"),  # 가중치 비상업 라이선스
     "kumo": ("km.models.tfm", "make_kumo"),  # NVIDIA Kumo-Tabular (large)
     "causilo": ("km.models.tfm", "make_causilo"),  # Nums AI Causilo, 가중치 비상업 라이선스
+    "sap_rpt": ("km.models.tfm", "make_sap_rpt"),  # SAP-RPT-1-OSS 컨텍스트 2048 (gated, 연구용 라이선스)
+    "sap_rpt8k": ("km.models.tfm", "make_sap_rpt8k"),  # 컨텍스트 8192, 80GB GPU 용
+    "llm": ("km.models.llm", "make_llm"),  # Qwen3-4B 객관식 zero-shot + 로지스틱 보정 (분류 전용)
+    "llm_lgbm": ("km.models.llm", "make_llm_lgbm"),  # 피처 + Qwen3-4B 선택지 확률 → LightGBM
+    "llm8b": ("km.models.llm", "make_llm8b"),  # Qwen3-8B (fp16 16GB → T4 한 장에는 안 들어감, A10 이상)
+    "llm8b_lgbm": ("km.models.llm", "make_llm8b_lgbm"),
 }
 
 # 실행 목록에서 뺀 모델. km lb 는 제출 설명에서 이름을 알아본 뒤 순위 집계·자동 제출에서 뺌
@@ -45,7 +53,14 @@ KAGGLE_PIP = {
     "exaone": [["exaonetabular @ git+https://github.com/LGAI-Research/EXAONE-Tabular.git"]],
     "kumo": [["structured-data-models"]],
     "causilo": [["causilo"]],
+    "sap_rpt": [["git+https://github.com/SAP-samples/sap-rpt-1-oss"]],
+    "sap_rpt8k": [["git+https://github.com/SAP-samples/sap-rpt-1-oss"]],
+    # transformers 는 torch 를 의존성으로 설치하지 않음 (AI Runtime 기본 환경에는 torch 없음), >=4.51 은 Qwen3 지원 버전
+    **{m: [["torch", "transformers>=4.51"]] for m in ("llm", "llm_lgbm", "llm8b", "llm8b_lgbm")},
 }
+
+# HF gated 가중치 (repo, 파일). 원격에는 HF 토큰을 보내지 않으므로 `km databricks` 가 로컬에서 받아 Volume 에 올림
+GATED = {m: [("SAP/sap-rpt-1-oss", "2025-11-04_sap-rpt-one-oss.pt")] for m in ("sap_rpt", "sap_rpt8k")}
 
 
 # 앙상블 크기·피처 상한 벤치마크용 변형: 이름 → (REGISTRY 모델, 인자). 기본값을 정하면 정리
@@ -61,9 +76,10 @@ def base_name(name: str) -> str:
 
 
 def make_model(name: str, task: str, cat_cols: list[str], seed: int, max_rows: int | None = None,
-               max_features: int | None = None):
+               max_features: int | None = None, prompt: dict | None = None):
     """max_rows / max_features: TFM 컨텍스트 행·피처 상한 (대회 설정 tfm_max_rows / tfm_max_features).
-    GBDT 와 `@spec` 래퍼(컨텍스트를 직접 고름)에는 적용 안 함."""
+    GBDT 와 `@spec` 래퍼(컨텍스트를 직접 고름)에는 적용 안 함.
+    prompt: LLM 결정 모델용 질문 (팩토리가 prompt 인자를 받을 때만 전달)."""
     base, _, spec = name.partition("@")
     base, kwargs = VARIANTS.get(base, (base, {}))
     kwargs = dict(kwargs)
@@ -72,6 +88,8 @@ def make_model(name: str, task: str, cat_cols: list[str], seed: int, max_rows: i
         raise KeyError(f"알 수 없는 모델 '{base}'. 사용 가능: {', '.join([*REGISTRY, *VARIANTS])}")
     module, fn = REGISTRY[base]
     factory = getattr(importlib.import_module(module), fn)
+    if "prompt" in inspect.signature(factory).parameters:
+        kwargs["prompt"] = prompt
     if not spec:
         from km.models.tfm import _TFM
 
