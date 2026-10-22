@@ -47,3 +47,6 @@ timestamp,comp,model,metric,cv,cv_std,n_folds,seconds,cv_mae,note,where,cv_auc,c
 2026-10-21T11:49:35,playground-series-s4e2,tabicl@knn1000_g256_imp_bal20,accuracy,0.9042778687734848,0.0047644977109625,5,141.6,,ctx phase1c s4e2 group size,colab,,0.287717264272144,
 2026-10-21T11:51:52,playground-series-s4e2,tabicl@knn2000_g256_imp_bal20,accuracy,0.9078427594180556,0.003441336697994,5,137.3,,ctx phase1c s4e2 group size,colab,,0.2752429513321015,
 2026-10-21T22:25:42,playground-series-s6e10,lgbm,auc,0.9584918006270589,0.0,1,69.7,,ctx phase2 s6e10 1fold,colab,,0.2287789013836151,0.9250680712085588
+2026-10-22T02:09:22,playground-series-s6e10,tabicl@knn2000_g256_imp_bal20,auc,0.9566207590373108,0.0,1,818.5,,ctx phase2 s6e10 1fold,colab,,0.2311568201688262,0.925832755651161
+2026-10-22T02:30:50,playground-series-s6e10,tabicl@knn4000_g256_imp_bal20,auc,0.9570852607424216,0.0,1,1287.8,,ctx phase2 s6e10 1fold,colab,,0.2298724632253212,0.9261543519120684
+2026-10-22T02:32:09,playground-series-s6e10,tabicl,auc,0.955638857838598,0.0,1,78.7,,ctx phase2 s6e10 1fold,colab,,0.2365157400818263,0.922523887455602
