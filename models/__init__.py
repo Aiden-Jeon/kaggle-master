@@ -16,6 +16,7 @@ REGISTRY = {
     "catboost": ("models.gbdt", "make_catboost"),
     "tabpfn": ("models.tfm", "make_tabpfn"),  # 최신 기본 버전 (첫 실행 시 브라우저 라이선스 동의 필요)
     "tabpfn_v2": ("models.tfm", "make_tabpfn_v2"),  # 라이선스 동의 없이 사용 가능
+    "tabpfn35": ("models.tfm", "make_tabpfn35"),  # TabPFN-3.5 명시 (라이선스 동의 필요)
     "tabicl": ("models.tfm", "make_tabicl"),
     "limix2": ("models.tfm", "make_limix2"),  # 400M, 비상업 라이선스
     "limix2m": ("models.tfm", "make_limix2m"),  # 2M 경량판, 비상업 라이선스
@@ -23,6 +24,7 @@ REGISTRY = {
     "mitra_ft": ("models.tfm", "make_mitra_ft"),  # Mitra-v2 + 50 step fine-tuning
     "exaone": ("models.tfm", "make_exaone"),  # 가중치 비상업 라이선스
     "kumo": ("models.tfm", "make_kumo"),  # NVIDIA Kumo-Tabular (large)
+    "causilo": ("models.tfm", "make_causilo"),  # Nums AI Causilo, 가중치 비상업 라이선스
 }
 
 _LIMIX = [["--no-deps", "git+https://github.com/limix-ldm-ai/LimiX.git"], ["einops", "kditransform", "nvtx"],
@@ -32,6 +34,7 @@ _LIMIX = [["--no-deps", "git+https://github.com/limix-ldm-ai/LimiX.git"], ["eino
 KAGGLE_PIP = {
     "tabpfn": [["tabpfn"]],
     "tabpfn_v2": [["tabpfn"]],
+    "tabpfn35": [["tabpfn"]],
     "tabicl": [["tabicl"]],
     "limix2": _LIMIX,  # torch==2.9.1 고정을 피하려고 --no-deps 로 설치
     "limix2m": _LIMIX,
@@ -39,6 +42,7 @@ KAGGLE_PIP = {
     "mitra_ft": [["autogluon.tabular[mitra]>=1.6"]],
     "exaone": [["exaonetabular @ git+https://github.com/LGAI-Research/EXAONE-Tabular.git"]],
     "kumo": [["structured-data-models"]],
+    "causilo": [["causilo"]],
 }
 
 

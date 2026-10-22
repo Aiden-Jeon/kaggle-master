@@ -67,6 +67,10 @@ def make_tabpfn_v2(task, cat_cols, seed):
     return _tabpfn(task, cat_cols, seed, version="v2")
 
 
+def make_tabpfn35(task, cat_cols, seed):
+    return _tabpfn(task, cat_cols, seed, version="v3.5")
+
+
 def make_tabicl(task, cat_cols, seed):
     from tabicl import TabICLClassifier, TabICLRegressor
 
@@ -177,6 +181,37 @@ def make_limix2m(task, cat_cols, seed):
 def make_kumo(task, cat_cols, seed):
     # 컨텍스트가 1만 행을 넘으면 질의 2만 행으로는 T4 메모리를 넘음 (S4E2 에서 13.7GiB 요청)
     return _TFM(lambda cat_idx: _Kumo(task, cat_idx), cat_cols, chunk=2048)
+
+
+class _Causilo(BaseEstimator):
+    """Causilo 는 범주형 지정 인자가 없음 → 정수 코드 열을 pandas category 로 넘겨 범주형으로 인식시킴."""
+
+    def __init__(self, task, cat_idx, seed):
+        self.task, self.cat_idx, self.seed = task, cat_idx, seed
+
+    def _df(self, X):
+        df = pd.DataFrame(X)
+        for i in self.cat_idx:
+            df[i] = pd.Categorical(df[i], categories=self.cats_[i])
+        return df
+
+    def fit(self, X, y):
+        from causilo import CausiloClassifier, CausiloRegressor
+
+        self.cats_ = {i: np.unique(X[~np.isnan(X[:, i]), i]) for i in self.cat_idx}
+        cls = CausiloRegressor if self.task == "regression" else CausiloClassifier
+        self.model_ = cls(random_state=self.seed).fit(self._df(X), y)
+        return self
+
+    def predict(self, X):
+        return self.model_.predict(self._df(X))
+
+    def predict_proba(self, X):
+        return self.model_.predict_proba(self._df(X))
+
+
+def make_causilo(task, cat_cols, seed):
+    return _TFM(lambda cat_idx: _Causilo(task, cat_idx, seed), cat_cols)
 
 
 def _patch_exaone_sdpa():
