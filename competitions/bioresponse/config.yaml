@@ -5,6 +5,7 @@ id_col: null              # 테스트에 id 열 없음 → MoleculeId 는 1 부�
 metric: logloss           # 리더보드 지표
 submit_proba: true
 submit_columns: [MoleculeId, PredictedProbability]
+tfm_max_features: 500     # 피처 1,776개 → TFM 에는 LightGBM 중요도 상위 500개 (fold 0: tabpfn_v2 458s→34s, logloss 0.449→0.440)
 cv:
   n_splits: 5
   seed: 42

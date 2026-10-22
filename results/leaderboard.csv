@@ -7,16 +7,10 @@ house-prices-advanced-regression-techniques,kumo,rmse,0.1190980989041099,0.10895
 house-prices-advanced-regression-techniques,tabpfn_v2+kumo,rmse,,0.10925,,80,4372,1.8,2026-10-21,ensemble avg: tabpfn_v2+kumo (OOF-selected),57480050
 house-prices-advanced-regression-techniques,tabpfn_v2,rmse,0.115126771919351,0.11094,,91,4372,2.1,2026-10-19,tabpfn_v2 5-fold (CV rmse from EXPERIMENTS.md),57399770
 house-prices-advanced-regression-techniques,catboost,rmse,0.1250131497343884,0.12199,,733,4372,16.8,2026-10-19,catboost 5-fold (CV rmse from EXPERIMENTS.md),57399777
-playground-series-s4e2,limix2,accuracy,0.9117930436458233,0.91437,0.91076,916,3590,25.5,2026-10-21,"limix2 (5-fold CV best, default)",57464316
-playground-series-s4e2,limix2+tabicl+kumo@knn1000_g16_imp,accuracy,,0.91184,0.91194,1272,3590,35.4,2026-10-21,ensemble avg: limix2+tabicl+kumo@knn1000_g16_imp (OOF-selected),57480064
 playground-series-s4e2,exaone@knn1000_g16_imp,accuracy,0.9087098949802486,0.91076,0.90688,1452,3590,40.4,2026-10-21,"exaone@knn1000_g16_imp (5-fold, kNN context)",57479967
 playground-series-s4e2,kumo@knn1000_g16_imp,accuracy,0.9087580691781482,0.91076,0.90959,1452,3590,40.4,2026-10-21,"kumo@knn1000_g16_imp (5-fold, kNN context)",57479963
 playground-series-s4e2,tabpfn_v2@knn1000_g16_imp,accuracy,0.9072164948453608,0.90787,0.90634,1843,3590,51.3,2026-10-21,"tabpfn_v2@knn1000_g16_imp (5-fold, kNN context)",57479971
 playground-series-s6e10,lgbm+catboost,auc,,0.958,,2064,2649,77.9,2026-10-21,ensemble avg: lgbm+catboost (OOF-selected),57480071
 playground-series-s6e10,lgbm,auc,0.9583820596544326,0.95792,,2110,2649,79.7,2026-10-21,"lgbm (5-fold CV best, default)",57464321
-spaceship-titanic,limix2+kumo,accuracy,,0.81949,,33,1746,1.9,2026-10-21,ensemble avg: limix2+kumo (OOF-selected),57480054
-spaceship-titanic,limix2+kumo+catboost,accuracy,,0.81739,,36,1746,2.1,2026-10-21,ensemble avg: limix2+kumo+catboost (OOF-selected),57480058
-spaceship-titanic,limix2,accuracy,0.8244564592200622,0.81809,,36,1746,2.1,2026-10-21,"limix2 (5-fold CV best, default)",57464310
 spaceship-titanic,exaone@knn1000_g8_imp,accuracy,0.8151386172782699,0.81014,,103,1746,5.9,2026-10-21,"exaone@knn1000_g8_imp (5-fold, kNN context)",57479974
 titanic,exaone,accuracy,0.8462401795735129,0.77511,,4623,11490,40.2,2026-10-21,"exaone (5-fold CV best, default)",57464313
-titanic,limix2m+limix2,accuracy,,0.76794,,8024,11490,69.8,2026-10-21,ensemble avg: limix2m+limix2 (OOF-selected),57480060

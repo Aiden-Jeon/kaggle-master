@@ -27,6 +27,7 @@ class Competition:
     target_transform: str | None = None  # 회귀 타깃 변환 (예: log1p)
     submit_proba: bool = False  # 분류 대회에서 레이블 대신 양성 클래스 확률 제출
     tfm_max_rows: int | None = None  # TFM 컨텍스트 행 상한 (큰 데이터용), GBDT 에는 적용 안 함
+    tfm_max_features: int | None = None  # TFM 피처 상한 (넓은 데이터용), 넘으면 LightGBM 중요도 상위만 사용
     train_file: str = "train.csv"
     test_file: str = "test.csv"
     submit_columns: list[str] | None = None  # 제출 파일 열 이름 [id, 예측]. 기본은 [id_col, target]

@@ -78,13 +78,24 @@ def run_model(name, comp, X, y, X_test, cat_cols, folds, max_folds=None, no_test
 
     for f in run_folds:
         tr, va = folds != f, folds == f
-        model = make_model(name, comp.task, cat_cols, seed=comp.cv["seed"], max_rows=comp.tfm_max_rows)
+        model = make_model(name, comp.task, cat_cols, seed=comp.cv["seed"], max_rows=comp.tfm_max_rows,
+                           max_features=comp.tfm_max_features)
+        t_fit = time.time()
         model.fit(X[tr], y[tr])
-        oof[va] = predict(model, X[va], comp.task)
+        t_pred = time.time()
+        # 검증 fold 와 테스트를 한 번에 예측 → TFM 이 컨텍스트를 fold 당 한 번만 처리
+        if no_test:
+            oof[va] = predict(model, X[va], comp.task)
+        elif getattr(model, "joint_predict", True):
+            pred = predict(model, pd.concat([X[va], X_test]), comp.task)
+            oof[va], test = pred[:va.sum()], pred[va.sum():]
+        else:
+            oof[va], test = predict(model, X[va], comp.task), predict(model, X_test, comp.task)
         if not no_test:
-            test_pred += predict(model, X_test, comp.task) / len(run_folds)
+            test_pred += test / len(run_folds)
         fold_scores.append(score(comp.metric, y[va], oof[va]))
-        print(f"  [{name}] fold {f}: {comp.metric}={fold_scores[-1]:.5f}  ({time.time() - t0:.0f}s)")
+        print(f"  [{name}] fold {f}: {comp.metric}={fold_scores[-1]:.5f}  "
+              f"(fit {t_pred - t_fit:.0f}s, pred {time.time() - t_pred:.0f}s, 누적 {time.time() - t0:.0f}s)")
 
     mask = ~np.isnan(oof).reshape(len(y), -1).any(1)
     scores = {m: score(m, y[mask], oof[mask]) for m in dict.fromkeys([comp.metric, *EXTRA[comp.task]])}
@@ -114,8 +125,9 @@ def main(argv: list[str] | None = None):
     print(f"{comp.name}: train {X.shape}, test {X_test.shape}, cats={cat_cols}")
 
     n_gpus = gpu_count() if args.gpus is None else args.gpus
-    if n_gpus > 1 and len(args.models) > 1 and not os.environ.get("KM_WORKER"):
-        print(f"GPU {n_gpus}장에서 모델 {len(args.models)}개 병렬 실행")
+    # GPU 가 있으면 GPU 1장이어도 모델마다 새 프로세스 → 앞 모델의 GPU/RAM 이 다음 모델에 남지 않음
+    if n_gpus >= 1 and len(args.models) > 1 and not os.environ.get("KM_WORKER"):
+        print(f"GPU {n_gpus}장에서 모델 {len(args.models)}개를 모델별 프로세스로 실행")
         failed = run_parallel(args, n_gpus)
         if failed:
             print(f"실패한 모델: {', '.join(failed)}")

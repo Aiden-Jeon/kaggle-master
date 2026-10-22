@@ -7,6 +7,7 @@
 준비: databricks CLI 로그인 + databricks.local.yaml (환경별 설정이라 git 에서 제외)
     profile: <~/.databrickscfg 프로필>
     volume: /Volumes/<catalog>/<schema>/<volume>   # 대회 데이터와 실행 결과를 둘 UC Volume
+    accelerator: GPU_1xH100                         # 선택. 기본 GPU 종류 (--accelerator 가 우선)
 
 동작: 대회 데이터를 Volume 에 한 번 올려 두고 (없으면 로컬에서 kaggle 로 받아 업로드),
      코드 스냅샷과 함께 `databricks air run` 으로 제출 → 로그 스트리밍 → Volume 의 results/ 를 받아 병합.
@@ -33,6 +34,7 @@ from km.results import RESULTS, merge_results
 from km.download import download
 
 LOCAL_CONFIG = ROOT / "databricks.local.yaml"
+DEFAULT_ACCELERATOR = "GPU_1xH100"  # A10G(24GB)는 TFM 이 OOM 재시도를 반복해 느림
 RUNS = RESULTS / "_air" / "runs.json"  # run_id → 결과 위치 (나중에 --fetch 용)
 BASE_PIP = [["scikit-learn", "lightgbm", "xgboost", "catboost"]]  # AI Runtime 기본 환경에는 없음
 
@@ -63,7 +65,9 @@ sys.exit(code)
 
 def settings(args) -> dict:
     cfg = yaml.safe_load(LOCAL_CONFIG.read_text()) if LOCAL_CONFIG.exists() else {}
-    cfg.update({k: v for k, v in dict(profile=args.profile, volume=args.volume).items() if v})
+    cfg.update({k: v for k, v in dict(profile=args.profile, volume=args.volume, accelerator=args.accelerator).items()
+                if v})
+    cfg.setdefault("accelerator", DEFAULT_ACCELERATOR)
     missing = [k for k in ("profile", "volume") if not cfg.get(k)]
     if missing:
         raise SystemExit(f"{', '.join(missing)} 설정 없음: {LOCAL_CONFIG.name} 에 적거나 --{missing[0]} 로 지정")
@@ -167,7 +171,8 @@ def main(argv: list[str] | None = None):
     add_run_args(ap, models_nargs="*")  # --fetch 일 때는 models 생략
     ap.add_argument("--no-wait", action="store_true", help="제출만 하고 종료 (나중에 --fetch 로 수집)")
     ap.add_argument("--fetch", metavar="RUN_ID", help="이미 끝난 run 의 결과만 받아오기")
-    ap.add_argument("--accelerator", default="GPU_1xA10", help="GPU 종류 (GPU_1xA10, GPU_8xH100 등)")
+    ap.add_argument("--accelerator", help=f"GPU 종류 (GPU_1xA10, GPU_8xH100 등). 기본: {LOCAL_CONFIG.name} 의 "
+                                          f"accelerator, 없으면 {DEFAULT_ACCELERATOR}")
     ap.add_argument("--timeout", type=int, default=720, help="실행 시간 제한 (분)")
     ap.add_argument("--tag", default="", help="실행 이름 태그 (MLflow run 이름·결과 폴더에 붙음)")
     ap.add_argument("--profile", help=f"databricks 프로필 ({LOCAL_CONFIG.name} 값을 덮어씀)")
@@ -180,7 +185,7 @@ def main(argv: list[str] | None = None):
     if not run_id:
         if not args.models:
             ap.error("models 가 필요함 (--fetch 가 아닐 때)")
-        run_id = submit(cfg, args.comp, run_argv(args), args.models, args.accelerator, args.timeout, args.tag)
+        run_id = submit(cfg, args.comp, run_argv(args), args.models, cfg["accelerator"], args.timeout, args.tag)
         if args.no_wait:
             return
         print(f"최종 상태: {wait(cfg['profile'], run_id)}")
