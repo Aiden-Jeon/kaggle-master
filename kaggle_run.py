@@ -17,11 +17,9 @@ import tempfile
 import time
 from pathlib import Path
 
-import pandas as pd
-
 from core.competition import load_competition
 from core.launch import add_run_args, remote_script
-from core.results import RESULTS, append_rows
+from core.results import merge_results
 
 RUNNER = '''\
 import base64, io, os, subprocess, sys, tarfile
@@ -30,8 +28,8 @@ from pathlib import Path
 SRC = Path("/kaggle/working/km")
 tarfile.open(fileobj=io.BytesIO(base64.b64decode(CODE)), mode="r:gz").extractall(SRC)
 
-# 대회 데이터 위치는 Kaggle 이미지에 따라 다르므로 train.csv 를 찾아 연결
-train = next(Path("/kaggle/input").rglob("train.csv"))
+# 대회 데이터 위치는 Kaggle 이미지에 따라 다르므로 학습 파일을 찾아 연결
+train = next(Path("/kaggle/input").rglob(TRAIN))
 data = SRC / "competitions" / COMP / "data"
 data.mkdir(parents=True, exist_ok=True)
 for f in train.parent.iterdir():
@@ -100,12 +98,7 @@ def fetch(kernel: str):
     if not remote.exists():
         print(f"results 없음. 로그 확인: {log}")
         return
-    for d in remote.iterdir():
-        if d.is_dir():
-            shutil.copytree(d, RESULTS / d.name, dirs_exist_ok=True)
-    rows = pd.read_csv(remote / "results.csv").assign(where="kaggle")
-    append_rows(rows)
-    print(rows.to_string(index=False))
+    merge_results(remote, "kaggle")
     print(f"\n로그: {log}")
 
 

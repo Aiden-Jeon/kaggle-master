@@ -35,7 +35,7 @@ os.environ["KAGGLE_API_TOKEN"] = userdata.get("KAGGLE_API_TOKEN")
 for args in [["-U", "kaggle"], *PIP]:  # 모델별 설치 실패는 해당 모델만 실패하도록 계속 진행
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", *args])
 data = SRC / "competitions" / COMP / "data"
-if not (data / "train.csv").exists():
+if not (data / TRAIN).exists():
     subprocess.run(["kaggle", "competitions", "download", "-c", COMP, "-p", str(data)], check=True)
     for z in data.glob("*.zip"):
         zipfile.ZipFile(z).extractall(data)

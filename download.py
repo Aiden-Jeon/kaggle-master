@@ -9,11 +9,10 @@ import subprocess
 import sys
 import zipfile
 
-from core.competition import load_competition
+from core.competition import Competition, load_competition
 
 
-def main():
-    comp = load_competition(sys.argv[1])
+def download(comp: Competition):
     comp.data_dir.mkdir(parents=True, exist_ok=True)
     subprocess.run(["kaggle", "competitions", "download", "-c", comp.name, "-p", str(comp.data_dir)], check=True)
     for z in comp.data_dir.glob("*.zip"):
@@ -24,4 +23,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    download(load_competition(sys.argv[1]))

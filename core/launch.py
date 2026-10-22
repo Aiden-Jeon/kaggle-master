@@ -7,16 +7,16 @@ import base64
 import io
 import tarfile
 
-from core.competition import ROOT
+from core.competition import ROOT, load_competition
 from models import KAGGLE_PIP, base_name
 
 CODE_PATHS = ["core", "models", "run.py", "competitions"]
 
 
-def add_run_args(ap: argparse.ArgumentParser):
+def add_run_args(ap: argparse.ArgumentParser, models_nargs: str = "+"):
     """run.py 로 그대로 전달되는 인자. 새 인자를 추가하면 run_argv 에도 반영."""
     ap.add_argument("comp")
-    ap.add_argument("models", nargs="+")
+    ap.add_argument("models", nargs=models_nargs)
     ap.add_argument("--max-folds", type=int, default=None, help="빠른 확인용: 앞쪽 n개 fold만 실행")
     ap.add_argument("--note", default="", help="results.csv 에 남길 메모")
     ap.add_argument("--no-test", action="store_true", help="실험용: 테스트 예측 생략 (test.npy 저장 안 함)")
@@ -49,6 +49,6 @@ def pip_args(models: list[str]) -> list[list[str]]:
 
 
 def remote_script(args: argparse.Namespace, body: str) -> str:
-    """원격 실행 코드: body 앞에 CODE(코드 묶음)·COMP·ARGS(run.py 인자)·PIP(설치 목록) 변수를 붙임."""
-    return (f"CODE = {bundle()!r}\nCOMP = {args.comp!r}\nARGS = {run_argv(args)!r}\nPIP = {pip_args(args.models)!r}\n\n"
-            + body)
+    """원격 실행 코드: body 앞에 CODE(코드 묶음)·COMP·TRAIN(학습 파일 이름)·ARGS(run.py 인자)·PIP(설치 목록) 변수를 붙임."""
+    return (f"CODE = {bundle()!r}\nCOMP = {args.comp!r}\nTRAIN = {load_competition(args.comp).train_file!r}\n"
+            f"ARGS = {run_argv(args)!r}\nPIP = {pip_args(args.models)!r}\n\n" + body)
