@@ -1,0 +1,10 @@
+name: playground-series-s6e1
+task: regression
+target: exam_score
+id_col: id
+metric: rmse
+tfm_max_rows: 10000
+cv:
+  n_splits: 5
+  seed: 42
+  stratify: false

@@ -1,0 +1,11 @@
+name: otto-group-product-classification-challenge
+task: multiclass
+target: target            # Class_1 ~ Class_9
+id_col: id
+metric: logloss
+submit_proba: true        # 제출 파일은 id + 클래스별 확률 열 (Class_1 ~ Class_9)
+tfm_max_rows: 10000       # 학습 ~5만 행/fold → TFM 컨텍스트는 1만 행 무작위 샘플
+cv:
+  n_splits: 5
+  seed: 42
+  stratify: true
