@@ -1,0 +1,34 @@
+# Databricks AI Runtime 용 이미지 패키지 (Dockerfile 참고).
+# 버전은 km-air:v4 안에 실제로 설치된 값 (실행 결과의 pip_list.txt, 2026-10-22). 다시 빌드해도 같은 환경이 되도록 고정.
+# serverless environment version 6 에서는 모델 그룹마다 torch 가 달랐음 (tabpfn·kumo 쪽 2.14.1 / autogluon 쪽 2.13.0)
+# → 함께 설치되는 2.13.0 사용
+
+# 기본
+numpy==2.5.4
+pandas==2.3.3
+scipy==1.18.1
+scikit-learn==1.9.1
+pyyaml==6.0.3
+torch==2.13.0
+huggingface_hub==1.33.0
+mlflow-skinny==3.12.0
+databricks-sdk==0.122.0
+
+# GBDT
+lightgbm==4.7.0
+xgboost==3.4.1
+catboost==1.2.10
+
+# TFM
+tabpfn==9.2.0
+tabicl==2.2.0
+structured-data-models==0.2.1
+autogluon.tabular[mitra]==1.6.3
+exaonetabular @ git+https://github.com/LGAI-Research/EXAONE-Tabular.git@841927fc4f2c573db5c88325f64ecc4fe5affd12
+causilo==1.0.3
+
+# LimiX 의존성 (LimiX 자체는 torch==2.9.1 고정을 피하려고 Dockerfile 에서 --no-deps 로 설치)
+einops==0.8.2
+kditransform==1.2.0
+nvtx==0.2.16
+numba==0.68.0

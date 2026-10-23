@@ -331,6 +331,25 @@ sap_rpt 는 House 49s, Spaceship 245s, S4E2 649s. llm_lgbm 은 llm 채점 결과
 - sap_rpt 는 GBDT 기본 설정과 비슷한 수준, House Prices 에서만 GBDT 보다 확실히 좋음.
   A10G 에 맞춰 컨텍스트 2048행 × bagging 8 로 줄인 설정이라, `sap_rpt8k`(README 기본 8192행, 80GB GPU)를 H100 에서 볼 여지 있음.
 
+## Databricks 실행 준비 시간 (2026-10-23, H100, GiveMeSomeCredit fold 0 tabpfn_v2·tabicl·kumo, 테스트 예측 생략) — 초
+
+fold 당 모델 시간이 10~30초까지 줄어 실행 준비(pip 설치·가중치 다운로드·이미지)가 더 커짐 → 가중치 Volume 캐시와 패키지 이미지.
+
+| 방식 | 패키지 준비 | km run | 러너 안 | 러너 밖 (GPU 할당·환경/이미지 준비) | job 전체 |
+|---|---|---|---|---|---|
+| pip, 가중치 캐시 없음 (e2-demo) | 80 | 61 | 151 | 62 | 213 |
+| pip, 가중치 캐시 (e2-demo) | 78 | 38 | 122 | 60 | 182 |
+| 이미지 km-air:v4, 새 태그 첫 실행 (FEVM) | 2 | 44 | 53 | 170 | 223 |
+| 이미지 km-air:v4, 두 번째 (FEVM) | 6 | 86 ※ | 99 | 54 | **153** |
+
+- 가중치 캐시: km run 61→38s (kumo 33→15s, 가중치 다운로드 제거), 복원 3s.
+- 이미지: pip 78s 제거. 노드에 이미지가 있으면 러너 밖 시간도 pip 방식과 비슷(54 vs 60s). 새 태그·새 노드는 17.5GB 를 받느라 +약 2분.
+- ※ 두 번째 실행은 v3·v4 모두 tabpfn_v2 가 37~40s (첫 실행 11s) — 노드 차이로 추정, 원인 미확인.
+- 이미지는 torch 2.13.0 (autogluon 과 함께 해결된 버전) → tabpfn_v2 AUC 0.85717 → 0.85711 로 소폭 변화.
+- e2-demo-field-eng 는 Artifact Registry 업로드가 403 (관리자 권한 없음, Preview 미활성으로 추정) → FEVM 워크스페이스로 이동.
+  FEVM 에서는 Previews 의 "AI Runtime Beta Features" 를 켜야 UC 이미지 실행 가능 (켠 뒤 반영까지 수 분).
+- 베이스 이미지(dcs-base-aws-runtime)에 없어 추가한 것: libgomp1 (lightgbm), gcc·libc6-dev·python3.12-dev (kumo 의 triton 컴파일).
+
 ## 모델 목록 (`km/models/`)
 
 | 이름 | 모델 | 비고 |

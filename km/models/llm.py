@@ -92,7 +92,13 @@ def _load(model_id: str):
         else:
             dev, dtype = "cpu", torch.float32
         tok = AutoTokenizer.from_pretrained(model_id, padding_side="left")  # 왼쪽 패딩 → 마지막 위치가 답 자리
-        model = AutoModelForCausalLM.from_pretrained(model_id, dtype=dtype).to(dev).eval()
+        # transformers 4.56 에서 torch_dtype → dtype. 이전 버전은 모르는 dtype= 를 조용히 무시하고 fp32 로 올림
+        # (Databricks 이미지 러너는 이미 설치된 패키지면 버전과 무관하게 설치를 건너뜀)
+        import transformers
+        from packaging.version import Version
+
+        arg = "dtype" if Version(transformers.__version__) >= Version("4.56") else "torch_dtype"
+        model = AutoModelForCausalLM.from_pretrained(model_id, **{arg: dtype}).to(dev).eval()
         _LOADED[model_id] = tok, model, dev
     return _LOADED[model_id]
 

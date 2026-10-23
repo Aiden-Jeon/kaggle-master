@@ -56,3 +56,22 @@ uv run km lb bioresponse --submit 2
 ```
 
 모델: `lgbm`, `xgb`, `catboost`, `tabpfn_v2`, `tabicl`, `tabpfn`(최신 버전, 브라우저 라이선스 동의 필요라 Kaggle에서는 사용 불가).
+
+### Databricks 실행 이미지
+
+실행마다 pip 설치를 하지 않도록 패키지를 미리 넣은 이미지(`docker/air/`)를 Unity Catalog 에 올려 두고 씀.
+모델 가중치는 Volume 의 `cache/models.tar` 에 모여 이미지와 상관없이 다시 받지 않음.
+
+```bash
+# 빌드 (linux/amd64. pypi.org 가 막힌 네트워크면 uv 설정을 secret 으로 넘김 → 이미지에는 남지 않음)
+# attestation 을 끄지 않으면 OCI index 가 되어 업로드 마지막(manifest)에서 500
+docker build --platform linux/amd64 --provenance=false --sbom=false \
+  --secret id=uv,src=$HOME/.config/uv/uv.toml -t km-air:v4 docker/air
+# Unity Catalog 에 업로드 → databricks.local.yaml 에 image: <catalog>.<schema>.km-air:v4
+databricks air images push --source km-air:v4 --catalog <catalog> --schema <schema> --artifact km-air:v4
+# 이미지 없이(기본 환경 + pip 설치) 실행하려면
+uv run km databricks titanic lgbm --image none
+```
+
+모델 패키지를 추가·변경하면 `docker/air/requirements.txt` 를 고치고 태그를 올려 다시 빌드.
+Artifact Registry 는 워크스페이스 Preview 가 켜져 있어야 함 (e2-demo-field-eng 는 업로드가 403 → FEVM 워크스페이스 사용).
