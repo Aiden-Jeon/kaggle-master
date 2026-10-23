@@ -315,7 +315,8 @@ Titanic 은 로컬 M3 Pro, 나머지는 Databricks A10G. lgbm·기존 최고는 
 | House Prices (RMSE ↓) | 0.1288 | 0.1151 tabpfn_v2 | 0.1217 | — | — | — | — |
 
 5-fold 시간: llm 은 Titanic 1,185s(로컬), Spaceship 1,490s, S4E2 4,157s / llm8b 는 2,419s, 6,714s /
-sap_rpt 는 House 49s, Spaceship 245s, S4E2 649s. llm_lgbm 은 같은 프로세스에서 llm 채점 결과를 재사용해 GBDT 시간만 듦.
+sap_rpt 는 House 49s, Spaceship 245s, S4E2 649s. llm_lgbm 은 llm 채점 결과를 재사용해 GBDT 시간만 듦
+(측정 당시는 같은 프로세스 캐시, 지금은 모델별 프로세스라 디스크 캐시 `~/.cache/km/llm`).
 
 - LLM zero-shot 은 상식이 통하는 데이터에서 의외로 강함: S4E2(식습관·키·몸무게 → 비만도)는 라벨 없이 7클래스 0.81.
   가상 세계인 Spaceship 은 AUC 0.73.

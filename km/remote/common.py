@@ -8,7 +8,7 @@ import io
 import tarfile
 
 from km.competition import ROOT, load_competition
-from km.models import KAGGLE_PIP, base_name
+from km.models import GATED, KAGGLE_PIP, base_name
 
 CODE_PATHS = ["km", "competitions"]  # 원격에서는 이 위치를 cwd 로 두고 `python -m km run` 실행
 
@@ -50,5 +50,8 @@ def pip_args(models: list[str]) -> list[list[str]]:
 
 def remote_script(args: argparse.Namespace, body: str) -> str:
     """원격 실행 코드: body 앞에 CODE(코드 묶음)·COMP·TRAIN(학습 파일 이름)·ARGS(`km run` 인자)·PIP(설치 목록) 변수를 붙임."""
+    gated = [m for m in args.models if base_name(m) in GATED]
+    if gated:  # Kaggle·Colab 에는 HF 토큰도 Volume 도 없어 매 fold 401 로 실패
+        raise SystemExit(f"{', '.join(gated)}: HF gated 가중치가 필요한 모델이라 `km databricks` 에서만 실행 가능")
     return (f"CODE = {bundle()!r}\nCOMP = {args.comp!r}\nTRAIN = {load_competition(args.comp).train_file!r}\n"
             f"ARGS = {run_argv(args)!r}\nPIP = {pip_args(args.models)!r}\n\n" + body)

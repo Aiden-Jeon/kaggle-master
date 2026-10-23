@@ -27,11 +27,7 @@ REGISTRY = {
     "kumo": ("km.models.tfm", "make_kumo"),  # NVIDIA Kumo-Tabular (large)
     "causilo": ("km.models.tfm", "make_causilo"),  # Nums AI Causilo, 가중치 비상업 라이선스
     "sap_rpt": ("km.models.tfm", "make_sap_rpt"),  # SAP-RPT-1-OSS 컨텍스트 2048 (gated, 연구용 라이선스)
-    "sap_rpt8k": ("km.models.tfm", "make_sap_rpt8k"),  # 컨텍스트 8192, 80GB GPU 용
     "llm": ("km.models.llm", "make_llm"),  # Qwen3-4B 객관식 zero-shot + 로지스틱 보정 (분류 전용)
-    "llm_lgbm": ("km.models.llm", "make_llm_lgbm"),  # 피처 + Qwen3-4B 선택지 확률 → LightGBM
-    "llm8b": ("km.models.llm", "make_llm8b"),  # Qwen3-8B (fp16 16GB → T4 한 장에는 안 들어감, A10 이상)
-    "llm8b_lgbm": ("km.models.llm", "make_llm8b_lgbm"),
 }
 
 # 실행 목록에서 뺀 모델. km lb 는 제출 설명에서 이름을 알아본 뒤 순위 집계·자동 제출에서 뺌
@@ -54,19 +50,23 @@ KAGGLE_PIP = {
     "kumo": [["structured-data-models"]],
     "causilo": [["causilo"]],
     "sap_rpt": [["git+https://github.com/SAP-samples/sap-rpt-1-oss"]],
-    "sap_rpt8k": [["git+https://github.com/SAP-samples/sap-rpt-1-oss"]],
-    # transformers 는 torch 를 의존성으로 설치하지 않음 (AI Runtime 기본 환경에는 torch 없음), >=4.51 은 Qwen3 지원 버전
-    **{m: [["torch", "transformers>=4.51"]] for m in ("llm", "llm_lgbm", "llm8b", "llm8b_lgbm")},
+    # transformers 는 torch 를 의존성으로 설치하지 않음 (AI Runtime 기본 환경에는 torch 없음).
+    # >=4.56: from_pretrained 의 dtype= 인자 (그 전 버전은 조용히 무시하고 fp32 로 올려 OOM)
+    "llm": [["torch", "transformers>=4.56"]],
 }
 
 # HF gated 가중치 (repo, 파일). 원격에는 HF 토큰을 보내지 않으므로 `km databricks` 가 로컬에서 받아 Volume 에 올림
-GATED = {m: [("SAP/sap-rpt-1-oss", "2025-11-04_sap-rpt-one-oss.pt")] for m in ("sap_rpt", "sap_rpt8k")}
+GATED = {"sap_rpt": [("SAP/sap-rpt-1-oss", "2025-11-04_sap-rpt-one-oss.pt")]}
 
 
-# 앙상블 크기·피처 상한 벤치마크용 변형: 이름 → (REGISTRY 모델, 인자). 기본값을 정하면 정리
+# 설정만 다른 변형: 이름 → (REGISTRY 모델, 인자). kumo_e4 는 앙상블 크기 벤치마크용 (기본값을 정하면 정리)
 # 인자 중 max_features 는 대회 설정 tfm_max_features 대신 쓰고, 나머지는 팩토리로 전달
 VARIANTS = {
     "kumo_e4": ("kumo", dict(n_estimators=4)),
+    "sap_rpt8k": ("sap_rpt", dict(max_context_size=8192)),  # README 기본값, 80GB GPU 용
+    "llm_lgbm": ("llm", dict(head="lgbm")),  # 피처 + 선택지 확률 → LightGBM
+    "llm8b": ("llm", dict(model_id="Qwen/Qwen3-8B")),  # fp16 16GB → T4 한 장에는 안 들어감, A10 이상
+    "llm8b_lgbm": ("llm", dict(model_id="Qwen/Qwen3-8B", head="lgbm")),
 }
 
 

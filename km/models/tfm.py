@@ -319,13 +319,9 @@ class _SapRPT(BaseEstimator):
         return self.model_.predict_proba(self._df(X))
 
 
-def make_sap_rpt(task, cat_cols, seed):
-    # README 의 기본값(컨텍스트 8192, bagging 8)은 80GB GPU 기준 → A10/T4 용 경량 설정
-    return _SapRPT(task, cat_cols, max_context_size=2048, bagging=8)
-
-
-def make_sap_rpt8k(task, cat_cols, seed):
-    return _SapRPT(task, cat_cols, max_context_size=8192, bagging=8)  # H100/A100 80GB
+def make_sap_rpt(task, cat_cols, seed, max_context_size=2048, bagging=8):
+    # README 의 기본값(컨텍스트 8192, bagging 8)은 80GB GPU 기준 → 기본은 A10/T4 용 경량 설정 (sap_rpt8k 는 VARIANTS)
+    return _SapRPT(task, cat_cols, max_context_size=max_context_size, bagging=bagging)
 
 
 def _patch_exaone_sdpa():

@@ -4,7 +4,10 @@
 확률만 읽음. LLM 은 라벨을 보지 않으므로(zero-shot) 학습 fold 는 보정·결합에만 사용 → fold 간 누수 없음.
 
   llm       선택지 log 확률 → 로지스틱 회귀로 보정
-  llm_lgbm  원래 피처 + 선택지 log 확률 → LightGBM
+  llm_lgbm  원래 피처 + 선택지 log 확률 → LightGBM  (llm8b* 와 함께 models/__init__.py 의 VARIANTS)
+
+채점 결과는 모델별로 디스크(KM_LLM_CACHE, 기본 ~/.cache/km/llm)에 저장 → GPU 에서 모델마다 따로 뜨는 `km run`
+프로세스 사이(llm → llm_lgbm)와 fold 사이에서 다시 채점하지 않음.
 
 질문은 competitions/<slug>/config.yaml 의 llm 블록:
   llm:
@@ -16,25 +19,55 @@
 
 from __future__ import annotations
 
+import hashlib
+import os
+import pickle
 import time
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
 
 QWEN3_4B = "Qwen/Qwen3-4B"  # 1.7B 는 내용과 무관하게 한 글자만 고름 (Titanic zero-shot AUC 0.55)
-QWEN3_8B = "Qwen/Qwen3-8B"
 LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 SYSTEM = "You are a fast, calibrated decision model. Answer with the letter of the single most likely option."
 
+CACHE = Path(os.environ.get("KM_LLM_CACHE", Path.home() / ".cache" / "km" / "llm"))
+
 _LOADED: dict[str, tuple] = {}
-_SCORES: dict[tuple[str, str], np.ndarray] = {}  # (모델, 프롬프트) → 선택지 log 확률. fold·모델 간 재계산 방지
+_SCORES: dict[str, dict[str, np.ndarray]] = {}  # 모델 → {프롬프트 해시: 선택지 log 확률}
+
+
+def _key(text: str) -> str:
+    return hashlib.sha1(f"{SYSTEM}\n{text}".encode()).hexdigest()  # 시스템 프롬프트가 바뀌면 다른 키
+
+
+def _cache_path(model_id: str) -> Path:
+    return CACHE / f"{model_id.replace('/', '--')}.pkl"
+
+
+def _cache(model_id: str) -> dict[str, np.ndarray]:
+    if model_id not in _SCORES:
+        path = _cache_path(model_id)
+        _SCORES[model_id] = pickle.loads(path.read_bytes()) if path.exists() else {}
+    return _SCORES[model_id]
+
+
+def _save(model_id: str):
+    """디스크 내용과 합쳐 원자적으로 저장 (동시에 뜬 다른 프로세스가 쓴 항목을 덮어쓰지 않도록)."""
+    path = _cache_path(model_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    merged = {**(pickle.loads(path.read_bytes()) if path.exists() else {}), **_SCORES[model_id]}
+    tmp = path.with_suffix(f".{os.getpid()}.tmp")
+    tmp.write_bytes(pickle.dumps(merged))
+    tmp.replace(path)
 
 
 def _fmt(v) -> str:
     if pd.isna(v):
         return "unknown"
-    return f"{v:.4g}" if isinstance(v, float) else str(v)
+    return f"{v:.4g}" if isinstance(v, (float, np.floating)) else str(v)  # float32 도 짧게
 
 
 def row_texts(X: pd.DataFrame, prompt: dict) -> list[str]:
@@ -66,7 +99,9 @@ def _load(model_id: str):
 
 def score(model_id: str, texts: list[str], n_options: int, batch: int = 16) -> np.ndarray:
     """텍스트마다 선택지 글자의 log 확률 (n, n_options). 선택지 밖 토큰은 버리고 선택지끼리 다시 정규화."""
-    todo = list(dict.fromkeys(t for t in texts if (model_id, t) not in _SCORES))
+    cache = _cache(model_id)
+    keys = [_key(t) for t in texts]
+    todo = list({k: t for k, t in zip(keys, texts) if k not in cache}.items())  # 중복 제거한 (키, 텍스트)
     if todo:
         import torch
 
@@ -74,7 +109,7 @@ def score(model_id: str, texts: list[str], n_options: int, batch: int = 16) -> n
         ids = [tok.encode(LETTERS[i], add_special_tokens=False)[0] for i in range(n_options)]
         chats = [tok.apply_chat_template([{"role": "system", "content": SYSTEM}, {"role": "user", "content": t}],
                                          tokenize=False, add_generation_prompt=True, enable_thinking=False)
-                 for t in todo]
+                 for _, t in todo]
         order = np.argsort([len(c) for c in chats])  # 길이가 비슷한 것끼리 묶어 패딩 최소화
         t0 = time.time()
         for s in range(0, len(order), batch):
@@ -83,10 +118,11 @@ def score(model_id: str, texts: list[str], n_options: int, batch: int = 16) -> n
             with torch.no_grad():
                 logits = model(**enc, logits_to_keep=1).logits[:, -1, ids].float()
             for i, row in zip(idx, torch.log_softmax(logits, -1).cpu().numpy()):
-                _SCORES[model_id, todo[i]] = row
+                cache[todo[i][0]] = row
+        _save(model_id)
         print(f"    [llm] {model_id}: {len(todo)}행 채점 ({time.time() - t0:.0f}s, "
               f"{len(todo) / max(time.time() - t0, 1e-9):.1f}행/s)", flush=True)
-    return np.stack([_SCORES[model_id, t] for t in texts])
+    return np.stack([cache[k] for k in keys])
 
 
 class _LLM(BaseEstimator):
@@ -108,6 +144,8 @@ class _LLM(BaseEstimator):
     def fit(self, X, y):
         if self.task == "regression" or not self.prompt or not self.prompt["options"]:
             raise ValueError("LLM 결정 모델은 분류 대회만 지원 (prompt 의 options 필요)")
+        if len(self.prompt["options"]) > len(LETTERS):
+            raise ValueError(f"클래스 {len(self.prompt['options'])}개: 선택지 글자(A~Z) 26개를 넘는 다중 분류는 지원 안 함")
         F = self._feats(X)
         k = len(self.prompt["options"])
         zero_shot = (F[:, :k] + F[:, k:]).argmax(1)  # 두 순서 평균
@@ -133,17 +171,5 @@ class _LLM(BaseEstimator):
         return self.model_.predict_proba(self._in(X))
 
 
-def make_llm(task, cat_cols, seed, prompt):
-    return _LLM(task, cat_cols, seed, prompt, QWEN3_4B, "lr")
-
-
-def make_llm_lgbm(task, cat_cols, seed, prompt):
-    return _LLM(task, cat_cols, seed, prompt, QWEN3_4B, "lgbm")
-
-
-def make_llm8b(task, cat_cols, seed, prompt):
-    return _LLM(task, cat_cols, seed, prompt, QWEN3_8B, "lr")
-
-
-def make_llm8b_lgbm(task, cat_cols, seed, prompt):
-    return _LLM(task, cat_cols, seed, prompt, QWEN3_8B, "lgbm")
+def make_llm(task, cat_cols, seed, prompt, model_id=QWEN3_4B, head="lr"):
+    return _LLM(task, cat_cols, seed, prompt, model_id, head)
