@@ -17,8 +17,8 @@ COPY requirements.txt /tmp/requirements.txt
 RUN --mount=type=secret,id=uv,target=/run/secrets/uv.toml \
     if [ -f /run/secrets/uv.toml ]; then export UV_CONFIG_FILE=/run/secrets/uv.toml; fi; \
     uv pip install --no-cache -r /tmp/requirements.txt && \
-    uv pip install --no-cache --no-deps "git+https://github.com/limix-ldm-ai/LimiX.git"
-RUN uv pip list > /opt/pip_list.txt
+    uv pip install --no-cache --no-deps \
+      "git+https://github.com/limix-ldm-ai/LimiX.git@516bf396333feb3198cf7aff8a6c10421f218e24"
 # 베이스 이미지에 없는 시스템 패키지. 큰 패키지 레이어 캐시를 깨지 않도록 뒤에 둠
 #   libgomp1: lightgbm 의 OpenMP 런타임
 #   gcc, libc6-dev, python3.12-dev: triton 이 커널 런처(cuda_utils.c)를 컴파일 (kumo). Python.h 는 /usr/include/python3.12

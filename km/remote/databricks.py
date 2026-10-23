@@ -43,7 +43,7 @@ BASE_PIP = [["scikit-learn", "lightgbm", "xgboost", "catboost"]]  # AI Runtime �
 MODEL_CACHE = "cache/models.tar"  # Volume 안의 모델 가중치 캐시 (Hugging Face·TabPFN)
 
 RUNNER = '''\
-import importlib.metadata, os, shutil, subprocess, sys, tarfile, time
+import contextlib, importlib.metadata, os, re, shutil, subprocess, sys, tarfile, time, uuid
 from pathlib import Path
 
 T0 = time.time()
@@ -60,26 +60,52 @@ data.mkdir(parents=True, exist_ok=True)
 for f in Path(DATA).iterdir():
     (data / f.name).symlink_to(f)
 
+
+def canon(name):
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def dist_name(spec):  # "pkg[extra]>=1", "pkg @ git+...", "git+https://.../Repo.git@sha" → 배포 이름
+    if spec.startswith("git+"):
+        return spec.split("#")[0].rstrip("/").rsplit("/", 1)[-1].split("@")[0].removesuffix(".git")
+    return re.split(r"[\\s\\[<>=!~@;]", spec, maxsplit=1)[0]
+
+
+INSTALLED = {canon(d.metadata["Name"]) for d in importlib.metadata.distributions()}
 out = Path(OUT)
 out.mkdir(parents=True, exist_ok=True)
-for args in PIP:  # 이미지를 쓰면 비어 있음. 모델별 설치 실패는 해당 모델만 실패하도록 계속 진행
+for args in PIP:  # 모델별 설치 실패는 해당 모델만 실패하도록 계속 진행
+    # 이미지에서는 이미 설치된 패키지는 건너뜀 (이미지를 다시 빌드하지 않고 추가한 모델만 설치).
+    # 기본 환경에서는 -U 업그레이드 등 지정한 그대로 설치
+    if IMAGE and all(canon(dist_name(a)) in INSTALLED for a in args if not a.startswith("-")):
+        continue
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", *args])
 (out / "pip_list.txt").write_text("\\n".join(sorted(f"{d.metadata['Name']}=={d.version}"
                                                    for d in importlib.metadata.distributions())) + "\\n")
 step("패키지 준비")
 
 # 모델 가중치: Volume 의 tar 를 로컬 디스크에 풀어 쓰고 (XDG_CACHE_HOME 아래 huggingface/, tabpfn/),
-# 새로 받은 가중치가 있으면 tar 를 다시 만듦. 동시에 끝난 실행끼리는 나중 것이 덮어씀 (빠진 가중치는 다음에 다시 받음)
+# km run 이 성공하고 새로 받은 가중치가 있으면 tar 를 다시 만듦. 캐시는 있으면 좋은 것 → 읽기·쓰기 실패는 경고만.
+# 동시에 끝난 실행끼리는 나중 것이 덮어씀 (빠진 가중치는 다음에 다시 받음)
 cache = Path("/tmp/model_cache")
 cache.mkdir(parents=True, exist_ok=True)
-if Path(CACHE).exists():
-    with tarfile.open(CACHE) as tar:
-        tar.extractall(cache, filter="fully_trusted")  # HF 캐시는 snapshots → blobs 심볼릭 링크
+try:
+    if Path(CACHE).exists():
+        with tarfile.open(CACHE) as tar:
+            tar.extractall(cache, filter="fully_trusted")  # HF 캐시는 snapshots → blobs 심볼릭 링크
+except (tarfile.TarError, OSError, EOFError) as e:
+    print(f"[runner] 모델 캐시 읽기 실패 → 가중치를 새로 받음: {e!r}", flush=True)
+    shutil.rmtree(cache, ignore_errors=True)
+    cache.mkdir(parents=True, exist_ok=True)
 
 
-def weights():
+def weights():  # .locks 와 덜 받은 파일(.incomplete)은 캐시에 넣지 않음
     return {p for d in ("huggingface", "tabpfn") for p in (cache / d).rglob("*")
-            if p.is_file() and ".locks" not in p.parts}
+            if p.is_file() and ".locks" not in p.parts and p.suffix != ".incomplete"}
+
+
+def keep(t):
+    return None if ".locks" in t.name or t.name.endswith(".incomplete") else t
 
 
 before = weights()
@@ -91,15 +117,20 @@ step("km run 종료")
 if (SRC / "results").exists():
     shutil.copytree(SRC / "results", out / "results", dirs_exist_ok=True)
 new = weights() - before
-if new:
-    Path(CACHE).parent.mkdir(parents=True, exist_ok=True)
-    tmp = Path(f"{CACHE}.{os.getpid()}.tmp")
-    with tarfile.open(tmp, "w") as tar:
-        for d in ("huggingface", "tabpfn"):
-            if (cache / d).exists():
-                tar.add(cache / d, arcname=d, filter=lambda t: None if ".locks" in t.name else t)
-    os.replace(tmp, CACHE)
-    step(f"모델 캐시 갱신 (새 파일 {len(new)}개)")
+if code == 0 and new:
+    tmp = Path(f"{CACHE}.{uuid.uuid4().hex}.tmp")  # 컨테이너마다 PID 가 같을 수 있어 uuid
+    try:
+        Path(CACHE).parent.mkdir(parents=True, exist_ok=True)
+        with tarfile.open(tmp, "w") as tar:
+            for d in ("huggingface", "tabpfn"):
+                if (cache / d).exists():
+                    tar.add(cache / d, arcname=d, filter=keep)
+        os.replace(tmp, CACHE)
+        step(f"모델 캐시 갱신 (새 파일 {len(new)}개)")
+    except (tarfile.TarError, OSError) as e:
+        print(f"[runner] 모델 캐시 갱신 실패 (결과에는 영향 없음): {e!r}", flush=True)
+        with contextlib.suppress(OSError):
+            tmp.unlink(missing_ok=True)
 print(f"km run 종료 코드: {code}")
 sys.exit(code)
 '''
@@ -110,7 +141,7 @@ def settings(args) -> dict:
     cfg.update({k: v for k, v in dict(profile=args.profile, volume=args.volume, accelerator=args.accelerator,
                                       image=args.image).items() if v})
     cfg.setdefault("accelerator", DEFAULT_ACCELERATOR)
-    if cfg.get("image") == "none":
+    if str(cfg.get("image")).lower() == "none":  # --image none / YAML 의 None·null
         cfg["image"] = None
     missing = [k for k in ("profile", "volume") if not cfg.get(k)]
     if missing:
@@ -137,7 +168,8 @@ def ensure_data(comp, profile: str, volume: str) -> str:
     return remote
 
 
-def snapshot(work: Path, comp: str, run_args: list[str], pip: list[list[str]], data: str, out: str, cache: str):
+def snapshot(work: Path, comp: str, run_args: list[str], models: list[str], data: str, out: str, cache: str,
+             image: str | None):
     code = work / "km"
     for p in CODE_PATHS:
         src = ROOT / p
@@ -145,7 +177,8 @@ def snapshot(work: Path, comp: str, run_args: list[str], pip: list[list[str]], d
             shutil.copytree(src, code / p, ignore=shutil.ignore_patterns("__pycache__", "data"))
         else:
             shutil.copy(src, code / p)
-    consts = dict(COMP=comp, ARGS=run_args, PIP=pip, DATA=data, OUT=out, CACHE=cache)
+    consts = dict(COMP=comp, ARGS=run_args, PIP=BASE_PIP + pip_args(models), IMAGE=bool(image), DATA=data, OUT=out,
+                  CACHE=cache)
     (code / "air_runner.py").write_text("".join(f"{k} = {v!r}\n" for k, v in consts.items()) + "\n" + RUNNER)
     return code
 
@@ -159,11 +192,10 @@ def submit(cfg: dict, comp: str, run_args: list[str], models: list[str], acceler
     out = f"{cfg['volume']}/runs/{key}"
     data = ensure_data(load_competition(comp), cfg["profile"], cfg["volume"])
 
-    # 이미지에는 패키지가 미리 설치돼 있음 (docker/air) → 실행 중 pip 설치 생략
+    # 이미지에는 패키지가 미리 설치돼 있음 (docker/air) → 러너가 이미 있는 패키지는 설치를 건너뜀
     image = cfg.get("image")
-    pip = [] if image else BASE_PIP + pip_args(models)
     work = Path(tempfile.mkdtemp())
-    code = snapshot(work, comp, run_args, pip, data, out, f"{cfg['volume']}/{MODEL_CACHE}")
+    code = snapshot(work, comp, run_args, models, data, out, f"{cfg['volume']}/{MODEL_CACHE}", image)
     (work / "air.yaml").write_text(yaml.safe_dump({
         "experiment_name": f"km-{comp}", "mlflow_run_name": key,
         "compute": {"accelerator_type": accelerator, "num_accelerators": int(n_gpus[1])},
