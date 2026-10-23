@@ -1,6 +1,37 @@
 # kaggle-master
 
-Tabular Foundation Model(TabPFN, TabICL 등)을 GBDT 베이스라인과 같은 CV fold 위에서 비교하는 Kaggle 실험 프레임워크.
+Tabular Foundation Model(TabPFN, TabICL, Kumo 등)을 GBDT 베이스라인(LightGBM, XGBoost, CatBoost)과
+같은 CV fold 위에서 비교하는 Kaggle 실험 프레임워크.
+
+- 대회마다 `config.yaml` + `features.py` 만 쓰면 모든 모델이 같은 fold·같은 피처로 돌아감
+- 튜닝 없는 기본 설정으로 비교 (모델 자체의 기본 성능을 보려는 목적)
+- 같은 명령으로 로컬, Kaggle Notebook, Colab, Databricks AI Runtime(서버리스 GPU)에서 실행하고 결과를 한곳(`results/`)에 모음
+- 저장된 테스트 예측으로 제출하고, 제출 기록에서 리더보드 순위를 집계
+
+## 결과 요약
+
+13개 대회 (12개는 5-fold CV, Bioresponse 는 TFM fold 0 만). 대회별 표·분석은 [EXPERIMENTS.md](EXPERIMENTS.md).
+† `limix2` 는 느려서 실행 목록에서 뺀 모델 — 기록은 남겼지만 지금 코드로는 다시 돌릴 수 없고 `km lb` 집계에서도 빠짐.
+
+| 대회 | 학습 행 | 지표 | CV 1위 | 최고 LB 순위 (public) |
+|---|---|---|---|---|
+| Restaurant Revenue | 137 | RMSE ↓ | kumo | 상위 15.3% (tabpfn_v2) |
+| Titanic | 891 | acc ↑ | exaone | 상위 40.2% (exaone) |
+| House Prices | 1,460 | RMSE ↓ | tabpfn_v2 | **상위 1.8%** (kumo) |
+| Bioresponse | 3,751 | logloss ↓ | 5-fold 미실행 | 미제출 |
+| Mercedes-Benz | 4,209 | R² ↑ | kumo | 상위 47.1% (kumo) |
+| Spaceship Titanic | 8,693 | acc ↑ | limix2† (현재 모델 중 kumo) | **상위 2.0%** (limix2†+kumo) |
+| S4E2 | 20,758 | acc ↑ | limix2† (현재 모델 중 tabicl) | 상위 25.5% (limix2†) |
+| Amazon | 32,769 | AUC ↑ | catboost | 상위 3.8% (catboost) |
+| Otto | 61,878 | logloss ↓ | lgbm | 상위 12.0% (kumo) |
+| GiveMeSomeCredit | 150,000 | AUC ↑ | catboost | 상위 2.9% (catboost) |
+| Allstate | 188,318 | MAE ↓ | kumo | 상위 63.0% (kumo) |
+| S6E1 | 630,000 | RMSE ↓ | xgb | 상위 62.7% (xgb) |
+| S6E10 | 699,635 | AUC ↑ | lgbm | 상위 77.9% (lgbm+catboost) |
+
+- 작은 데이터에서는 TFM 이 GBDT 와 같거나 앞서고, 수십만 행에서는 GBDT 가 확실히 앞섬 (TFM 은 컨텍스트를 1만 행으로 잘라 씀).
+- TFM 중에서는 kumo 가 가장 꾸준함. 범주 ID 만 있는 데이터(Amazon)는 catboost 가 크게 앞섬 (원인은 추정).
+- 상위 모델 간 차이는 대부분 fold std 안 → 작은 대회일수록 CV 순위가 LB 에서 자주 뒤집힘.
 
 ## 구조
 
@@ -17,13 +48,31 @@ km/
   competition.py, features.py, metrics.py, results.py   # 대회 설정·데이터·fold, 공통 피처, 지표, 결과 저장
   models/                         # 모델 레지스트리 (km/models/__init__.py 에 등록), @spec 컨텍스트 선택 (context.py)
   remote/                         # km kaggle / colab / databricks: 같은 실험을 원격 GPU 에서 실행 후 결과 수집
+docker/air/                       # Databricks 실행 이미지 (패키지 미리 설치)
+results/
+  results.csv                     # 실행마다 한 줄 (CV 점수, fold std, 시간, 실행 위치)
+  leaderboard.csv                 # 제출별 public/private 점수와 순위
+  <slug>/<model>/                 # OOF·테스트 예측 (git 제외)
+EXPERIMENTS.md                    # 실험 결과와 분석
+docs/known-issues.md              # 겪은 오류와 해결, Kaggle·Databricks 운영 메모
 ```
 
 ## 준비
 
+Python 환경은 uv 로 관리 (`uv sync`). 로컬 의존성(`pyproject.toml`)은 GBDT·TabPFN·TabICL 까지이고,
+나머지 TFM 은 원격 실행 때 설치됨 (`KAGGLE_PIP`, `docker/air/requirements.txt`).
+
 1. Kaggle → Settings → API → Create New Token, 토큰을 `~/.kaggle/access_token` 에 저장
 2. 대회 페이지에서 Rules 동의 (예: https://www.kaggle.com/competitions/spaceship-titanic/rules)
 3. Kaggle 계정 전화번호 인증 (Notebook GPU·인터넷 사용에 필요)
+4. (Databricks 사용 시) databricks CLI 로그인 후 저장소 루트에 `databricks.local.yaml` 작성 (git 제외)
+
+```yaml
+profile: <~/.databrickscfg 프로필>
+volume: /Volumes/<catalog>/<schema>/<volume>   # 대회 데이터와 실행 결과를 둘 UC Volume
+accelerator: GPU_1xH100                         # 선택. 기본 GPU 종류 (--accelerator 가 우선)
+image: <catalog>.<schema>.km-air:v4             # 선택. 패키지를 미리 설치한 이미지. 없으면 실행마다 pip 설치
+```
 
 ## 사용
 
@@ -42,13 +91,13 @@ uv run km kaggle spaceship-titanic lgbm xgb catboost tabpfn_v2 tabicl
 uv run km colab make spaceship-titanic tabicl --max-folds 1 -o run.ipynb
 uv run km colab collect output.txt
 
-# Databricks AI Runtime(서버리스 GPU)에서 실행 — databricks.local.yaml 에 profile, volume 지정 (git 제외)
+# Databricks AI Runtime(서버리스 GPU)에서 실행
 # GPU 종류는 --accelerator 또는 databricks.local.yaml 의 accelerator (기본 GPU_1xH100).
 # GPU 1장이어도 모델마다 새 프로세스로 실행, GPU 여러 장이면 모델을 GPU별로 나눠 동시 실행
 # GBDT(lgbm·xgb·catboost)는 GPU 작업에 넣지 않고 CPU serverless 작업으로 따로 제출 (GPU 노드에선 CPU 경합으로 느림)
 uv run km databricks spaceship-titanic lgbm catboost tabpfn_v2
 
-# 제출
+# 제출 (여러 모델이면 테스트 예측 평균)
 uv run km submit spaceship-titanic catboost tabicl --push -m "cb+tabicl"
 
 # 제출 기록 → 리더보드 순위 (results/leaderboard.csv), --submit N: 미제출 모델을 CV 순으로 N개 제출 후 집계
@@ -56,9 +105,62 @@ uv run km lb
 uv run km lb bioresponse --submit 2
 ```
 
-모델: `lgbm`, `xgb`, `catboost`, `tabpfn_v2`, `tabicl`, `tabpfn`(최신 버전, 브라우저 라이선스 동의 필요라 Kaggle에서는 사용 불가).
+공통 실행 인자: `--max-folds N` (앞 N개 fold 만), `--no-test` (테스트 예측 생략), `--note` (results.csv 에 남길 메모).
 
-### Databricks 실행 이미지
+## 모델
+
+`km/models/__init__.py` 의 `REGISTRY` 에 등록된 이름으로 지정.
+
+| 이름 | 모델 | 비고 |
+|---|---|---|
+| `lgbm` / `xgb` / `catboost` | GBDT 베이스라인 | 고정 파라미터, early stopping 없음 |
+| `tabpfn_v2` | TabPFN v2 | 라이선스 동의 없이 사용 가능 |
+| `tabpfn` / `tabpfn35` | TabPFN 최신 / 3.5 | 브라우저 라이선스 동의 필요 → Kaggle 에서 사용 불가 |
+| `tabicl` | TabICL v2 | |
+| `kumo` | NVIDIA Kumo-Tabular (large) | 회귀는 999 분위수 평균. `kumo_e4` 는 estimator 4개 (2.4배 빠름) |
+| `exaone` | EXAONE-Tabular (LG) | 가중치 비상업 라이선스 |
+| `limix2m` | LimiX-2M | 비상업 라이선스. `--no-deps` 설치 (torch==2.9.1 고정 회피). `limix2`(400M)는 느려서 제거 |
+| `mitra` / `mitra_ft` | Mitra-v2 zero-shot / +50 step fine-tune | AutoGluon sklearn 인터페이스. 회귀는 v1 체크포인트 |
+| `causilo` | Nums AI Causilo | 가중치 비상업 라이선스 |
+| `sap_rpt` / `sap_rpt8k` | SAP-RPT-1-OSS (구 ConTextTab), 컨텍스트 2048 / 8192 | HF gated + 연구용 라이선스. `km databricks` 가 가중치를 로컬에서 받아 Volume `weights/` 에 올림 (Kaggle 원격은 미지원) |
+| `llm` / `llm_lgbm`, `llm8b` / `llm8b_lgbm` | Qwen3-4B / 8B 객관식 zero-shot (`km/models/llm.py`) | 분류 전용. `_lgbm` 은 선택지 확률을 피처로 붙여 LightGBM. 질문은 config 의 `llm:` 블록 |
+
+**컨텍스트 선택**: TFM 이름 뒤에 `@<spec>` 을 붙이면 학습 데이터 일부만 컨텍스트로 넘김
+(예: `tabicl@knn2000_g256_imp_bal20`, `tabicl@rand100000`). 형식은 `km/models/context.py` 참고.
+
+**새 모델 추가**: `km/models/__init__.py` 의 `REGISTRY` 에 `이름: (모듈, 팩토리 함수명)` 등록, Kaggle 원격 실행에
+추가 설치가 필요하면 `KAGGLE_PIP` 에도 추가. 같은 모델의 설정 변형은 `VARIANTS` 에.
+
+## 대회 추가
+
+`competitions/<kaggle-slug>/` 에 두 파일을 만듦.
+
+`config.yaml`
+
+```yaml
+name: titanic
+task: binary              # binary | multiclass | regression
+target: Survived
+id_col: PassengerId       # 테스트 파일 id 열 (null 이면 1 부터 행 번호)
+metric: accuracy          # 리더보드 지표 (km/metrics.py)
+cv:
+  n_splits: 5
+  seed: 42
+  stratify: true
+# 선택
+# target_transform: log1p       # 회귀 타깃 변환 (학습·평가는 변환 스케일, 제출 시 역변환)
+# submit_proba: true            # 분류에서 레이블 대신 확률 제출
+# submit_columns: [Id, Prob]    # 제출 파일 열 이름 (기본 [id_col, target])
+# train_file / test_file        # 기본 train.csv / test.csv
+# tfm_max_rows: 10000           # TFM 컨텍스트 행 상한 (큰 데이터, 무작위 샘플)
+# tfm_max_features: 500         # TFM 피처 상한 (넓은 데이터, LightGBM 중요도 상위)
+# llm: {description, question, labels}   # llm* 모델 질문
+```
+
+`features.py`: `build(train, test) -> (X, X_test, cat_cols)`. `km.features` 의 `auto_types`(문자열 → category)와
+`split`(concat 한 train/test 다시 나누기)을 쓰면 짧게 끝남 (예: `competitions/titanic/features.py`).
+
+## Databricks 실행 이미지
 
 실행마다 pip 설치를 하지 않도록 패키지를 미리 넣은 이미지(`docker/air/`)를 Unity Catalog 에 올려 두고 씀.
 모델 가중치는 Volume 의 `cache/models.tar` 에 모여 이미지와 상관없이 다시 받지 않음.
