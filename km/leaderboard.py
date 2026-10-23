@@ -42,8 +42,11 @@ def me() -> str:
 
 
 def submissions(comp: str) -> list[dict]:
-    text = kaggle("competitions", "submissions", "-c", comp, "--format", "json", "--page-size", "200").strip()
-    out = json.loads(text) if text.startswith("[") else []  # 제출이 없으면 "No submissions found" 출력
+    text = kaggle("competitions", "submissions", "-c", comp, "--format", "json", "--page-size", "200")
+    # 제출이 없으면 "No submissions found" 출력. JSON 앞에 버전 경고 줄이 붙기도 함 → 첫 '[' 부터 읽음
+    # (그냥 '['로 시작하는지만 보면 기록이 늘 빈 목록 → 제출한 모델을 또 제출함, 2026-10-23)
+    start = text.find("[")
+    out = json.loads(text[start:]) if start >= 0 else []
     if len(out) == 200:
         print(f"{comp}: 제출이 200개 이상 → 최근 200개만 반영")
     return out

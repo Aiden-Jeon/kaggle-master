@@ -1,16 +1,67 @@
 comp,model,metric,cv,public,private,rank,teams,top_pct,date,description,ref
 GiveMeSomeCredit,catboost,auc,0.8659546771974531,0.86271,0.86886,27,926,2.9,2026-10-22,catboost | 5-fold CV 0.86595,57513135
 GiveMeSomeCredit,lgbm,auc,0.8653352819383563,0.86195,0.86797,64,926,6.9,2026-10-22,lgbm | 5-fold CV 0.86534,57513142
+allstate-claims-severity,kumo,mae,1181.2052231520777,1153.97893,1162.57154,1919,3048,63.0,2026-10-23,kumo | 5-fold CV 1181.20522,57559980
+allstate-claims-severity,kumo,mae,1181.2052231520777,1153.97893,1162.57154,1919,3048,63.0,2026-10-23,kumo | 5-fold CV 1181.20522,57559842
+allstate-claims-severity,lgbm,mae,1188.3029668757413,1169.84993,1179.54147,2054,3048,67.4,2026-10-23,lgbm | 5-fold CV 1188.30297,57559982
+allstate-claims-severity,lgbm,mae,1188.3029668757413,1169.84993,1179.54147,2054,3048,67.4,2026-10-23,lgbm | 5-fold CV 1188.30297,57559848
+allstate-claims-severity,xgb,mae,1188.493413493074,1170.29349,1179.7481,2056,3048,67.5,2026-10-23,xgb | 5-fold CV 1188.49341,57559991
+allstate-claims-severity,xgb,mae,1188.493413493074,1170.29349,1179.7481,2056,3048,67.5,2026-10-23,xgb | 5-fold CV 1188.49341,57559855
+allstate-claims-severity,tabicl,mae,1198.593904075126,1171.3979,1178.60911,2078,3048,68.2,2026-10-23,tabicl | 5-fold CV 1198.59390,57559995
+allstate-claims-severity,tabicl,mae,1198.593904075126,1171.3979,1178.60911,2078,3048,68.2,2026-10-23,tabicl | 5-fold CV 1198.59390,57559860
+allstate-claims-severity,catboost,mae,1188.3834167996297,1172.79015,1181.71188,2084,3048,68.4,2026-10-23,catboost | 5-fold CV 1188.38342,57559988
+allstate-claims-severity,catboost,mae,1188.3834167996297,1172.79015,1181.71188,2084,3048,68.4,2026-10-23,catboost | 5-fold CV 1188.38342,57559852
+allstate-claims-severity,tabpfn_v2,mae,1209.4635313868498,1189.70518,1195.76517,2180,3048,71.5,2026-10-23,tabpfn_v2 | 5-fold CV 1209.46353,57559998
 amazon-employee-access-challenge,catboost,auc,0.8957373076349873,0.91582,0.911,64,1689,3.8,2026-10-22,catboost | 5-fold CV 0.89574,57513127
 amazon-employee-access-challenge,xgb,auc,0.8733991580929394,0.89187,0.88595,529,1689,31.3,2026-10-22,xgb | 5-fold CV 0.87340,57513131
 house-prices-advanced-regression-techniques,kumo,rmse,0.1190980989041099,0.10895,,79,4372,1.8,2026-10-19,kumo 5-fold (CV rmse from EXPERIMENTS.md),57399774
 house-prices-advanced-regression-techniques,tabpfn_v2+kumo,rmse,,0.10925,,80,4372,1.8,2026-10-21,ensemble avg: tabpfn_v2+kumo (OOF-selected),57480050
 house-prices-advanced-regression-techniques,tabpfn_v2,rmse,0.115126771919351,0.11094,,91,4372,2.1,2026-10-19,tabpfn_v2 5-fold (CV rmse from EXPERIMENTS.md),57399770
 house-prices-advanced-regression-techniques,catboost,rmse,0.1250131497343884,0.12199,,733,4372,16.8,2026-10-19,catboost 5-fold (CV rmse from EXPERIMENTS.md),57399777
+mercedes-benz-greener-manufacturing,kumo,r2,0.574157660792367,0.55728,0.55461,1801,3825,47.1,2026-10-23,kumo | 5-fold CV 0.57416,57559939
+mercedes-benz-greener-manufacturing,kumo,r2,0.574157660792367,0.55728,0.55461,1801,3825,47.1,2026-10-23,kumo | 5-fold CV 0.57416,57559822
+mercedes-benz-greener-manufacturing,tabicl,r2,0.5672775894103439,0.55202,0.54922,2435,3825,63.7,2026-10-23,tabicl | 5-fold CV 0.56728,57559943
+mercedes-benz-greener-manufacturing,tabicl,r2,0.5672775894103439,0.55202,0.54922,2435,3825,63.7,2026-10-23,tabicl | 5-fold CV 0.56728,57559827
+mercedes-benz-greener-manufacturing,tabpfn_v2,r2,0.5717124658187183,0.55138,0.54817,2514,3825,65.7,2026-10-23,tabpfn_v2 | 5-fold CV 0.57171,57559941
+mercedes-benz-greener-manufacturing,tabpfn_v2,r2,0.5717124658187183,0.55138,0.54817,2514,3825,65.7,2026-10-23,tabpfn_v2 | 5-fold CV 0.57171,57559826
+mercedes-benz-greener-manufacturing,catboost,r2,0.5563480004121028,0.54961,0.54542,2713,3825,70.9,2026-10-23,catboost | 5-fold CV 0.55635,57559945
+mercedes-benz-greener-manufacturing,catboost,r2,0.5563480004121028,0.54961,0.54542,2713,3825,70.9,2026-10-23,catboost | 5-fold CV 0.55635,57559828
+mercedes-benz-greener-manufacturing,lgbm,r2,0.5127362736836694,0.53074,0.50519,3300,3825,86.3,2026-10-23,lgbm | 5-fold CV 0.51274,57559948
+mercedes-benz-greener-manufacturing,lgbm,r2,0.5127362736836694,0.53074,0.50519,3300,3825,86.3,2026-10-23,lgbm | 5-fold CV 0.51274,57559832
+mercedes-benz-greener-manufacturing,xgb,r2,0.4871235171864212,0.5248,0.4927,3359,3825,87.8,2026-10-23,xgb | 5-fold CV 0.48712,57559954
+otto-group-product-classification-challenge,kumo,logloss,0.4665122150924918,0.43476,0.43612,420,3510,12.0,2026-10-23,kumo | 5-fold CV 0.46651,57559963
+otto-group-product-classification-challenge,kumo,logloss,0.4665122150924918,0.43476,0.43612,420,3510,12.0,2026-10-23,kumo | 5-fold CV 0.46651,57559806
+otto-group-product-classification-challenge,lgbm,logloss,0.4648113570385627,0.45106,0.45273,726,3510,20.7,2026-10-23,lgbm | 5-fold CV 0.46481,57559961
+otto-group-product-classification-challenge,lgbm,logloss,0.4648113570385627,0.45106,0.45273,726,3510,20.7,2026-10-23,lgbm | 5-fold CV 0.46481,57559798
+otto-group-product-classification-challenge,tabicl,logloss,0.4974369418519004,0.4626,0.46554,936,3510,26.7,2026-10-23,tabicl | 5-fold CV 0.49744,57559968
+otto-group-product-classification-challenge,tabicl,logloss,0.4974369418519004,0.4626,0.46554,936,3510,26.7,2026-10-23,tabicl | 5-fold CV 0.49744,57559812
+otto-group-product-classification-challenge,xgb,logloss,0.500179959179991,0.49183,0.49358,1291,3510,36.8,2026-10-23,xgb | 5-fold CV 0.50018,57559971
+otto-group-product-classification-challenge,catboost,logloss,0.5381594377469985,0.5333,0.53362,1693,3510,48.2,2026-10-23,catboost | 5-fold CV 0.53816,57559972
+otto-group-product-classification-challenge,tabpfn_v2,logloss,0.5641153275961441,0.55127,0.55477,1837,3510,52.3,2026-10-23,tabpfn_v2 | 5-fold CV 0.56412,57559975
 playground-series-s4e2,exaone@knn1000_g16_imp,accuracy,0.9087098949802486,0.91076,0.90688,1452,3590,40.4,2026-10-21,"exaone@knn1000_g16_imp (5-fold, kNN context)",57479967
 playground-series-s4e2,kumo@knn1000_g16_imp,accuracy,0.9087580691781482,0.91076,0.90959,1452,3590,40.4,2026-10-21,"kumo@knn1000_g16_imp (5-fold, kNN context)",57479963
 playground-series-s4e2,tabpfn_v2@knn1000_g16_imp,accuracy,0.9072164948453608,0.90787,0.90634,1843,3590,51.3,2026-10-21,"tabpfn_v2@knn1000_g16_imp (5-fold, kNN context)",57479971
+playground-series-s6e1,xgb,rmse,8.773606696524917,8.74403,8.76778,2707,4320,62.7,2026-10-23,xgb | 5-fold CV 8.77361,57560005
+playground-series-s6e1,xgb,rmse,8.773606696524917,8.74403,8.76778,2707,4320,62.7,2026-10-23,xgb | 5-fold CV 8.77361,57559872
+playground-series-s6e1,lgbm,rmse,8.78468584519662,8.75654,8.77902,2950,4320,68.3,2026-10-23,lgbm | 5-fold CV 8.78469,57560010
+playground-series-s6e1,lgbm,rmse,8.78468584519662,8.75654,8.77902,2950,4320,68.3,2026-10-23,lgbm | 5-fold CV 8.78469,57559878
+playground-series-s6e1,catboost,rmse,8.792417873666793,8.76427,8.78578,3068,4320,71.0,2026-10-23,catboost | 5-fold CV 8.79242,57560016
+playground-series-s6e1,catboost,rmse,8.792417873666793,8.76427,8.78578,3068,4320,71.0,2026-10-23,catboost | 5-fold CV 8.79242,57559881
+playground-series-s6e1,kumo,rmse,8.856150097502011,8.81343,8.83475,3449,4320,79.8,2026-10-23,kumo | 5-fold CV 8.85615,57560020
+playground-series-s6e1,kumo,rmse,8.856150097502011,8.81343,8.83475,3449,4320,79.8,2026-10-23,kumo | 5-fold CV 8.85615,57559887
+playground-series-s6e1,tabicl,rmse,8.892721223959333,8.84787,8.87107,3534,4320,81.8,2026-10-23,tabicl | 5-fold CV 8.89272,57560027
+playground-series-s6e1,tabicl,rmse,8.892721223959333,8.84787,8.87107,3534,4320,81.8,2026-10-23,tabicl | 5-fold CV 8.89272,57559893
+playground-series-s6e1,tabpfn_v2,rmse,8.89849285036696,8.85954,8.8804,3572,4320,82.7,2026-10-23,tabpfn_v2 | 5-fold CV 8.89849,57560030
 playground-series-s6e10,lgbm+catboost,auc,,0.958,,2064,2649,77.9,2026-10-21,ensemble avg: lgbm+catboost (OOF-selected),57480071
 playground-series-s6e10,lgbm,auc,0.9583820596544326,0.95792,,2110,2649,79.7,2026-10-21,"lgbm (5-fold CV best, default)",57464321
+restaurant-revenue-prediction,tabpfn_v2,rmse,2441738.2757494496,1684067.91673,1876123.24826,345,2260,15.3,2026-10-23,tabpfn_v2 | 5-fold CV 2441738.27575,57559922
+restaurant-revenue-prediction,kumo,rmse,2426650.170290696,1716773.87278,1965574.8467,618,2260,27.3,2026-10-23,kumo | 5-fold CV 2426650.17029,57559911
+restaurant-revenue-prediction,kumo,rmse,2426650.170290696,1716773.87278,1965574.8467,618,2260,27.3,2026-10-23,kumo | 5-fold CV 2426650.17029,57559786
+restaurant-revenue-prediction,tabicl,rmse,2439687.164842046,1725678.17559,1978684.79918,708,2260,31.3,2026-10-23,tabicl | 5-fold CV 2439687.16484,57559917
+restaurant-revenue-prediction,tabicl,rmse,2439687.164842046,1725678.17559,1978684.79918,708,2260,31.3,2026-10-23,tabicl | 5-fold CV 2439687.16484,57559790
+restaurant-revenue-prediction,catboost,rmse,2640318.5692575653,1795868.59507,1982133.09394,1239,2260,54.8,2026-10-23,catboost | 5-fold CV 2640318.56926,57559924
+restaurant-revenue-prediction,catboost,rmse,2640318.5692575653,1795868.59507,1982133.09394,1239,2260,54.8,2026-10-23,catboost | 5-fold CV 2640318.56926,57559792
+restaurant-revenue-prediction,lgbm,rmse,2650611.0760306,1797245.74254,1927615.19828,1250,2260,55.3,2026-10-23,lgbm | 5-fold CV 2650611.07603,57559929
+restaurant-revenue-prediction,xgb,rmse,2828951.480164966,1994554.72572,2145550.65425,1951,2260,86.3,2026-10-23,xgb | 5-fold CV 2828951.48016,57559933
 spaceship-titanic,exaone@knn1000_g8_imp,accuracy,0.8151386172782699,0.81014,,103,1746,5.9,2026-10-21,"exaone@knn1000_g8_imp (5-fold, kNN context)",57479974
 titanic,exaone,accuracy,0.8462401795735129,0.77511,,4623,11490,40.2,2026-10-21,"exaone (5-fold CV best, default)",57464313
