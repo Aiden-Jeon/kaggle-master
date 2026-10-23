@@ -24,7 +24,7 @@ from km.results import append_rows
 BEGIN, END = "RESULTS_BEGIN", "RESULTS_END"
 
 CELL = '''\
-import base64, io, os, subprocess, sys, tarfile, zipfile
+import base64, io, os, subprocess, sys, tarfile
 from pathlib import Path
 from google.colab import userdata
 
@@ -35,10 +35,8 @@ os.environ["KAGGLE_API_TOKEN"] = userdata.get("KAGGLE_API_TOKEN")
 for args in [["-U", "kaggle"], *PIP]:  # 모델별 설치 실패는 해당 모델만 실패하도록 계속 진행
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", *args])
 data = SRC / "competitions" / COMP / "data"
-if not (data / TRAIN).exists():
-    subprocess.run(["kaggle", "competitions", "download", "-c", COMP, "-p", str(data)], check=True)
-    for z in data.glob("*.zip"):
-        zipfile.ZipFile(z).extractall(data)
+if not (data / TRAIN).exists():  # km download: 번들 안의 zip 까지 풀고, 같은 이름의 압축 안 된 파일을 우선
+    subprocess.run([sys.executable, "-m", "km", "download", COMP], cwd=SRC, check=True)
 subprocess.run(["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv"])
 
 p = subprocess.Popen([sys.executable, "-u", "-m", "km", "run", COMP, *ARGS], cwd=SRC, stdout=subprocess.PIPE,

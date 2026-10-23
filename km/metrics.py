@@ -21,6 +21,7 @@ METRICS = {
     "logloss": (lambda y, p: skm.log_loss(y, p, labels=np.arange(p.shape[1])), False),
     "rmse": (lambda y, p: skm.root_mean_squared_error(y, p), False),
     "mae": (lambda y, p: skm.mean_absolute_error(y, p), False),
+    "r2": (lambda y, p: skm.r2_score(y, p), True),
 }
 
 # 대회 지표 외에 같이 기록할 보조 지표

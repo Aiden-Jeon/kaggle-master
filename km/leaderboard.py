@@ -42,8 +42,22 @@ def me() -> str:
 
 
 def submissions(comp: str) -> list[dict]:
-    text = kaggle("competitions", "submissions", "-c", comp, "--format", "json", "--page-size", "200").strip()
-    out = json.loads(text) if text.startswith("[") else []  # 제출이 없으면 "No submissions found" 출력
+    """제출 기록. 읽지 못하면 빈 목록 대신 예외 → `--submit` 이 이미 낸 모델을 다시 내지 않도록.
+
+    (2026-10-23: JSON 앞에 버전 경고 줄이 붙어 기록이 늘 빈 목록 → 이미 낸 모델 21개를 다시 제출)
+    """
+    text = kaggle("competitions", "submissions", "-c", comp, "--format", "json", "--page-size", "200")
+    if "No submissions found" in text:
+        return []
+    for m in re.finditer(r"^\[", text, re.M):  # 경고 줄은 건너뛰고 '[' 로 시작하는 줄부터 JSON 배열을 찾음
+        try:
+            out = json.JSONDecoder().raw_decode(text, m.start())[0]
+        except json.JSONDecodeError:
+            continue
+        if isinstance(out, list):
+            break
+    else:
+        raise RuntimeError(f"제출 기록을 읽지 못함 (kaggle 출력: {text.strip()[-300:]!r})")
     if len(out) == 200:
         print(f"{comp}: 제출이 200개 이상 → 최근 200개만 반영")
     return out
@@ -149,6 +163,8 @@ def main(argv: list[str] | None = None):
             rows += rank_rows(c, user)
         except subprocess.CalledProcessError as e:  # Rules 미동의 대회 등은 건너뜀
             print(f"{c}: 건너뜀 ({e.stderr.strip().splitlines()[-1] if e.stderr else e})")
+        except RuntimeError as e:  # 제출 기록을 못 읽음 → 이 대회는 제출·집계 모두 건너뜀
+            print(f"{c}: 건너뜀 ({e})")
     if not rows:
         return
     df = pd.DataFrame(rows).sort_values(["comp", "rank", "date"])

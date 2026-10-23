@@ -1,0 +1,9 @@
+name: mercedes-benz-greener-manufacturing
+task: regression
+target: y                 # 테스트 벤치 통과 시간(초)
+id_col: ID
+metric: r2
+cv:
+  n_splits: 5
+  seed: 42
+  stratify: false

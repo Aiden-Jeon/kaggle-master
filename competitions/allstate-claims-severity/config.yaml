@@ -1,0 +1,10 @@
+name: allstate-claims-severity
+task: regression
+target: loss              # 보험금 청구액
+id_col: id
+metric: mae               # 원 스케일 MAE 로 평가 → target_transform 없이 학습
+tfm_max_rows: 10000       # 학습 ~15만 행/fold → TFM 컨텍스트는 1만 행 무작위 샘플
+cv:
+  n_splits: 5
+  seed: 42
+  stratify: false

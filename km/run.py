@@ -15,6 +15,7 @@ import threading
 import time
 import traceback
 from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -39,12 +40,31 @@ def gpu_count() -> int:
     return sum(line.startswith("GPU ") for line in out.splitlines())
 
 
+def cpu_count() -> int:
+    """이 프로세스가 쓸 수 있는 CPU 수 (affinity, cgroup v2 할당량 반영)."""
+    n = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else os.cpu_count() or 1
+    try:
+        quota, period = Path("/sys/fs/cgroup/cpu.max").read_text().split()
+        if quota != "max":
+            n = min(n, max(1, int(quota) // int(period)))
+    except (OSError, ValueError):
+        pass
+    return n
+
+
 def run_parallel(args: argparse.Namespace, n_gpus: int) -> list[str]:
-    """GPU 마다 작업자 하나. 각 작업자가 남은 모델을 하나씩 가져가 자기 GPU 에서 `km run` 을 실행."""
+    """GPU 마다 작업자 하나. 각 작업자가 남은 모델을 하나씩 가져가 자기 GPU 에서 `km run` 을 실행.
+
+    작업자끼리 CPU 를 나눠 씀 → 스레드 수를 CPU 수 / 작업자 수로 제한 (OMP_NUM_THREADS, GBDT 는 KM_THREADS).
+    제한이 없으면 lgbm·xgb 가 각자 전체 코어만큼 스레드를 띄워 극도로 느려짐 (8xH100: 110행 xgb fold 하나 593s).
+    """
     todo: queue.Queue[str] = queue.Queue()
     for m in args.models:
         todo.put(m)
     failed: list[str] = []
+    n_workers = min(n_gpus, len(args.models))
+    threads_per = str(max(1, cpu_count() // n_workers))
+    print(f"작업자 {n_workers}개, 작업자당 CPU 스레드 {threads_per}")
 
     def worker(gpu: int):
         while True:
@@ -52,7 +72,8 @@ def run_parallel(args: argparse.Namespace, n_gpus: int) -> list[str]:
                 name = todo.get_nowait()
             except queue.Empty:
                 return
-            env = {**os.environ, "CUDA_VISIBLE_DEVICES": str(gpu), "KM_WORKER": "1"}
+            env = {**os.environ, "CUDA_VISIBLE_DEVICES": str(gpu), "KM_WORKER": "1",
+                   "OMP_NUM_THREADS": threads_per, "KM_THREADS": threads_per}
             proc = subprocess.Popen([sys.executable, "-u", "-m", "km", "run", args.comp, *run_argv(args, [name])],
                                     env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             for line in proc.stdout:  # 어느 GPU 출력인지 접두어로 구분
@@ -60,7 +81,7 @@ def run_parallel(args: argparse.Namespace, n_gpus: int) -> list[str]:
             if proc.wait() != 0:
                 failed.append(name)
 
-    threads = [threading.Thread(target=worker, args=(g,)) for g in range(min(n_gpus, len(args.models)))]
+    threads = [threading.Thread(target=worker, args=(g,)) for g in range(n_workers)]
     for t in threads:
         t.start()
     for t in threads:

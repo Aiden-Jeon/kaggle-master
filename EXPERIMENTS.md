@@ -179,6 +179,98 @@ TFM 은 fold 마다 학습 데이터에서 1만 행만 무작위로 뽑아 컨�
 - 무작위 컨텍스트를 키우면 kNN 이 못 고친 구간(Personal, 확신 구간 p<.05)이 함께 좋아짐 → 확신 구간 안의 미세한 순위는 전체 분포를 많이 봐야 잡힘.
 - tabicl 20만 행에서 lgbm 과 차이 −0.0008 (처음 −0.004). 단 10만→20만 은 +0.0002, 시간은 4배 → 전체(56만)도 lgbm 을 넘기는 어려워 보임.
 
+## 신규 5개 대회 (2026-10-23, Databricks: TFM 은 H100 1장, GBDT 는 CPU serverless 4코어)
+
+공통: 5-fold, 튜닝 없는 기본 설정. 학습 행이 많은 Otto·Allstate·S6E1 은 TFM 컨텍스트를 1만 행 무작위 샘플로 제한 (`tfm_max_rows`).
+시간은 5-fold 합계 (테스트 예측 포함). GBDT 시간은 CPU 4코어 기준이라 TFM(H100) 시간과 직접 비교하기 어려움.
+
+### Restaurant Revenue (137행, 회귀, 42 피처) — 지표: RMSE ↓
+
+| 모델 | RMSE | ± fold std | 시간 |
+|---|---|---|---|
+| **kumo** | **2,426,650** | 643,737 | 112s |
+| tabicl | 2,439,687 | 643,227 | 38s |
+| tabpfn_v2 | 2,441,738 | 746,207 | 95s |
+| catboost | 2,640,319 | 606,745 | 14s |
+| lgbm | 2,650,611 | 639,363 | 13s |
+| xgb | 2,828,951 | 406,260 | 28s |
+
+- TFM 3개가 GBDT 3개보다 모두 나음. 단 fold 하나가 27행이라 차이(약 20만)가 fold std(40~75만)보다 작음 → 순위 확정 불가.
+
+### Mercedes-Benz (4,209행, 회귀, 364 피처 중 범주형 8) — 지표: R² ↑
+
+| 모델 | R² | ± fold std | 시간 |
+|---|---|---|---|
+| **kumo** | **0.5742** | 0.065 | 49s |
+| tabpfn_v2 | 0.5717 | 0.064 | 88s |
+| tabicl | 0.5673 | 0.070 | 45s |
+| catboost | 0.5564 | 0.063 | 101s |
+| lgbm | 0.5127 | 0.062 | 65s |
+| xgb | 0.4871 | 0.057 | 70s |
+
+- 적은 행 + 많은 피처에서 TFM 우위. TFM 끼리, catboost 와는 fold std 안. lgbm·xgb 와는 0.05 이상 차이.
+
+### Otto (61,878행, 9-class 분류, 93 피처) — 지표: logloss ↓
+
+| 모델 | logloss | ± fold std | 시간 |
+|---|---|---|---|
+| **lgbm** | **0.4648** | 0.0059 | 842s |
+| kumo | 0.4665 | 0.0034 | 150s |
+| tabicl | 0.4974 | 0.0047 | 97s |
+| xgb | 0.5002 | 0.0056 | 456s |
+| catboost | 0.5382 | 0.0066 | 960s |
+| tabpfn_v2 | 0.5641 | 0.0060 | 653s |
+
+- lgbm 과 kumo 는 사실상 동률 (차이 0.0017 < fold std). 컨텍스트 1만 행 제한에서 TFM 간 편차가 큼 (kumo 0.467 ↔ tabpfn_v2 0.564).
+
+### Allstate Claims Severity (188,318행, 회귀, 130 피처 중 범주형 116) — 지표: MAE ↓
+
+| 모델 | MAE | ± fold std | 시간 |
+|---|---|---|---|
+| **kumo** | **1,181.2** | 6.2 | 212s |
+| lgbm | 1,188.3 | 5.7 | 227s |
+| catboost | 1,188.4 | 6.3 | 4,764s |
+| xgb | 1,188.5 | 6.0 | 181s |
+| tabicl | 1,198.6 | 5.2 | 138s |
+| tabpfn_v2 | 1,209.5 | 6.3 | 677s |
+
+- 컨텍스트가 학습 데이터의 7% 뿐인데 kumo 가 GBDT 보다 MAE 7 낮음 (fold std 수준). 타깃 변환 없이 원 스케일로 학습 (지표가 원 스케일 MAE).
+- catboost 는 범주형 116개 때문에 CPU 4코어에서 80분.
+
+### Playground S6E1 (630,000행, 회귀, 11 피처 중 범주형 7) — 지표: RMSE ↓
+
+| 모델 | RMSE | ± fold std | 시간 |
+|---|---|---|---|
+| **xgb** | **8.7736** | 0.0126 | 172s |
+| lgbm | 8.7847 | 0.0125 | 284s |
+| catboost | 8.7924 | 0.0123 | 2,158s |
+| kumo | 8.8562 | 0.0118 | 369s |
+| tabicl | 8.8927 | 0.0107 | 71s |
+| tabpfn_v2 | 8.8985 | 0.0076 | 238s |
+
+- GBDT 3개가 TFM 3개보다 모두 나음 (catboost ↔ kumo 0.064 = fold std 의 5배). 컨텍스트가 학습 데이터의 1.6% 라 데이터가 많을수록 GBDT 유리 (S6E10 과 같은 경향).
+
+### 정리
+
+- 작은 데이터(Restaurant 137행, Mercedes 4,209행): TFM 3개가 모두 GBDT 위. 큰 데이터(S6E1 63만 행): GBDT 가 모두 위. 중간(Otto, Allstate): kumo 만 GBDT 와 같거나 조금 앞섬.
+- kumo 는 5개 중 4개 대회에서 TFM 1위, 3개 대회에서 전체 1위.
+
+### 리더보드 제출 (2026-10-23, 종료된 대회 늦은 제출) — 순위는 public LB 기준 (Kaggle API 가 private LB 를 주지 않음)
+
+| 대회 (팀 수) | 1위 모델 · 순위 (상위 %) | GBDT 최고 · 순위 | TFM 최고 · 순위 |
+|---|---|---|---|
+| Otto (3,510) | **kumo 420위 (12.0%)** · public 0.4348 / private 0.4361 | lgbm 726위 (20.7%) | kumo |
+| Restaurant (2,260) | **tabpfn_v2 345위 (15.3%)** · public 1.684M / private 1.876M | catboost 1,239위 (54.8%) | tabpfn_v2 |
+| Mercedes (3,825) | **kumo 1,801위 (47.1%)** · public 0.5573 / private 0.5546 | catboost 2,713위 (70.9%) | kumo |
+| Allstate (3,048) | **kumo 1,919위 (63.0%)** · public 1,154.0 / private 1,162.6 | lgbm 2,054위 (67.4%) | kumo |
+| S6E1 (4,320) | **xgb 2,707위 (62.7%)** · public 8.7440 / private 8.7678 | xgb | kumo 3,449위 (79.8%) |
+
+- LB 순서는 CV 순서와 대체로 같음. 예외: Otto 는 CV 에서 lgbm ≈ kumo 였지만 LB 에서는 kumo 가 확실히 앞섬 (0.435 vs 0.451),
+  Restaurant 는 CV 3위 tabpfn_v2 가 public 1위 (테스트 10만 행 중 채점 행이 적어 노이즈 큼. private 로는 tabpfn_v2 < lgbm < kumo).
+- 튜닝 없는 단일 모델로 Otto·Restaurant 는 상위 12~15%, 나머지는 중하위권. Mercedes·Allstate·S6E1 은 상위권이 대회 특화
+  피처·타깃 변환(Allstate log 변환 등)·앙상블로 촘촘해 기본 설정 단일 모델로는 순위가 낮음.
+- 이번 제출 중 21건은 중복 (`km lb` 가 제출 기록을 못 읽어 이미 낸 모델을 다시 제출, 아래 알려진 문제 참고). 점수는 같음.
+
 ## 컨텍스트 선택 실험 (kNN 컨텍스트, 브랜치 `knn-context`)
 
 가설: 쿼리와 비슷한 학습 샘플 k개만 컨텍스트로 넣어도 전체 데이터만큼 추론할 수 있다 → 대용량에서도 TFM 사용 가능.
@@ -383,6 +475,10 @@ fold 당 모델 시간이 10~30초까지 줄어 실행 준비(pip 설치·가중
 | sap_rpt Titanic accuracy 0.62 (다수 클래스 수준) | SAP-RPT 가 X 와 y(새 0..n 인덱스)를 인덱스 기준 concat → fold 로 자른 X 의 원래 인덱스와 라벨이 어긋남 | 넘기기 전에 `reset_index(drop=True)` |
 | llm `No module named 'torch'` (Databricks) | AI Runtime 기본 환경에 torch 없음, transformers 는 torch 를 의존성으로 설치 안 함 | 설치 목록에 `torch` 추가 |
 | llm8b `CUDA out of memory` (A10G 22GB) | 같은 프로세스에서 앞서 로드한 4B 가 캐시에 남은 채 8B 로드 | 새 모델을 로드할 때 이전 모델을 내림 |
+| GBDT 가 Databricks GPU 노드에서 극도로 느림 (Restaurant 110행 xgb fold 하나 593s, 로컬 0s) | 모델별 프로세스 6개가 한 노드에서 동시 실행, lgbm·xgb 가 각자 전체 코어만큼 스레드를 띄워 CPU 경합 | GBDT 는 CPU serverless 작업으로 따로 제출 (`km databricks` 가 자동 분리), GPU 는 기본 H100 1장. 병렬 작업자마다 CPU 스레드를 CPU 수 / 작업자 수로 제한 (`OMP_NUM_THREADS`·`KM_THREADS`, Kaggle·로컬에도 적용) |
+| Allstate `Expected 132 fields in line 188321, saw 133` | 데이터 묶음 안에 `train.csv` 와 깨진 옛 버전 `train.csv.zip` 이 같이 있어 zip 이 정상 파일을 덮어씀 | `km/download.py` 의 `extract()` 를 `km download`·Kaggle·Colab 이 같이 씀: zip 안의 zip 까지 풀되, 이미 있는 파일과 같은 zip 안에 압축 안 된 쌍이 있는 x.zip 은 건너뜀 |
+| `km lb --submit` 가 이미 낸 모델을 또 제출, 순위 집계 0행 | kaggle CLI 가 JSON 앞에 버전 경고 줄을 출력 → `startswith("[")` 검사 실패로 제출 기록이 늘 빈 목록 | `[` 로 시작하는 줄부터 JSON 배열을 찾고, "No submissions found" 외에 못 읽으면 예외 (빈 목록으로 보고 다시 제출하지 않음) |
+| serverless CPU 작업이 정상 종료인데 FAILED | IPython 위에서 실행돼 `sys.exit(0)` 도 예외로 처리 | 종료 코드가 0 이 아닐 때만 `sys.exit` |
 
 ## 대회별 CV 1위 모델 제출 (2026-10-21)
 
@@ -450,3 +546,4 @@ kNN 컨텍스트 모델 추가 제출 (2026-10-21):
 - [ ] TFM + GBDT 앙상블/스태킹 효과 확인
 - [ ] 패키지 버전 고정 및 실행 시 버전 기록
 - [ ] sap_rpt8k (컨텍스트 8192) H100 에서 5-fold — 컨텍스트를 키우면 TFM 상위권에 붙는지
+- [x] 신규 5개 대회 제출 (30개 모델 전부)
