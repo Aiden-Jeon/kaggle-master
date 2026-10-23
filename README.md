@@ -10,17 +10,18 @@ Tabular Foundation Model(TabPFN, TabICL, Kumo 등)을 GBDT 베이스라인(Light
 
 ## 결과 요약
 
-13개 대회, 5-fold CV. 대회별 표·분석은 [EXPERIMENTS.md](EXPERIMENTS.md).
+13개 대회 (12개는 5-fold CV, Bioresponse 는 TFM fold 0 만). 대회별 표·분석은 [EXPERIMENTS.md](EXPERIMENTS.md).
+† `limix2` 는 느려서 실행 목록에서 뺀 모델 — 기록은 남겼지만 지금 코드로는 다시 돌릴 수 없고 `km lb` 집계에서도 빠짐.
 
 | 대회 | 학습 행 | 지표 | CV 1위 | 최고 LB 순위 (public) |
 |---|---|---|---|---|
 | Restaurant Revenue | 137 | RMSE ↓ | kumo | 상위 15.3% (tabpfn_v2) |
 | Titanic | 891 | acc ↑ | exaone | 상위 40.2% (exaone) |
 | House Prices | 1,460 | RMSE ↓ | tabpfn_v2 | **상위 1.8%** (kumo) |
-| Bioresponse | 3,751 | logloss ↓ | (fold 0 만) kumo | 미제출 |
+| Bioresponse | 3,751 | logloss ↓ | 5-fold 미실행 | 미제출 |
 | Mercedes-Benz | 4,209 | R² ↑ | kumo | 상위 47.1% (kumo) |
-| Spaceship Titanic | 8,693 | acc ↑ | limix2 | **상위 2.0%** (limix2+kumo) |
-| S4E2 | 20,758 | acc ↑ | limix2 | 상위 25.5% (limix2) |
+| Spaceship Titanic | 8,693 | acc ↑ | limix2† (현재 모델 중 kumo) | **상위 2.0%** (limix2†+kumo) |
+| S4E2 | 20,758 | acc ↑ | limix2† (현재 모델 중 tabicl) | 상위 25.5% (limix2†) |
 | Amazon | 32,769 | AUC ↑ | catboost | 상위 3.8% (catboost) |
 | Otto | 61,878 | logloss ↓ | lgbm | 상위 12.0% (kumo) |
 | GiveMeSomeCredit | 150,000 | AUC ↑ | catboost | 상위 2.9% (catboost) |
@@ -29,7 +30,7 @@ Tabular Foundation Model(TabPFN, TabICL, Kumo 등)을 GBDT 베이스라인(Light
 | S6E10 | 699,635 | AUC ↑ | lgbm | 상위 77.9% (lgbm+catboost) |
 
 - 작은 데이터에서는 TFM 이 GBDT 와 같거나 앞서고, 수십만 행에서는 GBDT 가 확실히 앞섬 (TFM 은 컨텍스트를 1만 행으로 잘라 씀).
-- TFM 중에서는 kumo 가 가장 꾸준함. 범주 ID 만 있는 데이터(Amazon)는 catboost 가 크게 앞섬.
+- TFM 중에서는 kumo 가 가장 꾸준함. 범주 ID 만 있는 데이터(Amazon)는 catboost 가 크게 앞섬 (원인은 추정).
 - 상위 모델 간 차이는 대부분 fold std 안 → 작은 대회일수록 CV 순위가 LB 에서 자주 뒤집힘.
 
 ## 구조
