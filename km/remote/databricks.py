@@ -25,6 +25,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -210,30 +211,36 @@ def snapshot(work: Path, comp: str, run_args: list[str], models: list[str], data
     return code
 
 
-def submit(cfg: dict, comp: str, run_args: list[str], models: list[str], accelerator: str, timeout: int,
+def run_key(comp: str, tag: str, kind: str = "") -> str:
+    """실행 이름 = MLflow run 이름·Volume 결과 폴더 이름."""
+    return f"{tag + '-' if tag else ''}{comp}{'-' + kind if kind else ''}-{datetime.now():%Y%m%d-%H%M%S}"
+
+
+def submit(cfg: dict, comp: str, data: str, run_args: list[str], models: list[str], accelerator: str, timeout: int,
            tag: str) -> str:
     n_gpus = re.match(r"GPU_(\d+)x", accelerator)
     if not n_gpus:
         raise SystemExit(f"accelerator 형식이 GPU_<n>x<type> 이 아님: {accelerator}")
-    key = f"{tag + '-' if tag else ''}{comp}-{datetime.now():%Y%m%d-%H%M%S}"
+    key = run_key(comp, tag)
     out = f"{cfg['volume']}/runs/{key}"
-    data = ensure_data(load_competition(comp), cfg["profile"], cfg["volume"])
 
     # 이미지에는 패키지가 미리 설치돼 있음 (docker/air) → 러너가 이미 있는 패키지는 설치를 건너뜀
     image = cfg.get("image")
     work = Path(tempfile.mkdtemp())
-    code = snapshot(work, comp, run_args, models, data, out, f"{cfg['volume']}/{MODEL_CACHE}", bool(image),
-                    ensure_weights(models, cfg["profile"], cfg["volume"]))
-    (work / "air.yaml").write_text(yaml.safe_dump({
-        "experiment_name": f"km-{comp}", "mlflow_run_name": key,
-        "compute": {"accelerator_type": accelerator, "num_accelerators": int(n_gpus[1])},
-        "environment": {"unity_catalog_image": image} if image else {"version": 6},
-        "code_source": {"type": "snapshot", "snapshot": {"root_path": str(code)}},
-        "command": "python $CODE_SOURCE_PATH/air_runner.py",
-        "timeout_minutes": timeout, "max_retries": 0,  # 실패 시 재시도하면 같은 실험을 반복하므로 끔
-    }, sort_keys=False))
-    res = databricks(cfg["profile"], "air", "run", "-f", str(work / "air.yaml"), "-o", "json", capture=True)
-    shutil.rmtree(work)
+    try:
+        code = snapshot(work, comp, run_args, models, data, out, f"{cfg['volume']}/{MODEL_CACHE}", bool(image),
+                        ensure_weights(models, cfg["profile"], cfg["volume"]))
+        (work / "air.yaml").write_text(yaml.safe_dump({
+            "experiment_name": f"km-{comp}", "mlflow_run_name": key,
+            "compute": {"accelerator_type": accelerator, "num_accelerators": int(n_gpus[1])},
+            "environment": {"unity_catalog_image": image} if image else {"version": 6},
+            "code_source": {"type": "snapshot", "snapshot": {"root_path": str(code)}},
+            "command": "python $CODE_SOURCE_PATH/air_runner.py",
+            "timeout_minutes": timeout, "max_retries": 0,  # 실패 시 재시도하면 같은 실험을 반복하므로 끔
+        }, sort_keys=False))
+        res = databricks(cfg["profile"], "air", "run", "-f", str(work / "air.yaml"), "-o", "json", capture=True)
+    finally:
+        shutil.rmtree(work)
     info = json.loads(res.stdout[res.stdout.index("{"):])["data"]  # 앞에 업로드 진행 메시지가 섞임
 
     record(info["run_id"], dict(key=key, comp=comp, models=models, out=out, url=info["dashboard_url"]))
@@ -249,40 +256,69 @@ def record(run_id: str, run: dict):
 
 
 def cpu_dependencies() -> list[str]:
-    """CPU 작업 환경 패키지: GPU 이미지(docker/air/requirements.txt)와 같은 버전으로 고정."""
-    lines = (ROOT / "docker" / "air" / "requirements.txt").read_text().splitlines()
-    return [line.strip() for line in lines if line.split("==")[0].strip() in CPU_PACKAGES]
+    """CPU 작업 환경 패키지: GPU 이미지(docker/air/requirements.txt)와 같은 줄(같은 버전). 하나라도 없으면 중단."""
+    found = {}
+    for line in (ROOT / "docker" / "air" / "requirements.txt").read_text().splitlines():
+        line = line.split("#")[0].strip()
+        name = re.sub(r"[-_.]+", "-", re.split(r"[\s\[<>=!~@;]", line, maxsplit=1)[0]).lower()
+        if name in CPU_PACKAGES:
+            found[name] = line
+    if missing := CPU_PACKAGES - found.keys():
+        raise SystemExit(f"docker/air/requirements.txt 에 CPU 작업 패키지 없음: {', '.join(sorted(missing))}")
+    return list(found.values())
 
 
-def submit_cpu(cfg: dict, comp: str, run_args: list[str], models: list[str], timeout: int, tag: str) -> str:
-    """CPU serverless 일회성 작업으로 제출. 같은 러너를 쓰고 패키지는 작업 환경이 설치 (러너는 설치를 건너뜀)."""
-    key = f"{tag + '-' if tag else ''}{comp}-cpu-{datetime.now():%Y%m%d-%H%M%S}"
+def submit_cpu(cfg: dict, comp: str, data: str, run_args: list[str], models: list[str], timeout: int,
+               tag: str) -> str:
+    """CPU serverless 일회성 작업으로 제출. 같은 러너를 쓰고 패키지는 작업 환경이 설치 (러너는 설치를 건너뜀).
+    코드는 Workspace 에 올림 (`spark_python_task` 는 Workspace 파일 실행) → fetch 에서 지움."""
+    key = run_key(comp, tag, "cpu")
     out = f"{cfg['volume']}/runs/{key}"
-    data = ensure_data(load_competition(comp), cfg["profile"], cfg["volume"])
-    work = Path(tempfile.mkdtemp())
-    code = snapshot(work, comp, run_args, models, data, out, cache="", preinstalled=True, weights="")
     me = json.loads(databricks(cfg["profile"], "current-user", "me", "-o", "json", capture=True).stdout)["userName"]
     remote = f"/Workspace/Users/{me}/.km/{key}"
-    databricks(cfg["profile"], "workspace", "import-dir", str(code), remote, capture=True, timeout=1200)
-    (work / "job.json").write_text(json.dumps({
-        "run_name": f"km-{key}", "timeout_seconds": timeout * 60,
-        "tasks": [{"task_key": "km", "environment_key": "km",
-                   "spark_python_task": {"python_file": f"{remote}/air_runner.py"}}],
-        "environments": [{"environment_key": "km",
-                          "spec": {"environment_version": CPU_ENV, "dependencies": cpu_dependencies()}}],
-    }))
-    res = databricks(cfg["profile"], "jobs", "submit", "--no-wait", "--json", f"@{work / 'job.json'}", "-o", "json",
-                     capture=True)
-    shutil.rmtree(work)
+    work = Path(tempfile.mkdtemp())
+    try:
+        code = snapshot(work, comp, run_args, models, data, out, cache="", preinstalled=True, weights="")
+        databricks(cfg["profile"], "workspace", "import-dir", str(code), remote, capture=True, timeout=1200)
+        (work / "job.json").write_text(json.dumps({
+            "run_name": f"km-{key}", "timeout_seconds": timeout * 60,
+            "tasks": [{"task_key": "km", "environment_key": "km",
+                       "spark_python_task": {"python_file": f"{remote}/air_runner.py"}}],
+            "environments": [{"environment_key": "km",
+                              "spec": {"environment_version": CPU_ENV, "dependencies": cpu_dependencies()}}],
+        }))
+        res = databricks(cfg["profile"], "jobs", "submit", "--no-wait", "--json", f"@{work / 'job.json'}", "-o",
+                         "json", capture=True)
+    except BaseException:
+        databricks(cfg["profile"], "workspace", "delete", "--recursive", remote, capture=True, check=False)
+        raise
+    finally:
+        shutil.rmtree(work)
     run_id = str(json.loads(res.stdout)["run_id"])
-    run = json.loads(databricks(cfg["profile"], "jobs", "get-run", run_id, "-o", "json", capture=True).stdout)
-    record(run_id, dict(key=key, comp=comp, models=models, out=out, url=run["run_page_url"], kind="cpu"))
+    run = cli_json(cfg["profile"], "jobs", "get-run", run_id)
+    record(run_id, dict(key=key, comp=comp, models=models, out=out, url=run["run_page_url"], kind="cpu",
+                        code=remote))
     return run_id
 
 
+def cli_json(profile: str, *args, tries: int = 10, poll: int = 30) -> dict:
+    """상태 조회 (JSON). 토큰 갱신·일시적 5xx 같은 CLI 실패는 poll 초 간격으로 tries 번까지 재시도."""
+    for i in range(1, tries + 1):
+        try:
+            res = databricks(profile, *args, "-o", "json", capture=True, check=False, timeout=120)
+            if res.returncode == 0:
+                return json.loads(res.stdout[res.stdout.index("{"):])
+            err = res.stderr.strip()[-200:]
+        except subprocess.TimeoutExpired:
+            err = "120초 응답 없음"
+        if i == tries:
+            raise RuntimeError(f"`databricks {' '.join(args)}` {tries}번 실패: {err}")
+        print(f"  {time.strftime('%H:%M:%S')} `databricks {' '.join(args[:2])}` 실패 ({i}/{tries}), 재시도: {err}")
+        time.sleep(poll)
+
+
 def status(profile: str, run_id: str) -> str:
-    out = databricks(profile, "air", "get", run_id, "-o", "json", capture=True).stdout
-    return json.loads(out[out.index("{"):])["data"]["status"]
+    return cli_json(profile, "air", "get", run_id)["data"]["status"]
 
 
 def wait(profile: str, run_id: str, poll: int = 30) -> str:
@@ -299,18 +335,21 @@ def wait_cpu(profile: str, run_id: str, poll: int = 30) -> str:
     """CPU 작업은 로그 스트리밍이 없음 → 상태가 바뀔 때만 출력하고, 끝나면 로그(뒷부분)를 한 번에 출력."""
     last = None
     while True:
-        run = json.loads(databricks(profile, "jobs", "get-run", run_id, "-o", "json", capture=True).stdout)
+        run = cli_json(profile, "jobs", "get-run", run_id)
         state = run["state"]
         if state["life_cycle_state"] != last:
             last = state["life_cycle_state"]
-            print(f"  {time.strftime('%H:%M:%S')} {last}")
+            print(f"  {time.strftime('%H:%M:%S')} CPU {last}")
         if last in ("TERMINATED", "SKIPPED", "INTERNAL_ERROR"):
             break
         time.sleep(poll)
-    res = databricks(profile, "jobs", "get-run-output", str(run["tasks"][0]["run_id"]), "-o", "json", capture=True,
-                     check=False)
-    output = json.loads(res.stdout) if res.returncode == 0 else {}
-    print("\n".join(output.get(k) or "" for k in ("logs", "error", "error_trace")).strip())
+    if tasks := run.get("tasks"):  # 환경 준비에서 실패하면 task 실행이 없을 수 있음
+        res = databricks(profile, "jobs", "get-run-output", str(tasks[0]["run_id"]), "-o", "json", capture=True,
+                         check=False)
+        output = json.loads(res.stdout) if res.returncode == 0 else {}
+        print("\n".join(output.get(k) or "" for k in ("logs", "error", "error_trace")).strip())
+    if state.get("state_message"):
+        print(f"CPU 작업 상태 메시지: {state['state_message']}")
     return state.get("result_state", last)
 
 
@@ -321,11 +360,27 @@ def fetch(profile: str, run_id: str):
     dl = Path(tempfile.mkdtemp())
     res = databricks(profile, "fs", "cp", "-r", f"dbfs:{runs[run_id]['out']}/results", str(dl / "results"),
                      capture=True, check=False, timeout=3600)
+    run = runs[run_id]
+    if run.get("code"):  # CPU 작업 코드 (Workspace). 끝난 작업에만 fetch 하므로 더는 필요 없음
+        databricks(profile, "workspace", "delete", "--recursive", run["code"], capture=True, check=False)
     if res.returncode != 0 or not (dl / "results" / "results.csv").exists():
-        print(f"results 없음. 로그 확인: databricks air logs {run_id} -p {profile}\n{res.stderr.strip()}")
+        logs = (f"{run['url']} 또는 databricks jobs get-run {run_id} -p {profile}" if run.get("kind") == "cpu"
+                else f"databricks air logs {run_id} -p {profile}")
+        print(f"results 없음. 로그 확인: {logs}\n{res.stderr.strip()}")
+        shutil.rmtree(dl)
         return
-    merge_results(dl / "results", "databricks-cpu" if runs[run_id].get("kind") == "cpu" else "databricks")
+    merge_results(dl / "results", "databricks-cpu" if run.get("kind") == "cpu" else "databricks")
     shutil.rmtree(dl)
+
+
+def finish(profile: str, comp: str, run_id: str, is_cpu: bool):
+    """끝날 때까지 기다린 뒤 결과 수집. 실패해도 다른 작업 수집은 계속되도록 예외는 안내만 출력."""
+    kind = "CPU" if is_cpu else "GPU"
+    try:
+        print(f"최종 상태 ({kind}): {wait_cpu(profile, run_id) if is_cpu else wait(profile, run_id)}")
+        fetch(profile, run_id)
+    except Exception as e:
+        print(f"{kind} 작업 {run_id} 수집 실패: {e!r}\n  나중에: km databricks {comp} --fetch {run_id}")
 
 
 def main(argv: list[str] | None = None):
@@ -344,25 +399,37 @@ def main(argv: list[str] | None = None):
     args = ap.parse_args(argv)
 
     cfg = settings(args)
-    load_competition(args.comp)  # 설정 존재 확인
-    run_id = args.fetch
-    if not run_id:
-        if not args.models:
-            ap.error("models 가 필요함 (--fetch 가 아닐 때)")
-        cpu = [m for m in args.models if base_name(m) in CPU_MODELS]
-        gpu = [m for m in args.models if m not in cpu]
-        runs = []  # (run_id, CPU 작업 여부)
-        if gpu:
-            runs.append((submit(cfg, args.comp, run_argv(args, gpu), gpu, cfg["accelerator"], args.timeout,
-                                args.tag), False))
-        if cpu:
-            runs.append((submit_cpu(cfg, args.comp, run_argv(args, cpu), cpu, args.timeout, args.tag), True))
-        if args.no_wait:
-            return
-        for rid, is_cpu in runs:  # 두 작업은 동시에 돌고, 여기서는 차례로 기다림
-            print(f"최종 상태 ({'CPU' if is_cpu else 'GPU'}): "
-                  f"{wait_cpu(cfg['profile'], rid) if is_cpu else wait(cfg['profile'], rid)}")
-            fetch(cfg["profile"], rid)
+    comp = load_competition(args.comp)  # 설정 존재 확인
+    if args.fetch:
+        fetch(cfg["profile"], args.fetch)
         return
-    fetch(cfg["profile"], run_id)
+    if not args.models:
+        ap.error("models 가 필요함 (--fetch 가 아닐 때)")
+    cpu = [m for m in args.models if base_name(m) in CPU_MODELS]
+    gpu = [m for m in args.models if m not in cpu]
+    data = ensure_data(comp, cfg["profile"], cfg["volume"])
+    runs = []  # (run_id, CPU 작업 여부)
+    if gpu:
+        runs.append((submit(cfg, comp.name, data, run_argv(args, gpu), gpu, cfg["accelerator"], args.timeout,
+                            args.tag), False))
+    if cpu:
+        runs.append((submit_cpu(cfg, comp.name, data, run_argv(args, cpu), cpu, args.timeout, args.tag), True))
+    if args.no_wait:
+        return
+    # CPU 작업은 상태만 폴링 → 스레드에서 기다리다 끝나는 대로 수집. GPU 작업은 여기서 로그를 스트리밍
+    threads = [threading.Thread(target=finish, args=(cfg["profile"], comp.name, rid, True), daemon=True)
+               for rid, is_cpu in runs if is_cpu]
+    try:
+        for t in threads:
+            t.start()
+        for rid, is_cpu in runs:
+            if not is_cpu:
+                finish(cfg["profile"], comp.name, rid, False)
+        for t in threads:
+            t.join()
+    except KeyboardInterrupt:  # 작업은 Databricks 에서 계속 돎
+        print("\n중단. 작업은 계속 실행 중 → 끝난 뒤 수집:")
+        for rid, _ in runs:
+            print(f"  km databricks {comp.name} --fetch {rid}")
+        raise SystemExit(130)
 

@@ -22,22 +22,22 @@ from km.remote.common import add_run_args, remote_script
 from km.results import merge_results
 
 RUNNER = '''\
-import base64, io, os, subprocess, sys, tarfile, zipfile
+import base64, io, os, subprocess, sys, tarfile
 from pathlib import Path
 
 SRC = Path("/kaggle/working/km")
 tarfile.open(fileobj=io.BytesIO(base64.b64decode(CODE)), mode="r:gz").extractall(SRC)
+sys.path.insert(0, str(SRC))
+from km.download import extract
 
 # 대회 데이터 위치는 Kaggle 이미지에 따라 다르므로 학습 파일을 찾아 연결
-# 옛 대회는 x.csv.zip 만 있거나 x.csv 와 같이 있음 → 압축 안 된 파일이 있으면 그쪽, 없으면 풀어서 사용
+# 옛 대회는 x.csv.zip 만 있거나 x.csv 와 같이 있음 → 전부 링크한 뒤 zip 을 풂 (이미 있는 파일은 그대로, `km download` 와 같은 규칙)
 train = next(p for p in Path("/kaggle/input").rglob(TRAIN + "*") if p.name in (TRAIN, TRAIN + ".zip"))
 data = SRC / "competitions" / COMP / "data"
 data.mkdir(parents=True, exist_ok=True)
 for f in train.parent.iterdir():
-    if f.suffix != ".zip":
-        (data / f.name).symlink_to(f)
-    elif not (f.parent / f.stem).exists():
-        zipfile.ZipFile(f).extractall(data)
+    (data / f.name).symlink_to(f)
+extract(data)
 
 for args in PIP:  # 모델별 설치 실패는 해당 모델만 실패하도록 계속 진행
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", *args])
