@@ -293,6 +293,44 @@ TabArena 대회를 A10G(24GB)에서 돌렸더니 TFM 이 GBDT 의 10~100배 → 
 - limix2 는 OOM 재시도를 없애도 1,422s (파이프라인 32개 × 쿼리 13만 행 연산 자체가 큼) → 실행·리더보드에서 제거.
 - H100 에서는 OOM 경고 0회. kumo_e4 는 AUC 차이 0.00004 로 2.4배 빠름 (fold 하나, 대회 하나 기준).
 
+## 의미 기반 결정 모델: LLM 객관식 · SAP-RPT (2026-10-22, 브랜치 `decision-models`)
+
+TypeSafe Jev("System One" 결정 모델: 텍스트/JSON → 타입 있는 선택지 확률)를 오픈 모델로 흉내 낸 실험.
+Jev 자체는 비공개 API 라 대신 두 방향을 시험.
+
+- `llm*`: 행을 "열: 값" 텍스트로 바꿔 객관식 질문 → 생성 없이 forward 한 번으로 선택지 글자(A/B/…) 확률만 읽음.
+  LLM 은 라벨을 안 봄(zero-shot). `llm` 은 그 확률을 로지스틱 회귀로 보정, `llm_lgbm` 은 원래 피처에 붙여 LightGBM.
+  질문은 `config.yaml` 의 `llm:` 블록 (description, question, labels).
+- `sap_rpt`: SAP-RPT-1-OSS (구 ConTextTab). 열 이름·셀 값을 문장 임베딩으로 쓰는 tabular ICL 모델 (라벨 컨텍스트 사용).
+
+Titanic 은 로컬 M3 Pro, 나머지는 Databricks A10G. lgbm·기존 최고는 위 대회별 표의 값.
+
+| 대회 (지표) | lgbm | 기존 최고 | sap_rpt | llm (4B) | llm8b | llm_lgbm | llm8b_lgbm |
+|---|---|---|---|---|---|---|---|
+| Titanic (acc ↑) | 0.8339 | 0.8462 exaone | **0.8384** | 0.7632 | — | 0.8272 | — |
+| Spaceship (acc ↑) | 0.8101 | 0.8244 limix2 | 0.8051 | 0.7144 | 0.7208 | 0.8123 | 0.8081 |
+| Spaceship (AUC ↑) | 0.9044 | 0.9191 limix2 | 0.8954 | 0.7278 | 0.7421 | 0.9043 | 0.9034 |
+| S4E2 (acc ↑) | 0.9066 | 0.9117 limix2 | 0.8984 | 0.8127 | 0.8086 | 0.9028 | 0.9049 |
+| S4E2 (logloss ↓) | 0.3008 | 0.2551 limix2 | 0.2991 | 0.5679 | 0.5720 | 0.3224 | 0.3194 |
+| House Prices (RMSE ↓) | 0.1288 | 0.1151 tabpfn_v2 | 0.1217 | — | — | — | — |
+
+5-fold 시간: llm 은 Titanic 1,185s(로컬), Spaceship 1,490s, S4E2 4,157s / llm8b 는 2,419s, 6,714s /
+sap_rpt 는 House 49s, Spaceship 245s, S4E2 649s. llm_lgbm 은 llm 채점 결과를 재사용해 GBDT 시간만 듦
+(측정 당시는 같은 프로세스 캐시, 지금은 모델별 프로세스라 디스크 캐시 `~/.cache/km/llm`).
+
+- LLM zero-shot 은 상식이 통하는 데이터에서 의외로 강함: S4E2(식습관·키·몸무게 → 비만도)는 라벨 없이 7클래스 0.81.
+  가상 세계인 Spaceship 은 AUC 0.73.
+- 하지만 GBDT 에 피처로 붙이면 이득 없음 (모든 대회에서 차이가 fold std 안이거나 하락, logloss 는 일관되게 나빠짐).
+  LLM 이 보는 정보가 이미 피처에 있는 것과 같아서 → 라벨이 수천 행 있으면 GBDT 가 같은 패턴을 직접 학습.
+  가치가 있다면 피처에서 버린 텍스트 열(이름·설명), 라벨이 거의 없을 때, 학습 없이 바로 판단해야 할 때.
+- 4B → 8B 는 차이 없음 (오차 범위), 시간만 1.6배.
+- Qwen3-1.7B 는 내용과 무관하게 거의 항상 "B" 를 고름 (Titanic 200행 zero-shot AUC 0.55, 4B 는 0.85).
+  선택지 순서를 뒤집어 함께 묻는 보정을 넣었지만 4B 이상은 순서를 바꿔도 AUC 차이 0.001 → 4B 이상이면 한 번만 물어도 됨.
+- 로컬 MPS 는 4B 에서 초당 1.4~2.6행 (실효 약 4 TFLOPS, 하드웨어 한계 수준). A10G 는 약 18행/s.
+  프롬프트의 51% 가 모든 행에 공통인 앞부분(시스템 + 데이터 설명)이라 prefix KV 캐시를 쓰면 더 줄일 수 있음 (미적용).
+- sap_rpt 는 GBDT 기본 설정과 비슷한 수준, House Prices 에서만 GBDT 보다 확실히 좋음.
+  A10G 에 맞춰 컨텍스트 2048행 × bagging 8 로 줄인 설정이라, `sap_rpt8k`(README 기본 8192행, 80GB GPU)를 H100 에서 볼 여지 있음.
+
 ## Databricks 실행 준비 시간 (2026-10-23, H100, GiveMeSomeCredit fold 0 tabpfn_v2·tabicl·kumo, 테스트 예측 생략) — 초
 
 fold 당 모델 시간이 10~30초까지 줄어 실행 준비(pip 설치·가중치 다운로드·이미지)가 더 커짐 → 가중치 Volume 캐시와 패키지 이미지.
@@ -323,6 +361,8 @@ fold 당 모델 시간이 10~30초까지 줄어 실행 준비(pip 설치·가중
 | mitra / mitra_ft | Mitra-v2 zero-shot / +50 step fine-tune | AutoGluon sklearn 인터페이스. **회귀는 v1 체크포인트** |
 | exaone | EXAONE-Tabular (LG) | 가중치 비상업 라이선스 |
 | kumo | NVIDIA Kumo-Tabular (large) | 회귀는 999 분위수 평균 사용 |
+| sap_rpt / sap_rpt8k | SAP-RPT-1-OSS (구 ConTextTab) 컨텍스트 2048 / 8192 | HF gated + 연구용 라이선스. `km databricks` 가 가중치를 로컬에서 받아 Volume `weights/` 에 올림 (Kaggle 원격은 미지원) |
+| llm / llm_lgbm, llm8b / llm8b_lgbm | Qwen3-4B / 8B 객관식 zero-shot (`km/models/llm.py`) | 분류 전용. 8B 는 fp16 16GB 라 T4 한 장에는 안 들어감 |
 
 ## 알려진 문제와 해결
 
@@ -340,6 +380,9 @@ fold 당 모델 시간이 10~30초까지 줄어 실행 준비(pip 설치·가중
 | kumo `CUDA out of memory (13.7 GiB)` (S4E2) | 컨텍스트 1.6만 행 + 질의 2만 행 | Kumo 만 예측 청크 2,048행 |
 | 결과 수집 작업이 멈춤 | 맥 잠자기 중 kaggle CLI 호출이 무한 대기 | `kaggle()` 호출에 10분 timeout |
 | CatBoost `cat_features must be integer or string` | pandas 3 에서 category→str 변환 시 NaN 유지 | 결측을 `"__NA__"` 문자열로 명시 변환 |
+| sap_rpt Titanic accuracy 0.62 (다수 클래스 수준) | SAP-RPT 가 X 와 y(새 0..n 인덱스)를 인덱스 기준 concat → fold 로 자른 X 의 원래 인덱스와 라벨이 어긋남 | 넘기기 전에 `reset_index(drop=True)` |
+| llm `No module named 'torch'` (Databricks) | AI Runtime 기본 환경에 torch 없음, transformers 는 torch 를 의존성으로 설치 안 함 | 설치 목록에 `torch` 추가 |
+| llm8b `CUDA out of memory` (A10G 22GB) | 같은 프로세스에서 앞서 로드한 4B 가 캐시에 남은 채 8B 로드 | 새 모델을 로드할 때 이전 모델을 내림 |
 
 ## 대회별 CV 1위 모델 제출 (2026-10-21)
 
@@ -406,3 +449,4 @@ kNN 컨텍스트 모델 추가 제출 (2026-10-21):
 - [ ] Spaceship 제출로 리더보드 백분위 확인
 - [ ] TFM + GBDT 앙상블/스태킹 효과 확인
 - [ ] 패키지 버전 고정 및 실행 시 버전 기록
+- [ ] sap_rpt8k (컨텍스트 8192) H100 에서 5-fold — 컨텍스트를 키우면 TFM 상위권에 붙는지

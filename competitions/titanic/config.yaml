@@ -7,3 +7,11 @@ cv:
   n_splits: 5
   seed: 42
   stratify: true
+llm:                      # LLM 결정 모델(llm*) 질문
+  description: >-
+    Passenger record from the RMS Titanic, which sank in April 1912.
+    Pclass is ticket class (1 = upper, 3 = lower), SibSp / Parch are siblings-spouses / parents-children aboard,
+    Embarked is the port (S = Southampton, C = Cherbourg, Q = Queenstown), Deck is the first letter of the cabin,
+    TicketFreq is how many passengers shared the same ticket.
+  question: Did this passenger survive the sinking?
+  labels: {0: "No, died", 1: "Yes, survived"}

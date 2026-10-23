@@ -68,7 +68,7 @@ def run_parallel(args: argparse.Namespace, n_gpus: int) -> list[str]:
     return failed
 
 
-def run_model(name, comp, X, y, X_test, cat_cols, folds, max_folds=None, no_test=False):
+def run_model(name, comp, X, y, X_test, cat_cols, folds, max_folds=None, no_test=False, classes=None):
     n_splits = folds.max() + 1
     run_folds = range(n_splits if max_folds is None else max_folds)
     n_out = () if comp.task == "regression" else (len(np.unique(y)),)
@@ -79,7 +79,7 @@ def run_model(name, comp, X, y, X_test, cat_cols, folds, max_folds=None, no_test
     for f in run_folds:
         tr, va = folds != f, folds == f
         model = make_model(name, comp.task, cat_cols, seed=comp.cv["seed"], max_rows=comp.tfm_max_rows,
-                           max_features=comp.tfm_max_features)
+                           max_features=comp.tfm_max_features, prompt=comp.llm_prompt(classes))
         t_fit = time.time()
         model.fit(X[tr], y[tr])
         t_pred = time.time()
@@ -137,7 +137,7 @@ def main(argv: list[str] | None = None):
     for name in args.models:
         try:
             oof, test_pred, scores, fold_scores, secs = run_model(name, comp, X, y, X_test, cat_cols, folds,
-                                                                  args.max_folds, args.no_test)
+                                                                  args.max_folds, args.no_test, classes)
         except Exception:  # 한 모델이 실패해도 나머지는 계속 실행
             traceback.print_exc()
             failed.append(name)

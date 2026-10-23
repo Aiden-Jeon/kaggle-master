@@ -31,6 +31,15 @@ class Competition:
     train_file: str = "train.csv"
     test_file: str = "test.csv"
     submit_columns: list[str] | None = None  # 제출 파일 열 이름 [id, 예측]. 기본은 [id_col, target]
+    llm: dict | None = None  # LLM 결정 모델(llm*) 질문: description, question, labels (km/models/llm.py 참고)
+
+    def llm_prompt(self, classes: list | None) -> dict:
+        """LLM 결정 모델에 넘길 질문. labels 는 클래스 값 → 선택지 문구 (없으면 클래스 값 그대로)."""
+        cfg = self.llm or {}
+        labels = cfg.get("labels", {})
+        return dict(description=cfg.get("description", ""),
+                    question=cfg.get("question", f"What is the value of '{self.target}' for this record?"),
+                    options=[str(labels.get(c, labels.get(str(c), c))) for c in classes or []])
 
     @property
     def dir(self) -> Path:
