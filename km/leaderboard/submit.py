@@ -15,8 +15,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from km.competition import TRANSFORMS, load_competition, load_data
-from km.results import RESULTS, latest_cv
+from km.core.competition import TRANSFORMS, load_competition, load_data
+from km.core.results import RESULTS, latest_cv
 
 
 def make_submission(comp_name: str, models: list[str]) -> Path:

@@ -41,13 +41,18 @@ competitions/<slug>/features.py   # build(train, test) -> (X, X_test, cat_cols)
 competitions/<slug>/folds.csv     # 첫 실행 시 생성, 모든 모델이 공유
 km/
   cli.py                          # `km <명령>` 진입점
-  run.py                          # km run: CV 실행 → results/<slug>/<model>/{oof,test}.npy, results/results.csv
-  submit.py                       # km submit: 제출 파일 생성(+ --push 로 제출), 여러 모델이면 평균
-  leaderboard.py                  # km lb: Kaggle 제출 기록을 모아 리더보드 순위 계산
-  download.py                     # km download: 로컬 실행용 데이터 다운로드
-  competition.py, features.py, metrics.py, results.py   # 대회 설정·데이터·fold, 공통 피처, 지표, 결과 저장
+  core/                           # 기반 (명령 아님)
+    competition.py, features.py, metrics.py, results.py   # 대회 설정·데이터·fold, 공통 피처, 지표, 결과 저장
+    download.py                   # km download: 로컬 실행용 데이터 다운로드 (원격 런처도 사용)
   models/                         # 모델 레지스트리 (km/models/__init__.py 에 등록), @spec 컨텍스트 선택 (context.py)
-  remote/                         # km kaggle / colab / databricks: 같은 실험을 원격 GPU 에서 실행 후 결과 수집
+  runner/                         # 실험 실행
+    run.py                        # km run: CV 실행 → results/<slug>/<model>/{oof,test}.npy, results/results.csv
+    kaggle.py, colab.py, databricks.py   # km kaggle / colab / databricks: 같은 실험을 원격 GPU 에서 실행 후 결과 수집
+    common.py                     # run 과 원격 런처가 공유하는 인자·코드 묶음
+  leaderboard/                    # 제출과 순위
+    submit.py                     # km submit: 제출 파일 생성(+ --push 로 제출), 여러 모델이면 평균
+    rank.py                       # km lb: Kaggle 제출 기록을 모아 리더보드 순위 계산
+    board.py                      # km board: 모델별 성능·실행 시간 리더보드 (docs/leaderboard.md)
 docker/air/                       # Databricks 실행 이미지 (패키지 미리 설치)
 results/
   results.csv                     # 실행마다 한 줄 (CV 점수, fold std, 시간, 실행 위치)
@@ -142,7 +147,7 @@ name: titanic
 task: binary              # binary | multiclass | regression
 target: Survived
 id_col: PassengerId       # 테스트 파일 id 열 (null 이면 1 부터 행 번호)
-metric: accuracy          # 리더보드 지표 (km/metrics.py)
+metric: accuracy          # 리더보드 지표 (km/core/metrics.py)
 cv:
   n_splits: 5
   seed: 42
@@ -157,7 +162,7 @@ cv:
 # llm: {description, question, labels}   # llm* 모델 질문
 ```
 
-`features.py`: `build(train, test) -> (X, X_test, cat_cols)`. `km.features` 의 `auto_types`(문자열 → category)와
+`features.py`: `build(train, test) -> (X, X_test, cat_cols)`. `km.core.features` 의 `auto_types`(문자열 → category)와
 `split`(concat 한 train/test 다시 나누기)을 쓰면 짧게 끝남 (예: `competitions/titanic/features.py`).
 
 ## Databricks 실행 이미지

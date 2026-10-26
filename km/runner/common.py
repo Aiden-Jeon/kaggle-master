@@ -7,7 +7,7 @@ import base64
 import io
 import tarfile
 
-from km.competition import ROOT, load_competition
+from km.core.competition import ROOT, load_competition
 from km.models import GATED, KAGGLE_PIP, base_name
 
 CODE_PATHS = ["km", "competitions"]  # 원격에서는 이 위치를 cwd 로 두고 `python -m km run` 실행

@@ -23,11 +23,11 @@ from pathlib import Path
 
 import pandas as pd
 
-from km.competition import COMP_DIR, load_competition
-from km.metrics import METRICS
+from km.core.competition import COMP_DIR, load_competition
+from km.core.metrics import METRICS
 from km.models import REGISTRY, RETIRED, base_name
-from km.results import RESULTS, latest_cv
-from km.submit import make_submission, push
+from km.core.results import RESULTS, latest_cv
+from km.leaderboard.submit import make_submission, push
 
 
 def kaggle(*args) -> str:

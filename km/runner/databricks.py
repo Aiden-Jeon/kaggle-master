@@ -32,11 +32,11 @@ from pathlib import Path
 
 import yaml
 
-from km.competition import ROOT, load_competition
+from km.core.competition import ROOT, load_competition
 from km.models import GATED, base_name
-from km.remote.common import CODE_PATHS, add_run_args, pip_args, run_argv
-from km.results import RESULTS, merge_results
-from km.download import download
+from km.runner.common import CODE_PATHS, add_run_args, pip_args, run_argv
+from km.core.results import RESULTS, merge_results
+from km.core.download import download
 
 LOCAL_CONFIG = ROOT / "databricks.local.yaml"
 DEFAULT_ACCELERATOR = "GPU_1xH100"  # A10G(24GB)는 TFM 이 OOM 재시도를 반복해 느림

@@ -21,10 +21,10 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 
-from km.competition import TRANSFORMS, get_folds, load_competition, load_data, load_features
-from km.remote.common import add_run_args, run_argv
-from km.metrics import EXTRA, score
-from km.results import RESULTS, append_rows
+from km.core.competition import TRANSFORMS, get_folds, load_competition, load_data, load_features
+from km.runner.common import add_run_args, run_argv
+from km.core.metrics import EXTRA, score
+from km.core.results import RESULTS, append_rows
 from km.models import make_model
 
 
