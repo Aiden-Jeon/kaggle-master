@@ -12,7 +12,7 @@ import pandas as pd
 import yaml
 from sklearn.model_selection import KFold, StratifiedKFold
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 COMP_DIR = ROOT / "competitions"
 
 

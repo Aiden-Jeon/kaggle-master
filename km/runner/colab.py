@@ -17,9 +17,9 @@ from pathlib import Path
 
 import pandas as pd
 
-from km.competition import load_competition
-from km.remote.common import add_run_args, remote_script
-from km.results import append_rows
+from km.core.competition import load_competition
+from km.core.results import append_rows
+from km.runner.common import add_run_args, remote_script
 
 BEGIN, END = "RESULTS_BEGIN", "RESULTS_END"
 

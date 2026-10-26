@@ -10,7 +10,7 @@ import subprocess
 import zipfile
 from pathlib import Path
 
-from km.competition import Competition, load_competition
+from km.core.competition import Competition, load_competition
 
 
 def extract(data_dir: Path):

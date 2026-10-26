@@ -18,10 +18,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from km.competition import COMP_DIR, ROOT, load_competition
-from km.metrics import METRICS
+from km.core.competition import COMP_DIR, ROOT, load_competition
+from km.core.metrics import METRICS
+from km.core.results import RESULTS
 from km.models import REGISTRY, RETIRED
-from km.results import RESULTS
 
 OUT = ROOT / "docs" / "leaderboard.md"
 GBDT = {name for name, (module, _) in REGISTRY.items() if module == "km.models.gbdt"}

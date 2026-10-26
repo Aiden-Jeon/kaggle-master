@@ -7,14 +7,14 @@ import sys
 
 COMMANDS = {
     # 이름: (모듈, 설명)
-    "run": ("km.run", "고정 CV fold 로 모델 실행 → OOF/테스트 예측, results.csv"),
-    "submit": ("km.submit", "저장된 테스트 예측으로 제출 파일 생성 (--push 로 Kaggle 제출)"),
-    "download": ("km.download", "대회 데이터 다운로드"),
-    "lb": ("km.leaderboard", "Kaggle 제출 기록 → 리더보드 순위 (results/leaderboard.csv)"),
-    "board": ("km.board", "results.csv·leaderboard.csv → 모델별 성능·실행 시간 리더보드 (docs/leaderboard.md)"),
-    "kaggle": ("km.remote.kaggle", "Kaggle Notebook(GPU)에서 km run 실행 후 결과 수집"),
-    "colab": ("km.remote.colab", "Colab 노트북 생성 / 출력에서 결과 수집"),
-    "databricks": ("km.remote.databricks", "Databricks AI Runtime(서버리스 GPU)에서 km run 실행 후 결과 수집"),
+    "run": ("km.runner.run", "고정 CV fold 로 모델 실행 → OOF/테스트 예측, results.csv"),
+    "submit": ("km.leaderboard.submit", "저장된 테스트 예측으로 제출 파일 생성 (--push 로 Kaggle 제출)"),
+    "download": ("km.core.download", "대회 데이터 다운로드"),
+    "lb": ("km.leaderboard.rank", "Kaggle 제출 기록 → 리더보드 순위 (results/leaderboard.csv)"),
+    "board": ("km.leaderboard.board", "results.csv·leaderboard.csv → 모델별 성능·실행 시간 리더보드 (docs/leaderboard.md)"),
+    "kaggle": ("km.runner.kaggle", "Kaggle Notebook(GPU)에서 km run 실행 후 결과 수집"),
+    "colab": ("km.runner.colab", "Colab 노트북 생성 / 출력에서 결과 수집"),
+    "databricks": ("km.runner.databricks", "Databricks AI Runtime(서버리스 GPU)에서 km run 실행 후 결과 수집"),
 }
 
 
