@@ -25,9 +25,9 @@ import pandas as pd
 
 from km.core.competition import COMP_DIR, load_competition
 from km.core.metrics import METRICS
-from km.models import REGISTRY, RETIRED, base_name
 from km.core.results import RESULTS, latest_cv
 from km.leaderboard.submit import make_submission, push
+from km.models import REGISTRY, RETIRED, base_name
 
 
 def kaggle(*args) -> str:

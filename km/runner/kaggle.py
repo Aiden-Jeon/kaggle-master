@@ -18,8 +18,8 @@ import time
 from pathlib import Path
 
 from km.core.competition import load_competition
-from km.runner.common import add_run_args, remote_script
 from km.core.results import merge_results
+from km.runner.common import add_run_args, remote_script
 
 RUNNER = '''\
 import base64, io, os, subprocess, sys, tarfile

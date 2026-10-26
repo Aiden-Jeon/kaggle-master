@@ -41,7 +41,7 @@ competitions/<slug>/features.py   # build(train, test) -> (X, X_test, cat_cols)
 competitions/<slug>/folds.csv     # 첫 실행 시 생성, 모든 모델이 공유
 km/
   cli.py                          # `km <명령>` 진입점
-  core/                           # 기반 (명령 아님)
+  core/                           # 기반 라이브러리 (명령은 km download 하나)
     competition.py, features.py, metrics.py, results.py   # 대회 설정·데이터·fold, 공통 피처, 지표, 결과 저장
     download.py                   # km download: 로컬 실행용 데이터 다운로드 (원격 런처도 사용)
   models/                         # 모델 레지스트리 (km/models/__init__.py 에 등록), @spec 컨텍스트 선택 (context.py)
