@@ -2,6 +2,7 @@
 
 Tabular Foundation Model(TFM) vs GBDT 비교. 원본 수치는 `results/results.csv`, 리더보드 제출 기록은 `results/leaderboard.csv`,
 모델별 OOF/테스트 예측은 `results/<comp>/<model>/`. 모델 이름은 [README 의 모델 목록](README.md#모델) 참고.
+시간·s/1K·LB 를 한 표로 모은 리더보드는 [docs/leaderboard.md](docs/leaderboard.md) (`km board` 로 생성).
 
 **공통 조건**: 대회별 고정 fold(`folds.csv`, seed 42), 튜닝 없는 기본 설정. 대회별 결과는 5-fold,
 주제별 실험 중 일부(S6E10 컨텍스트 탐색, 추론 속도, 실행 준비 시간, Bioresponse)는 fold 0 만 — 표마다 표시.
@@ -13,13 +14,15 @@ Tabular Foundation Model(TFM) vs GBDT 비교. 원본 수치는 `results/results.
 | 2026-10-19 ~ 22 | Kaggle Notebook (T4 ×2), Colab 무료 T4 | House Prices, Spaceship, Titanic, S4E2, S6E10, 컨텍스트 선택 |
 | 2026-10-22 | Databricks AI Runtime A10G → H100 | GiveMeSomeCredit, Amazon, Bioresponse, 결정 모델, 추론 속도 |
 | 2026-10-23 ~ | Databricks: TFM 은 H100 1장, GBDT 는 CPU serverless 4코어 | Restaurant, Mercedes, Otto, Allstate, S6E1 |
+| 2026-10-26 | Databricks H100 (kumo 만): 컨텍스트 상한 해제·20만 행 재실행 | Amazon, Otto, GiveMeSomeCredit, Allstate, S6E1, S6E10 |
 
 2026-10-23 이후 대회는 **같은 표 안에서도** GBDT(CPU 4코어)와 TFM(H100) 시간을 직접 비교하기 어려움.
+2026-10-26 kumo 재실행 행은 같은 H100 의 1만 행 kumo 행과 비교 가능 (Amazon·GiveMeSomeCredit 의 1만 행 kumo 는 A10G,
+S6E10 은 1만 행 kumo 가 없고 나머지 행이 Kaggle T4 라 비교 불가).
 
 **표기**: 굵게 = 1위, `± fold std` = fold 간 표준편차, 시간 = 5-fold 합계 (테스트 예측 포함).
+`kumo (ctx 전체)` · `kumo (ctx 20만)` = `tfm_max_rows` 상한을 푼 kumo 재실행 (`results.csv` 의 `@full` · `@rand200000`). 상한이 걸린 나머지 TFM 은 1만 행 무작위.
 LB 순위는 표마다 집계 시점을 적음 — `km lb` 집계(`results/leaderboard.csv`)와 제출 당시 기록은 팀 수가 달라 순위가 조금씩 다름.
-`limix2`(LimiX-2 400M)는 느려서 2026-10-22 에 실행 목록에서 뺐지만 이전 결과는 그대로 둠
-(†표시. 지금 코드로는 `km run` 으로 다시 돌릴 수 없고 `km lb` 집계에서도 빠짐).
 
 실행 중 겪은 오류와 해결, Kaggle·Databricks 운영 메모는 [docs/known-issues.md](docs/known-issues.md).
 
@@ -32,7 +35,7 @@ LB 순위는 표마다 집계 시점을 적음 — `km lb` 집계(`results/leade
   [S4E2](#playground-s4e2) · [Amazon](#amazon-employee-access) · [Otto](#otto) · [GiveMeSomeCredit](#givemesomecredit) ·
   [Allstate](#allstate-claims-severity) · [S6E1](#playground-s6e1) · [S6E10](#playground-s6e10)
 - [주제별 실험](#주제별-실험):
-  [컨텍스트 선택](#컨텍스트-선택) · [앙상블 제출](#앙상블-제출) · [의미 기반 결정 모델](#의미-기반-결정-모델) ·
+  [컨텍스트 선택](#컨텍스트-선택) · [외부 벤치마크 대조](#외부-벤치마크-대조) · [의미 기반 결정 모델](#의미-기반-결정-모델) ·
   [TFM 추론 속도](#tfm-추론-속도) · [Databricks 실행 준비 시간](#databricks-실행-준비-시간)
 - [다음 할 일](#다음-할-일)
 
@@ -45,31 +48,36 @@ LB 순위는 표마다 집계 시점을 적음 — `km lb` 집계(`results/leade
 | House Prices | 1,460 | 회귀 · RMSE ↓ | tabpfn_v2 0.1151 | catboost 0.1250 | tabpfn_v2 | kumo 79 / 4,372 (1.8%) |
 | Bioresponse | 3,751 | 이진 · logloss ↓ | 5-fold 미실행 | 미실행 | (fold 0) kumo 0.3942 | 미제출 |
 | Mercedes-Benz | 4,209 | 회귀 · R² ↑ | kumo 0.5742 | catboost 0.5564 | kumo | kumo 1,801 / 3,825 (47.1%) |
-| Spaceship Titanic | 8,693 | 이진 · acc ↑ | limix2† 0.8245 | catboost 0.8125 | limix2† (현재 모델 중 kumo 0.8237) | limix2†+kumo 35 / 1,734 (2.0%) |
-| S4E2 | 20,758 | 7-class · acc ↑ | limix2† 0.9118 | xgb 0.9077 | limix2† (현재 모델 중 tabicl 0.9090) | limix2† 916 / 3,589 (25.5%) |
-| Amazon | 32,769 | 이진 · AUC ↑ | catboost 0.8957 | catboost | kumo 0.8274 | catboost 64 / 1,689 (3.8%) |
-| Otto | 61,878 | 9-class · logloss ↓ | lgbm 0.4648 | lgbm | kumo 0.4665 | kumo 420 / 3,510 (12.0%) |
-| GiveMeSomeCredit | 150,000 | 이진 · AUC ↑ | catboost 0.8660 | catboost | kumo 0.8652 | catboost 27 / 926 (2.9%) |
-| Allstate | 188,318 | 회귀 · MAE ↓ | kumo 1,181.2 | lgbm 1,188.3 | kumo | kumo 1,919 / 3,048 (63.0%) |
-| S6E1 | 630,000 | 회귀 · RMSE ↓ | xgb 8.7736 | xgb | kumo 8.8562 | xgb 2,707 / 4,320 (62.7%) |
-| S6E10 | 699,635 | 이진 · AUC ↑ | lgbm 0.95838 | lgbm | limix2m 0.95442 | lgbm+catboost 2,064 / 2,649 (77.9%) |
+| Spaceship Titanic | 8,693 | 이진 · acc ↑ | kumo 0.8237 | catboost 0.8125 | kumo | exaone@knn1000 103 / 1,746 (5.9%) |
+| S4E2 | 20,758 | 7-class · acc ↑ | tabicl 0.9090 | xgb 0.9077 | tabicl | kumo@knn1000 · exaone@knn1000 1,452 / 3,590 (40.4%) |
+| Amazon | 32,769 | 이진 · AUC ↑ | catboost 0.8957 | catboost | kumo 0.8795 (ctx 전체) | catboost 64 / 1,689 (3.8%) |
+| Otto | 61,878 | 9-class · logloss ↓ | kumo 0.3774 (ctx 전체) | lgbm 0.4648 | kumo 0.3774 (ctx 전체) | kumo (ctx 전체) 1 / 3,510 (<0.1%) |
+| GiveMeSomeCredit | 150,000 | 이진 · AUC ↑ | kumo 0.8694 (ctx 전체) | catboost 0.8660 | kumo 0.8694 (ctx 전체) | kumo (ctx 전체) 1 / 926 (0.1%) |
+| Allstate | 188,318 | 회귀 · MAE ↓ | kumo 1,114.2 (ctx 전체) | lgbm 1,188.3 | kumo 1,114.2 (ctx 전체) | kumo (ctx 전체, 중앙값) 1 / 3,048 (<0.1%) |
+| S6E1 | 630,000 | 회귀 · RMSE ↓ | kumo 8.6767 (ctx 20만) | xgb 8.7736 | kumo 8.6767 (ctx 20만) | kumo (ctx 20만) 764 / 4,320 (17.7%) |
+| S6E10 | 699,635 | 이진 · AUC ↑ | kumo 0.95880 (ctx 20만) | lgbm 0.95838 | kumo 0.95880 (ctx 20만) | kumo (ctx 20만) 2,009 / 3,071 (65.4%) |
 
-순위는 `results/leaderboard.csv` 기준 (Spaceship·S4E2 는 limix2† 라 집계에서 빠져 제출 당시 기록). 진행 중 대회는 집계 시점에 따라 바뀌고,
-종료된 대회는 늦은 제출이라 순위표에는 안 들어가므로 점수로 매긴 위치.
+순위는 `results/leaderboard.csv` 기준. 진행 중 대회는 집계 시점에 따라 바뀌고,
+종료된 대회는 늦은 제출이라 순위표에는 안 들어가므로 점수로 매긴 위치. `(ctx …)` 는 상한을 푼 kumo 재실행 (2026-10-26).
 
 **지금까지의 결론**
 
-- **데이터 크기가 승패를 가름**: 작은 데이터(Restaurant, Titanic, House, Mercedes, Spaceship)는 TFM 이 GBDT 와 같거나 위.
-  큰 데이터(S6E1 63만, S6E10 70만 행)는 GBDT 가 확실히 위 — TFM 은 컨텍스트를 1만 행으로 잘라 데이터를 다 못 씀.
-  중간(Otto, GiveMeSomeCredit, Allstate)은 kumo 만 GBDT 와 같거나 조금 앞섬.
-- **Amazon 은 격차가 유난히 큼**: 3만 행(TFM 은 fold 당 2.6만 행 중 1만 행 컨텍스트)인데 catboost 가 TFM 최고보다 AUC 0.07 높음.
-  비슷하게 잘린 GiveMeSomeCredit(12만 중 1만)은 kumo 가 GBDT 와 동률이라, 컨텍스트 제한만으로는 설명이 안 되고
-  9개 열이 모두 범주 ID 라는 점이 원인으로 추정됨 (컨텍스트 전체로 확인하지는 않음).
-- **TFM 중에서는 kumo 가 가장 꾸준함**: 신규 5개 대회 모두에서 CV 기준 TFM 1위, 3개에서 전체 1위.
+- **큰 데이터의 GBDT 우위는 대부분 컨텍스트 상한 탓 (2026-10-26 재실행)**: 원인은 6개 대회 config 의 `tfm_max_rows: 10000`.
+  TabArena 의 Kumo 래퍼 기본 상한은 20만 행. 작은 데이터(Restaurant, Titanic, House, Mercedes, Spaceship)에서는 TFM 이 GBDT 와 같거나 위.
+  큰 데이터는 TFM 이 1만 행만 보고 있었음. 상한을 풀자 kumo 가 Otto (logloss 0.3774 vs lgbm 0.4648), GiveMeSomeCredit (AUC 0.8694 vs catboost 0.8660),
+  Allstate (MAE 1,114.2 vs lgbm 1,188.3), S6E1 (RMSE 8.6767 vs xgb 8.7736) 에서 GBDT 최고를 넘음.
+  S6E10 은 20만 행 (fold 학습의 약 36%) 에서 lgbm 과 0.0004 차이 — fold std 이내 동률.
+- **Amazon 은 상한을 풀어도 격차가 남음**: kumo 0.8274 → 0.8795 (fold 학습 2.6만 행 전부) 로 올랐지만 catboost 0.8957 과 AUC 0.016 차이 (fold std 의 약 2배).
+  9개 열이 모두 범주 ID 라 범주 처리 방식 차이가 원인일 것으로 추정 — 검증 안 함. 외부 BeyondArena 고카디널리티 부분집합에서도 CatBoost 가 강함.
+- **상한 해제의 비용**: kumo 5-fold 시간이 2~5.3배 (Otto 150→302s, Allstate 212→959s, S6E1 369→1,952s, 모두 H100).
+  tabicl·tabpfn_v2 는 아직 1만 행 상한 그대로라 TFM 간 순위는 같은 조건이 아님 (재실행 진행 중, [다음 할 일](#다음-할-일)).
+- **TFM 중에서는 kumo 가 가장 꾸준함**: 2026-10-23 배치 5개 대회에서 모두 CV 기준 TFM 1위. 전체 1위는 재실행 전 3개 (Restaurant·Mercedes·Allstate) → 재실행 후 5개 (Otto·S6E1 추가).
 - **상위 모델 간 차이는 대부분 fold std 안**: 작은 대회일수록 CV 순위가 LB 에서 자주 뒤집힘 (House, Restaurant, Titanic).
 - **컨텍스트 선택**: kNN 컨텍스트는 무작위보다 확실히 좋고 TFM 을 한도 밖 크기(S4E2)에서도 쓰게 해 주지만,
-  70만 행(S6E10)에서는 무작위로 많이 넣는 쪽이 더 좋고 그래도 GBDT 를 넘지 못함.
-- **앙상블·LLM 피처는 이득이 작거나 없음**: 단순 평균 앙상블 +0.0001~0.0014, LLM 객관식 확률을 GBDT 피처로 붙여도 변화 없음.
+  70만 행(S6E10)에서는 무작위로 많이 넣는 쪽이 kNN 보다 낫고, kumo 20만 행 5-fold 는 GBDT 와 동률 (위 항목).
+- **사전학습 데이터 중복 가능성**: Otto·GiveMeSomeCredit·Amazon 같은 공개 데이터는 TFM 사전학습에 들어갔을 수 있어 CV 가 부풀었을 수 있음 (확인 안 함).
+  테스트 라벨은 공개된 적이 없어 LB 에는 영향이 적고, LB 에서도 kumo 가 Otto·GiveMeSomeCredit 에서 1위.
+- **LLM 피처는 이득 없음**: LLM 객관식 확률을 GBDT 피처로 붙여도 변화 없음.
 
 ## 대회별 결과
 
@@ -101,11 +109,10 @@ CV 3위 tabpfn_v2 가 public 1위 — 테스트 10만 행 중 채점 행이 적�
 
 | 모델 | Accuracy | ± fold std | AUC | 시간 |
 |---|---|---|---|---|
-| **exaone** | **0.8462** | 0.015 | 0.8934 | 30s |
+| **exaone** | **0.8462** | 0.015 | **0.8934** | 30s |
 | tabicl | 0.8440 | 0.014 | 0.8878 | 9s |
 | limix2m | 0.8440 | 0.016 | 0.8839 | 19s |
 | catboost | 0.8418 | 0.019 | 0.8749 | 21s |
-| limix2† | 0.8395 | 0.018 | **0.9017** | 257s |
 | xgb | 0.8384 | 0.016 | 0.8839 | 3s |
 | tabpfn_v2 | 0.8350 | 0.018 | 0.8755 | 14s |
 | lgbm | 0.8339 | 0.016 | 0.8821 | 10s |
@@ -114,7 +121,7 @@ CV 3위 tabpfn_v2 가 public 1위 — 테스트 10만 행 중 채점 행이 적�
 | mitra | 0.8294 | 0.023 | 0.8830 | 59s |
 
 - 891행이라 fold std(±1.5~1.9%p)가 모델 간 차이(최대 1.3%p)보다 큼 → accuracy 순위는 의미 없음.
-- AUC 로 보면 LimiX-2 가 가장 높음 (0.902).
+- AUC 도 exaone 이 가장 높음 (0.893).
 
 리더보드 (2026-10-21): exaone public 0.77511 → 점수 기준 4,623 / 11,490 (동점자가 많아 Kaggle 표시 순위는 제출 당시 6,994위).
 CV 와 LB 차이가 7%p — 418행 테스트라 변동이 크고, CV 1위 차이도 오차 범위였음.
@@ -123,7 +130,7 @@ CV 와 LB 차이가 7%p — 418행 테스트라 변동이 크고, CV 1위 차이
 
 1,460행, 회귀, 83 피처 중 범주형 44. 지표: log1p(SalePrice) RMSE ↓
 
-5-fold (2026-10-19, Kaggle. limix2·limix2m·exaone·mitra 계열은 2026-10-21 재실행)
+5-fold (2026-10-19, Kaggle. limix2m·exaone·mitra 계열은 2026-10-21 재실행)
 
 | 모델 | RMSE | ± fold std | MAE | 시간 |
 |---|---|---|---|---|
@@ -131,17 +138,16 @@ CV 와 LB 차이가 7%p — 418행 테스트라 변동이 크고, CV 1위 차이
 | kumo | 0.1191 | 0.023 | 0.0703 | 66s |
 | tabicl | 0.1242 | 0.021 | 0.0767 | 21s |
 | catboost | 0.1250 | 0.016 | 0.0796 | 154s |
-| mitra_ft | 0.1263 | 0.028 | 0.0759 | 7,995s |
+| mitra_ft | 0.1263 | 0.028 | 0.0759 | 7,994s |
 | exaone | 0.1275 | 0.032 | 0.0721 | 204s |
 | lgbm | 0.1288 | 0.015 | 0.0842 | 21s |
 | mitra | 0.1289 | 0.031 | 0.0764 | 259s |
-| limix2† | 0.1300 | 0.039 | 0.0707 | 328s |
 | xgb | 0.1306 | 0.013 | 0.0842 | 14s |
 | limix2m | 0.1311 | 0.034 | 0.0741 | 58s |
 
 - TabPFN v2 가 1위, Kumo 가 2위.
-- 재실행 모델은 RMSE 는 중위권이지만 MAE 는 limix2(0.0707)·exaone(0.0721)이 상위권 → 대부분은 잘 맞히고 일부 이상치 집에서 크게 틀림 (fold std 0.03~0.04 로 큼).
-- mitra_ft 는 fine-tuning 으로 mitra 대비 RMSE 0.003 개선, 대신 시간은 30배 (2시간+).
+- 재실행 모델은 RMSE 는 중위권이지만 MAE 는 exaone(0.0721)이 상위권 → 대부분은 잘 맞히고 일부 이상치 집에서 크게 틀림 (fold std 0.03 안팎으로 큼).
+- mitra_ft 는 fine-tuning 으로 mitra 대비 RMSE 0.003 개선, 대신 시간은 30배 (7,994s).
 - 상위 모델 간 차이가 fold std(0.013~0.023)보다 작은 경우가 많아 순위 확정은 어려움.
 - 1-fold 동작 확인 (참고): tabpfn_v2 0.1177 / tabicl 0.1269 / catboost 0.1284 / lgbm 0.1359 / xgb 0.1363
 
@@ -191,8 +197,7 @@ kumo 0.3942 / tabicl 0.3981 / tabpfn_v2 0.4400.
 
 | 모델 | Accuracy | ± fold std | AUC | Logloss | 시간 |
 |---|---|---|---|---|---|
-| **limix2†** | **0.8245** | 0.005 | **0.9192** | 0.3509 | 3,503s |
-| kumo | 0.8237 | 0.007 | **0.9192** | **0.3488** | 273s |
+| **kumo** | **0.8237** | 0.007 | **0.9192** | **0.3488** | 273s |
 | exaone@knn1000 | 0.8151 | 0.009 | 0.9080 | 0.3721 | 7,486s |
 | tabpfn_v2 | 0.8135 | 0.007 | 0.9056 | 0.3764 | 92s |
 | mitra_ft | 0.8130 | 0.002 | 0.9030 | 0.3819 | 7,587s |
@@ -203,8 +208,8 @@ kumo 0.3942 / tabicl 0.3981 / tabpfn_v2 0.4400.
 | xgb | 0.8096 | 0.008 | 0.9045 | 0.3824 | 9s |
 | mitra | 0.8059 | 0.006 | 0.8959 | 0.3988 | 265s |
 
-- limix2(400M) 와 Kumo 가 공동 1위권 (AUC 동일 0.9192). 단 limix2 는 Kumo 보다 13배 느림.
-- 둘을 빼면 TFM 과 GBDT 는 0.81 근처에서 오차 범위 안.
+- Kumo 가 accuracy·AUC·logloss 모두 1위.
+- Kumo 를 빼면 TFM 과 GBDT 는 0.81 근처에서 오차 범위 안.
 - exaone 은 전체 컨텍스트로는 메모리 부족 → kNN 컨텍스트 1000행(`@knn1000_g8_imp`, [컨텍스트 선택](#컨텍스트-선택))으로 실행.
 
 1-fold 동작 확인 (참고, fold 하나 ≈1,740행이라 accuracy 표준오차 ±0.9%p)
@@ -217,13 +222,7 @@ kumo 0.3942 / tabicl 0.3981 / tabpfn_v2 0.4400.
 | xgb | 0.8212 | 0.9080 | 0.3755 | 2.4s |
 | lgbm | 0.8189 | 0.9066 | 0.3806 | 9.5s |
 
-리더보드 (2026-10-21 제출, public LB. 순위는 제출 당시 — 팀 수가 계속 늘어 행마다 분모가 다름)
-
-| 모델 | CV | Public LB | 제출 당시 순위 |
-|---|---|---|---|
-| **limix2†+kumo** (앙상블) | 0.8229 | **0.81949** | 35 / 1,734 (상위 2.0%) |
-| limix2† | 0.8245 | 0.81809 | 38 / 1,722 (상위 2.2%) |
-| exaone@knn1000 | 0.8151 | 0.81014 | 약 105위 (`km lb` 집계로는 103 / 1,746) |
+리더보드 (2026-10-21 제출, 1,746팀, `km lb` 집계): **exaone@knn1000 103위 (상위 5.9%)** · public 0.81014.
 
 ### Playground S4E2
 
@@ -233,163 +232,179 @@ kumo 0.3942 / tabicl 0.3981 / tabpfn_v2 0.4400.
 
 | 모델 | Accuracy | ± fold std | Logloss | 시간 |
 |---|---|---|---|---|
-| **limix2†** | **0.9118** | 0.004 | **0.2551** | 478분 |
-| tabicl | 0.9090 | 0.005 | 0.2644 | 2분 |
-| kumo@knn1000 | 0.9088 | 0.005 | 0.2677 | 181분 |
-| exaone@knn1000 | 0.9087 | 0.004 | 0.2687 | 182분 |
-| xgb | 0.9077 | 0.003 | 0.2686 | 7분 |
-| tabpfn_v2@knn1000 | 0.9072 | 0.006 | 0.2905 | 93분 |
-| lgbm | 0.9067 | 0.003 | 0.3009 | 4분 |
-| catboost | 0.9042 | 0.005 | 0.2782 | 16분 |
-| mitra | 0.8980 | 0.003 | 0.3021 | 23분 |
-| limix2m | 0.8971 | 0.006 | 0.3050 | 5분 |
-| mitra_ft | 0.8969 | 0.007 | 0.2973 | 185분 |
+| **tabicl** | **0.9090** | 0.005 | **0.2644** | 137s |
+| kumo@knn1000 | 0.9088 | 0.005 | 0.2677 | 10,854s |
+| exaone@knn1000 | 0.9087 | 0.004 | 0.2687 | 10,890s |
+| xgb | 0.9077 | 0.003 | 0.2686 | 390s |
+| tabpfn_v2@knn1000 | 0.9072 | 0.006 | 0.2905 | 5,573s |
+| lgbm | 0.9067 | 0.003 | 0.3009 | 224s |
+| catboost | 0.9042 | 0.005 | 0.2782 | 954s |
+| mitra | 0.8980 | 0.003 | 0.3021 | 1,381s |
+| limix2m | 0.8971 | 0.006 | 0.3050 | 311s |
+| mitra_ft | 0.8969 | 0.007 | 0.2973 | 11,081s |
 
-- LimiX-2 가 1위지만 8시간 소요 (TabICL 은 2분에 2위). 비용 대비로는 TabICL 이 압도적.
+- TabICL 이 1위이면서 가장 빠름 (137s). 비용 대비로는 TabICL 이 압도적.
 - 상위 모델 차이는 fold std 수준.
 - tabpfn_v2·exaone·kumo 는 전체 컨텍스트로 실패 (tabpfn_v2 는 당시 1만 행 공식 한도 초과로 거부 — 이후 `ignore_pretraining_limits=True` 로
   한도 검사는 풀었지만 전체 컨텍스트 5-fold 는 다시 안 돌림, exaone 은 math 어텐션이 445GiB 요청,
-  kumo 는 13.7GiB 요청으로 T4 메모리 초과) → `@knn1000` (쿼리 16개 묶음마다 가장 가까운 1000행만 컨텍스트)으로 모두 GBDT 수준 이상. limix2 는 넘지 못함.
+  kumo 는 13.7GiB 요청으로 T4 메모리 초과) → `@knn1000` (쿼리 16개 묶음마다 가장 가까운 1000행만 컨텍스트)으로 모두 GBDT 수준 이상.
 
-리더보드 (종료된 대회, 늦은 제출. 순위는 public 점수 기준 위치, 3,589팀)
+리더보드 (종료된 대회, 늦은 제출. 순위는 `km lb` 집계의 public 점수 기준 위치, 3,590팀)
 
-| 모델 | CV | Public LB | Private LB |
-|---|---|---|---|
-| **limix2†** | 0.9118 | **0.91437** (916위, 상위 25.5%) | 0.91076 |
-| limix2†+tabicl+kumo@knn1000 (앙상블) | 0.9129 | 0.91184 | **0.91194** |
-| kumo@knn1000 | 0.9088 | 0.91076 | 0.90959 |
-| exaone@knn1000 | 0.9087 | 0.91076 | 0.90688 |
-| tabpfn_v2@knn1000 | 0.9072 | 0.90787 | 0.90634 |
+| 모델 | CV | Public LB | Private LB | 순위 |
+|---|---|---|---|---|
+| **kumo@knn1000** | 0.9088 | **0.91076** | **0.90959** | 1,452 / 3,590 (상위 40.4%) |
+| exaone@knn1000 | 0.9087 | **0.91076** | 0.90688 | 1,452 / 3,590 (상위 40.4%) |
+| tabpfn_v2@knn1000 | 0.9072 | 0.90787 | 0.90634 | 1,843 / 3,590 (상위 51.3%) |
 
-- kNN 컨텍스트 모델은 모두 limix2 단일보다 낮음. CV 순서와 LB 순서가 대체로 일치.
-- 앙상블은 public 은 낮지만 private(최종 기준)은 단일 limix2 보다 높음.
+- CV 순서와 LB 순서가 대체로 일치.
 
 ### Amazon Employee Access
 
 32,769행, 이진 분류, 9 피처 (모두 범주 ID). 지표: AUC ↑
 
-5-fold (2026-10-22, Databricks A10G, TFM 컨텍스트 1만 행 무작위)
+5-fold (2026-10-22, Databricks A10G, TFM 컨텍스트 1만 행 무작위. `kumo (ctx 전체)` 는 2026-10-26 H100 재실행, fold 학습 2.6만 행 전부)
 
 | 모델 | AUC | ± fold std | Logloss | 시간 |
 |---|---|---|---|---|
 | **catboost** | **0.8957** | 0.008 | **0.1374** | 139s |
+| kumo (ctx 전체) | 0.8795 | 0.009 | 0.1414 | 96s |
 | xgb | 0.8734 | 0.010 | 0.2163 | 52s |
 | lgbm | 0.8631 | 0.012 | 0.1672 | 14s |
 | kumo | 0.8274 | 0.014 | 0.1644 | 629s |
 | tabicl | 0.8054 | 0.009 | 0.1733 | 52s |
 | tabpfn_v2 | 0.7781 | 0.009 | 0.1894 | 131s |
 
-- 범주 ID 만 있는 데이터에서 catboost 가 크게 앞섬 (TFM 최고 kumo 와 AUC 0.07 차이).
+- 범주 ID 만 있는 데이터에서 catboost 가 앞섬. 컨텍스트를 전체로 풀면 kumo 가 0.8274 → 0.8795 로 오르지만, catboost 와 AUC 0.016 차이 (fold std 의 약 2배)가 남음.
+- 남은 격차의 원인은 확인 안 함. 9개 열이 모두 범주 ID 라 범주 처리 방식 차이가 원인일 것으로 추정 (미검증). 외부 BeyondArena 고카디널리티 부분집합에서도 CatBoost 가 강함.
+- kumo (ctx 전체) 시간 96s 는 H100, 1만 행 kumo 629s 는 A10G 라 환경이 달라 직접 비교 안 됨.
 
 리더보드 (2026-10-22, 1,689팀): **catboost 64위 (상위 3.8%)** · public 0.91582 / private 0.91100. xgb 529위 (31.3%).
+kumo (ctx 전체) 502위 (29.7%) · public 0.89432 / private 0.89114 (2026-10-26).
 
 ### Otto
 
 61,878행, 9-class 분류, 93 피처. 지표: logloss ↓
 
-5-fold (2026-10-23, Databricks, TFM 컨텍스트 1만 행 무작위. 시간은 GBDT CPU 4코어 · TFM H100 이라 직접 비교 불가)
+5-fold (2026-10-23, Databricks, TFM 컨텍스트 1만 행 무작위. 시간은 GBDT CPU 4코어 · TFM H100 이라 직접 비교 불가. `kumo (ctx 전체)` 는 2026-10-26 H100 재실행, fold 학습 약 5만 행 전부)
 
 | 모델 | logloss | ± fold std | 시간 |
 |---|---|---|---|
-| **lgbm** | **0.4648** | 0.0059 | 842s |
+| **kumo (ctx 전체)** | **0.3774** | 0.0033 | 302s |
+| lgbm | 0.4648 | 0.0059 | 842s |
 | kumo | 0.4665 | 0.0034 | 150s |
 | tabicl | 0.4974 | 0.0047 | 97s |
 | xgb | 0.5002 | 0.0056 | 456s |
 | catboost | 0.5382 | 0.0066 | 960s |
 | tabpfn_v2 | 0.5641 | 0.0060 | 653s |
 
-- lgbm 과 kumo 는 사실상 동률 (차이 0.0017 < fold std). 컨텍스트 1만 행 제한에서 TFM 간 편차가 큼 (kumo 0.467 ↔ tabpfn_v2 0.564).
+- 1만 행 kumo 는 lgbm 과 사실상 동률 (차이 0.0017 < fold std), 1만 행 기준 TFM 간 편차도 큼 (kumo 0.467 ↔ tabpfn_v2 0.564).
+- 상한을 풀면 kumo 0.3774 로 lgbm 보다 0.087 낮음 (lgbm fold std 0.006 의 약 15배).
 
 리더보드 (2026-10-23, 3,510팀): **kumo 420위 (상위 12.0%)** · public 0.4348 / private 0.4361. GBDT 최고 lgbm 726위 (20.7%).
 CV 에서는 동률이었지만 LB 에서는 kumo 가 확실히 앞섬 (0.435 vs 0.451).
+kumo (ctx 전체) **1위 (<0.1%)** · public 0.36714 / private 0.36924 (2026-10-26, km lb 집계). 종료 대회라 점수 기준 위치이며, 2015 대회 우승 점수 0.38242 보다도 낮음.
 
 ### GiveMeSomeCredit
 
 150,000행, 이진 분류, 10 피처. 지표: AUC ↑
 
-5-fold (2026-10-22, Databricks A10G, TFM 컨텍스트 1만 행 무작위)
+5-fold (2026-10-22, Databricks A10G, TFM 컨텍스트 1만 행 무작위. `kumo (ctx 전체)` 는 2026-10-26 H100 재실행, fold 학습 12만 행 전부)
 
 | 모델 | AUC | ± fold std | Logloss | 시간 |
 |---|---|---|---|---|
-| **catboost** | **0.8660** | 0.0031 | 0.1777 | 59s |
-| lgbm | 0.8653 | 0.0037 | **0.1775** | 14s |
+| **kumo (ctx 전체)** | **0.8694** | 0.0034 | **0.1757** | 500s |
+| catboost | 0.8660 | 0.0031 | 0.1777 | 59s |
+| lgbm | 0.8653 | 0.0037 | 0.1775 | 14s |
 | kumo | 0.8652 | 0.0032 | 0.1778 | 1,247s |
 | xgb | 0.8647 | 0.0037 | 0.1780 | 13s |
 | tabicl | 0.8631 | 0.0033 | 0.1799 | 102s |
 | tabpfn_v2 | 0.8582 | 0.0034 | 0.1813 | 284s |
 
-- 상위 4개(catboost, lgbm, kumo, xgb)는 fold std 안. 컨텍스트가 학습 데이터의 8% 인데도 kumo 는 GBDT 와 동률.
+- 1만 행 (학습의 8%) 에서는 catboost, lgbm, kumo, xgb 가 fold std 안 동률.
+- 상한을 풀면 (fold 학습 12만 행 전부) kumo 0.8694 로 catboost 를 0.0034 앞섬 — fold std 수준이라 확정은 아님. LB 에서는 차이가 더 큼 (아래).
 - TFM 시간은 속도 개선 전 A10G 기준. H100 + 코드 개선 후 fold 당 10~36초 ([TFM 추론 속도](#tfm-추론-속도)).
 
 리더보드 (2026-10-22, 926팀): **catboost 27위 (상위 2.9%)** · public 0.86271 / private 0.86886. lgbm 64위 (6.9%).
+kumo (ctx 전체) **1위 (0.1%)** · public 0.86528 / private 0.87112 (2026-10-26, km lb 집계).
 
 ### Allstate Claims Severity
 
 188,318행, 회귀, 130 피처 중 범주형 116. 지표: MAE ↓ (원 스케일로 평가 → 타깃 변환 없이 학습).
 
-5-fold (2026-10-23, Databricks, TFM 컨텍스트 1만 행 무작위. 시간은 GBDT CPU 4코어 · TFM H100 이라 직접 비교 불가)
+5-fold (2026-10-23, Databricks, TFM 컨텍스트 1만 행 무작위. 시간은 GBDT CPU 4코어 · TFM H100 이라 직접 비교 불가. `kumo (ctx 전체)` 는 2026-10-26 H100 재실행, 중앙값 예측, fold 학습 15만 행 전부)
 
 | 모델 | MAE | ± fold std | 시간 |
 |---|---|---|---|
-| **kumo** | **1,181.2** | 6.2 | 212s |
+| **kumo (ctx 전체)** | **1,114.2** | 7.8 | 959s |
+| kumo | 1,181.2 | 6.2 | 212s |
 | lgbm | 1,188.3 | 5.7 | 227s |
 | catboost | 1,188.4 | 6.3 | 4,764s |
 | xgb | 1,188.5 | 6.0 | 181s |
 | tabicl | 1,198.6 | 5.2 | 138s |
 | tabpfn_v2 | 1,209.5 | 6.3 | 677s |
 
-- 컨텍스트가 학습 데이터의 7% 뿐인데 kumo 가 GBDT 보다 MAE 7 낮음 (fold std 수준).
-- catboost 는 범주형 116개 때문에 CPU 4코어에서 80분.
+- 1만 행 (학습의 7%) 에서도 kumo 가 GBDT 보다 MAE 7 낮음 (fold std 수준). 상한을 풀면 1,114.2 로 lgbm 보다 74 낮음 (fold std 의 10배 안팎).
+- 재실행 1차는 분위수 999개의 평균으로 예측해 MAE 1,144.0 (± 6.4, 910s) 이었음. MAE 는 중앙값이 맞아서 `km/models/tfm.py` 의 `make_kumo(metric=...)` 를 고쳐 중앙값으로 다시 돌림 (위 행).
+- catboost 는 범주형 116개 때문에 CPU 4코어에서 4,764s.
 
-리더보드 (2026-10-23, 3,048팀): **kumo 1,919위 (상위 63.0%)** · public 1,154.0 / private 1,162.6. GBDT 최고 lgbm 2,054위 (67.4%).
-상위권은 log 변환 등 대회 특화 처리와 앙상블로 촘촘해 기본 설정 단일 모델로는 순위가 낮음.
+리더보드 (2026-10-23, 3,048팀): kumo (1만 행) **1,919위 (상위 63.0%)** · public 1,154.0 / private 1,162.6. GBDT 최고 lgbm 2,054위 (67.4%).
+kumo (ctx 전체, 중앙값) **1위 (<0.1%)** · public 1,095.69 / private 1,108.12 (2026-10-26, km lb 집계). 평균 예측 제출(1차)은 public 1,126.62 / private 1,135.67, 1,555위 (51.0%).
+종료 대회라 점수 기준 위치. 기존 "단일 모델은 상위권에 못 미침" 설명은 1만 행 kumo 기준이었음.
 
 ### Playground S6E1
 
 630,000행, 회귀, 11 피처 중 범주형 7. 지표: RMSE ↓
 
-5-fold (2026-10-23, Databricks, TFM 컨텍스트 1만 행 무작위. 시간은 GBDT CPU 4코어 · TFM H100 이라 직접 비교 불가)
+5-fold (2026-10-23, Databricks, TFM 컨텍스트 1만 행 무작위. 시간은 GBDT CPU 4코어 · TFM H100 이라 직접 비교 불가. `kumo (ctx 20만)` 는 2026-10-26 H100 재실행, 20만 행 무작위 — fold 학습의 약 40%)
 
 | 모델 | RMSE | ± fold std | 시간 |
 |---|---|---|---|
-| **xgb** | **8.7736** | 0.0126 | 172s |
+| **kumo (ctx 20만)** | **8.6767** | 0.0164 | 1,952s |
+| xgb | 8.7736 | 0.0126 | 172s |
 | lgbm | 8.7847 | 0.0125 | 284s |
 | catboost | 8.7924 | 0.0123 | 2,158s |
 | kumo | 8.8562 | 0.0118 | 369s |
 | tabicl | 8.8927 | 0.0107 | 71s |
 | tabpfn_v2 | 8.8985 | 0.0076 | 238s |
 
-- GBDT 3개가 TFM 3개보다 모두 나음 (catboost ↔ kumo 0.064 = fold std 의 5배). 컨텍스트가 학습 데이터의 1.6% 라 데이터가 많을수록 GBDT 유리 (S6E10 과 같은 경향).
+- 1만 행 kumo 는 GBDT 3개보다 모두 나빴음 (catboost ↔ kumo 0.064 = fold std 의 5배). 1만 행은 fold 학습의 2% 라 데이터를 거의 못 씀.
+- 20만 행으로 올리자 kumo 8.6767 로 xgb 를 0.097 앞섬 (fold std 의 6배 이상). 이 대회의 GBDT 우위는 TFM 자체보다 컨텍스트 상한 때문이었음.
 
-리더보드 (2026-10-23, 4,320팀): **xgb 2,707위 (상위 62.7%)** · public 8.7440 / private 8.7678. TFM 최고 kumo 3,449위 (79.8%).
+리더보드 (2026-10-23, 4,320팀): xgb 2,707위 (상위 62.7%) · public 8.7440 / private 8.7678. 1만 행 kumo 3,449위 (79.8%).
+kumo (ctx 20만) **764위 (상위 17.7%)** · public 8.63047 / private 8.6608 (2026-10-26, km lb 집계). 이 대회 최고 LB.
 
 ### Playground S6E10
 
 699,635행, 이진 분류, 22 피처, 진행 중 대회. 지표: AUC ↑ (제출이 확률값이라 AUC 로 추정).
 TFM 은 fold 마다 학습 데이터에서 1만 행만 무작위로 뽑아 컨텍스트로 사용 (`tfm_max_rows: 10000`), GBDT 는 전체(fold 당 ~56만 행) 사용.
+kumo 만 2026-10-26 에 컨텍스트 20만 행 무작위로 다시 돌림 (TabArena Kumo 래퍼 기본 상한, fold 학습의 약 36%).
 
-5-fold (2026-10-20, Kaggle T4 ×2 병렬)
+5-fold (2026-10-20, Kaggle T4 ×2 병렬. `kumo (ctx 20만)` 는 2026-10-26 Databricks H100 이라 시간은 직접 비교 불가)
 
 | 모델 | AUC | ± fold std | Accuracy | Logloss | 시간 |
 |---|---|---|---|---|---|
-| **lgbm** | **0.95838** | 0.0006 | 0.9256 | 0.2286 | 9분 |
-| catboost | 0.95820 | 0.0007 | 0.9255 | 0.2292 | 33분 |
-| xgb | 0.95815 | 0.0007 | 0.9253 | 0.2295 | 14분 |
-| limix2m | 0.95442 | 0.0009 | 0.9209 | 0.2411 | 40분 |
-| tabpfn_v2 | 0.95411 | 0.0005 | 0.9208 | 0.2422 | 100분 |
-| mitra | 0.95195 | 0.0008 | 0.9173 | 0.2486 | 244분 |
-| tabicl, kumo | 메모리 부족으로 실패 (이후 예측을 2만 행 단위로 나눠 해결, 5-fold 재실행은 보류) | | | | |
+| **kumo (ctx 20만)** | **0.95880** | 0.0006 | 0.9270 | 0.2254 | 2,131s |
+| lgbm | 0.95838 | 0.0006 | 0.9256 | 0.2286 | 556s |
+| catboost | 0.95820 | 0.0007 | 0.9255 | 0.2292 | 1,986s |
+| xgb | 0.95815 | 0.0007 | 0.9253 | 0.2295 | 819s |
+| limix2m | 0.95442 | 0.0009 | 0.9209 | 0.2411 | 2,400s |
+| tabpfn_v2 | 0.95411 | 0.0005 | 0.9208 | 0.2422 | 5,975s |
+| mitra | 0.95195 | 0.0008 | 0.9173 | 0.2486 | 14,618s |
+| tabicl | 메모리 부족으로 실패 (이후 예측을 2만 행 단위로 나눠 해결, 5-fold 재실행은 보류) | | | | |
+| kumo | 2026-10-20 메모리 부족 실패 → 위 `kumo (ctx 20만)` 행으로 대체 | | | | |
 
-- 데이터가 크면 GBDT 가 확실히 우위 (AUC +0.004, fold std 의 5배 이상). 컨텍스트를 전체의 1.8% 로 줄인 TFM 은 데이터를 다 못 씀.
-- TFM 은 예측 행이 많아 느림 (fold 당 검증 14만 + 테스트 30만 행). Mitra 는 4시간.
+- 1만 행 (전체의 1.8%) 에서는 GBDT 가 확실히 앞섬 (AUC +0.004, fold std 의 5배 이상). 이 차이는 컨텍스트 상한 탓이었음.
+- 20만 행 kumo 는 0.95880 으로 lgbm 0.95838 과 0.0004 차이 — fold std 이내 동률. LB 에서도 kumo 0.95835 > lgbm 0.95792 (아래). 전체 56만 행에서의 우열은 미확인.
+- TFM 은 예측 행이 많아 느림 (fold 당 검증 14만 + 테스트 30만 행). Mitra 는 14,618s.
 - 컨텍스트를 kNN·무작위로 키워 격차를 줄이는 실험은 [컨텍스트 선택 › S6E10](#s6e10) 참고 (tabicl 무작위 20만 행에서 lgbm 과 −0.0008).
 
-리더보드 (public LB, 진행 중, 순위는 `km lb` 집계)
+리더보드 (public LB, 진행 중, 순위는 `km lb` 집계 — 팀 수가 2,649 → 3,071 로 늘어 이전 순위와 다름)
 
 | 모델 | CV | Public LB | 순위 |
 |---|---|---|---|
-| **lgbm+catboost** (앙상블) | 0.9585 | **0.95800** | 2,064 / 2,649 (상위 77.9%) |
-| lgbm | 0.9584 | 0.95792 | 2,110 / 2,649 (상위 79.7%) |
+| **kumo (ctx 20만)** | 0.9588 | **0.95835** | 2,009 / 3,071 (상위 65.4%) |
+| lgbm | 0.9584 | 0.95792 | 2,470 / 3,071 (상위 80.4%) |
 
 ## 주제별 실험
 
@@ -426,7 +441,7 @@ fold std 는 accuracy 기준 0.005~0.017.
 
 - 모든 k 에서 kNN > 무작위 (accuracy +1.2~3.5%p, logloss 크게 개선). kNN 256 이 무작위 2000 보다 좋음.
 - kNN 1000 은 전체와 accuracy 0.2%p 차이(fold std 0.75%p 이내), kNN 2000 은 AUC 가 전체보다 높음.
-- 비용: kNN 은 쿼리 8개 묶음마다 재-fit → fold 당 3~7.5분 (전체는 수십 초). 이점은 전체가 컨텍스트에 안 들어가는 대용량에서만 의미 있음.
+- 비용: kNN 은 쿼리 8개 묶음마다 재-fit → fold 당 180~450s (전체는 수십 초). 이점은 전체가 컨텍스트에 안 들어가는 대용량에서만 의미 있음.
 - 1-fold 스모크(fold 0): 거리 공간 imp(LightGBM 중요도 가중)가 raw 보다 좋음 (TabPFN 0.8212 vs 0.8194).
 
 #### S4E2
@@ -493,7 +508,7 @@ kNN 탐색 (2026-10-21) — AUC
 
 - kNN 은 모든 설정에서 무작위 1만 행보다 좋음 (컨텍스트 3분의 1 로 +0.002). 그래도 전체 데이터 GBDT 와 0.002 차이.
 - 묶음 g256 → g1024 는 −0.001 정도, k 를 늘리는 쪽이 더 효과적.
-- 5-fold + 테스트 예측이면 모델당 약 3.5시간 (fold 당 검증 14만 + 테스트 30만 행).
+- 5-fold + 테스트 예측이면 모델당 약 12,600s (fold 당 검증 14만 + 테스트 30만 행).
 
 TFM 격차 원인 분석 (2026-10-21) — AUC
 
@@ -538,25 +553,16 @@ S4E2 에서 고른 설정(g256 + bal20) 적용 (2026-10-22) — AUC / accuracy /
 
 - 전체 데이터가 컨텍스트에 들어가면 kNN 을 쓸 이유가 없음 (전체와 비슷하거나 약간 낮고 훨씬 느림).
 - 한도를 넘는 중간 크기(S4E2 1.6만 행)에서는 kNN 1000~2000 으로 전체·GBDT 수준까지 회복.
-- 수십만 행(S6E10)에서는 kNN 보다 무작위 대용량 컨텍스트가 더 좋고, 둘 다 GBDT 를 넘지 못함.
+- 수십만 행(S6E10)에서는 kNN 보다 무작위 대용량 컨텍스트가 더 좋음. fold 0 에서 tabicl·tabpfn_v2 는 GBDT 를 못 넘었고, kumo 는 20만 행 5-fold 에서 GBDT 와 동률 ([S6E10 섹션](#playground-s6e10)).
 - 쿼리 단위 지역성이 핵심: 영역 분할(part)은 빠르지만 무작위 수준. 비용은 묶음 크기 g 를 키우고 k 를 늘리는 쪽으로 줄임.
 
-### 앙상블 제출
+### 외부 벤치마크 대조
 
-2026-10-21. 테스트 예측 단순 평균, 조합은 OOF 점수로 선택.
-순위 변화는 제출 당시 기록이라 대회별 섹션의 `km lb` 집계 순위(예: S6E10 lgbm+catboost 2,064 / 2,649)와 다름.
+TabArena·BeyondArena 리더보드 CSV (HF space `TabArena/leaderboard`, 2026-10-25 갱신) 기준. 외부 수치는 재현하지 않았고, 외부 GBDT 는 튜닝된 설정이라 이 문서의 기본 설정 결과와 직접 비교 불가.
 
-| 대회 | 조합 | OOF | Public LB | 기존 최고 | 순위 변화 |
-|---|---|---|---|---|---|
-| House Prices | tabpfn_v2+kumo | 0.1161 | 0.10925 | 0.10895 (kumo) | 변화 없음 |
-| Spaceship | **limix2†+kumo** | 0.8229 | **0.81949** | 0.81809 (limix2) | 38 → **35위** / 1,734 |
-| Spaceship | limix2†+kumo+catboost | 0.8237 | 0.81739 | | |
-| Titanic | limix2m+limix2† | 0.8507 | 0.76794 | 0.77511 (exaone) | 변화 없음 |
-| S4E2 | limix2†+tabicl+kumo@knn1000 | 0.9129 | 0.91184 (private **0.91194**) | 0.91437 (private 0.91076) | 종료 대회 |
-| S6E10 | **lgbm+catboost** | 0.9585 | **0.95800** | 0.95792 (lgbm) | 2,059 → **2,013위** / 2,592 |
-
-- 앙상블 이득은 작음 (+0.0001~0.0014). OOF 상 이득이 큰 조합(Titanic +0.45%p)이 LB 에서는 오히려 떨어짐 → 작은 데이터 accuracy 조합 선택은 과적합.
-- S4E2 는 public 은 낮지만 private 은 단일 limix2 보다 높음 → 최종 기준(private)에서는 앙상블이 더 좋음.
+- 10만 행 이하: TabArena 에서도 FM 이 대체로 우세.
+- 10만 행 초과 (BeyondArena, 6개 데이터셋, 신뢰구간 넓음): FM 8개 중 2개만 최고 트리 모델보다 나음. Kumo 는 Elo 가 가장 높지만 평균 improvability 는 튜닝된 CatBoost 보다 나쁨 (4.2% vs 2.7%).
+- 이 저장소의 모델 순서 (kumo > … > tabicl > tabpfn_v2) 는 TabArena 순서와 같음.
 
 ### 의미 기반 결정 모델
 
@@ -574,10 +580,10 @@ Titanic 은 로컬 M3 Pro, 나머지는 Databricks A10G. lgbm·기존 최고는 
 | 대회 (지표) | lgbm | 기존 최고 | sap_rpt | llm (4B) | llm8b | llm_lgbm | llm8b_lgbm |
 |---|---|---|---|---|---|---|---|
 | Titanic (acc ↑) | 0.8339 | 0.8462 exaone | **0.8384** | 0.7632 | — | 0.8272 | — |
-| Spaceship (acc ↑) | 0.8101 | 0.8244 limix2 | 0.8051 | 0.7144 | 0.7208 | 0.8123 | 0.8081 |
-| Spaceship (AUC ↑) | 0.9044 | 0.9191 limix2 | 0.8954 | 0.7278 | 0.7421 | 0.9043 | 0.9034 |
-| S4E2 (acc ↑) | 0.9066 | 0.9117 limix2 | 0.8984 | 0.8127 | 0.8086 | 0.9028 | 0.9049 |
-| S4E2 (logloss ↓) | 0.3008 | 0.2551 limix2 | 0.2991 | 0.5679 | 0.5720 | 0.3224 | 0.3194 |
+| Spaceship (acc ↑) | 0.8102 | 0.8237 kumo | 0.8051 | 0.7144 | 0.7208 | 0.8123 | 0.8081 |
+| Spaceship (AUC ↑) | 0.9044 | 0.9192 kumo | 0.8954 | 0.7278 | 0.7421 | 0.9043 | 0.9034 |
+| S4E2 (acc ↑) | 0.9067 | 0.9090 tabicl | 0.8984 | 0.8127 | 0.8086 | 0.9028 | 0.9049 |
+| S4E2 (logloss ↓) | 0.3009 | 0.2644 tabicl | 0.2991 | 0.5679 | 0.5720 | 0.3224 | 0.3194 |
 | House Prices (RMSE ↓) | 0.1288 | 0.1151 tabpfn_v2 | 0.1217 | — | — | — | — |
 
 5-fold 시간: llm 은 Titanic 1,185s(로컬), Spaceship 1,490s, S4E2 4,157s / llm8b 는 2,419s, 6,714s /
@@ -611,7 +617,6 @@ TabArena 대회를 A10G(24GB)에서 돌렸더니 TFM 이 GBDT 의 10~100배 → 
 | GiveMeSomeCredit | tabicl | ~20 | — | — | **10** | AUC 0.8613 |
 | GiveMeSomeCredit | kumo | ~250 | — | — | **36** | AUC 0.8641 |
 | GiveMeSomeCredit | kumo_e4 (estimator 4개) | — | — | — | **15** | AUC 0.8641 |
-| GiveMeSomeCredit | limix2 | 1,490 | 1,422 | — | 제거 | AUC 0.8639 |
 
 - "이전" 중 ~ 는 5-fold 총 시간 / 5.
 - 코드 개선: fold 당 검증·테스트를 한 번에 예측 (컨텍스트 계산 1회), TabPFN 컨텍스트 KV 캐시(GPU 에 들어갈 때만),
@@ -620,7 +625,6 @@ TabArena 대회를 A10G(24GB)에서 돌렸더니 TFM 이 GBDT 의 10~100배 → 
 - 넓은 데이터는 피처 수가 결정적: TabPFN v2 프리셋은 피처 서브샘플링이 없어 1,776개 × 8 estimator. `tfm_max_features: 500`
   (LightGBM 중요도 상위)로 14배 빨라지고 점수도 좋아짐 (tabpfn_v2 0.4486→0.4400, tabicl 0.4276→0.3981).
 - bioresponse tabpfn_v2 의 fit 380s 는 CPU 전처리. 로컬 맥은 같은 버전으로 12s → 원인 미확인, 피처 500개면 8s 라 보류.
-- limix2 는 OOM 재시도를 없애도 1,422s (파이프라인 32개 × 쿼리 13만 행 연산 자체가 큼) → 실행·리더보드에서 제거.
 - H100 에서는 OOM 경고 0회. kumo_e4 는 AUC 차이 0.00004 로 2.4배 빠름 (fold 하나, 대회 하나 기준).
 
 ### Databricks 실행 준비 시간
@@ -636,15 +640,20 @@ fold 당 모델 시간이 10~30초까지 줄어 실행 준비(pip 설치·가중
 | 이미지 km-air:v4, 두 번째 (FEVM) | 6 | 86 ※ | 99 | 54 | **153** |
 
 - 가중치 캐시: km run 61→38s (kumo 33→15s, 가중치 다운로드 제거), 복원 3s.
-- 이미지: pip 78s 제거. 노드에 이미지가 있으면 러너 밖 시간도 pip 방식과 비슷(54 vs 60s). 새 태그·새 노드는 17.5GB 를 받느라 +약 2분.
+- 이미지: pip 78s 제거. 노드에 이미지가 있으면 러너 밖 시간도 pip 방식과 비슷(54 vs 60s). 새 태그·새 노드는 17.5GB 를 받느라 +약 120s.
 - ※ 두 번째 실행은 v3·v4 모두 tabpfn_v2 가 37~40s (첫 실행 11s) — 노드 차이로 추정, 원인 미확인.
 - 이미지는 torch 2.13.0 (autogluon 과 함께 해결된 버전) → tabpfn_v2 AUC 0.85717 → 0.85711 로 소폭 변화.
 - 워크스페이스 권한·베이스 이미지 관련 메모는 [docs/known-issues.md](docs/known-issues.md#databricks).
 
 ## 다음 할 일
 
-- [ ] S6E10 tabicl 대용량 무작위 컨텍스트 5-fold + 제출 (rand100000 이면 fold 당 약 30분 + 테스트 30만 행 예측). kNN 5-fold 는 무작위 대용량이 더 좋아 대체함
+- [ ] tabicl·tabpfn_v2 컨텍스트 상한 해제 재실행 (진행 중, 다른 에이전트 실행): Amazon·Otto·GiveMeSomeCredit·Allstate·S6E1·S6E10. kumo 와 같은 조건이어야 TFM 간 CV 순위 비교가 공정. 결과 나오면 요약·대회별 표 갱신
+- [ ] S6E10 tabicl 대용량 무작위 컨텍스트 5-fold + 제출 (위 재실행 항목에 포함, rand100000 이면 fold 당 약 1,800s + 테스트 30만 행 예측). kNN 5-fold 는 무작위 대용량이 더 좋아 대체함
+- [ ] S4E2 전체 컨텍스트 (fold 학습 약 1.66만 행): tabpfn_v2 는 한도 해제 후 전체로, kumo·exaone 은 T4 메모리로 못 돌렸던 전체 컨텍스트를 H100 에서 시도 → kNN 1000 과 비교
+- [ ] S6E10 kumo 컨텍스트 전체 (56만 행): 20만 행 대비 추가 이득과 시간 확인
+- [ ] Amazon 격차 원인 검증 (kumo 0.8795 ↔ catboost 0.8957, 범주 ID 처리 가설)
+- [ ] `km board` 재생성 — 지금 docs/leaderboard.md 는 Allstate 평균 예측 제출(LB 1,126.62) 을 보여줌
 - [ ] Bioresponse 5-fold + 제출 (TFM 은 `tfm_max_features: 500`)
 - [ ] sap_rpt8k (컨텍스트 8192) H100 에서 5-fold — 컨텍스트를 키우면 TFM 상위권에 붙는지
-- [ ] TFM + GBDT 스태킹 (단순 평균 앙상블은 이득이 작았음, [앙상블 제출](#앙상블-제출))
+- [ ] TFM + GBDT 스태킹
 - [ ] 패키지 버전 고정 및 실행 시 버전 기록
