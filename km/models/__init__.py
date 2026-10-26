@@ -30,8 +30,8 @@ REGISTRY = {
     "llm": ("km.models.llm", "make_llm"),  # Qwen3-4B 객관식 zero-shot + 로지스틱 보정 (분류 전용)
 }
 
-# 실행 목록에서 뺀 모델. km lb 는 제출 설명에서 이름을 알아본 뒤 순위 집계·자동 제출에서 뺌
-# limix2 (LimiX-2 400M): GiveMeSomeCredit fold 당 ~1,400s, S4E2 8시간. 1위였던 대회도 2위와 차이가 작았음
+# 삭제한 모델. results.csv 기록도 지웠고, Kaggle 제출 기록에만 남아 있어 km lb 가 이름을 알아본 뒤 순위 집계·자동 제출에서 뺌
+# limix2 (LimiX-2 400M): GiveMeSomeCredit fold 당 ~1,400s, S4E2 28,706s. 1위였던 대회도 2위와 차이가 작았음
 RETIRED = {"limix2"}
 
 _LIMIX = [["--no-deps", "git+https://github.com/limix-ldm-ai/LimiX.git"], ["einops", "kditransform", "nvtx"],

@@ -21,7 +21,7 @@ import pandas as pd
 from km.core.competition import COMP_DIR, ROOT, load_competition
 from km.core.metrics import METRICS
 from km.core.results import RESULTS
-from km.models import REGISTRY, RETIRED
+from km.models import REGISTRY
 
 OUT = ROOT / "docs" / "leaderboard.md"
 GBDT = {name for name, (module, _) in REGISTRY.items() if module == "km.models.gbdt"}
@@ -63,7 +63,6 @@ def env(r) -> str:
 def label(model: str) -> str:
     """`kumo@full` → `kumo (ctx 전체)`, `kumo@rand200000` → `kumo (ctx 20만)`, `exaone@knn1000_g8_imp` → `exaone (kNN 1000)`."""
     base, _, spec = model.partition("@")
-    base = f"{base}†" if base in RETIRED else base
     if not spec:
         return base
     mode, k = re.match(r"(full|rand|knn|part)(\d*)", spec).groups()
@@ -104,7 +103,7 @@ def fmt_pct(p: float) -> str:
 
 
 def fmt_time(s: float) -> str:
-    return f"{s:,.0f}s" if s < 3600 else f"{s / 3600:.1f}h"
+    return f"{s:,.0f}s"
 
 
 def fmt_num(v: float) -> str:
@@ -163,9 +162,9 @@ HEADER = """\
 - **시간** = 5-fold 합계 (학습 + 검증·테스트 예측). TFM 은 학습 루프가 없어 거의 전부 추론(컨텍스트 인코딩 + 예측) 시간.
 - **s/1K** = 시간 ÷ 예측 행 수 × 1000. 예측 행 = 학습 행(OOF) + 테스트 행 × 5 (fold 마다 테스트 전체 예측). TabArena 의 predict s/1K 와 비슷한 단위.
 - **환경이 다르면 시간 비교 불가**: DBX H100 (TFM, 10-23~) · DBX CPU4 (GBDT, serverless 4코어, 10-23~) · DBX A10G (10-22, GBDT 도 같은 노드) · Kaggle T4.
-- **LB 순위**는 `km lb` 집계 (public 점수 기준 위치. 종료 대회는 늦은 제출이라 실제 순위표에는 없음). — = 미제출. † = 실행 목록에서 뺀 모델.
+- **LB 순위**는 `km lb` 집계 (public 점수 기준 위치. 종료 대회는 늦은 제출이라 실제 순위표에는 없음). — = 미제출.
 - 작은 대회(수천 행 이하)는 모델 로드·전처리 같은 고정 비용이 커서 s/1K 가 부풀려짐 → 큰 대회 값이 모델 속도에 더 가까움.
-- 앙상블·LLM 결정 모델·sap_rpt, 컨텍스트 탐색 실험(results.csv note 가 `ctx ` 로 시작, 테스트 예측 없음)은 제외. 앙상블 LB 는 [EXPERIMENTS 앙상블 제출](../EXPERIMENTS.md#앙상블-제출).
+- 앙상블·LLM 결정 모델·sap_rpt, 컨텍스트 탐색 실험(results.csv note 가 `ctx ` 로 시작, 테스트 예측 없음)은 제외.
   `(kNN 1000)` 은 포함: S4E2·Spaceship 에서 kumo·exaone·tabpfn_v2 는 전체 컨텍스트로 실패해 kNN 1000 행 컨텍스트가 유일한 5-fold·제출 결과.
 - TFM 컨텍스트 상한: 대회 config 의 `tfm_max_rows` ({capped}) 는 무작위 샘플, 나머지 대회는 상한 없이 학습 fold 전체.
   `(ctx 전체)` / `(ctx 20만)` = 그 대회들에서 상한을 풀거나 20만 행으로 올린 실행 (`@full` / `@rand200000`).
