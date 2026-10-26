@@ -11,7 +11,7 @@ Tabular Foundation Model(TabPFN, TabICL, Kumo 등)을 GBDT 베이스라인(Light
 ## 결과 요약
 
 13개 대회 (12개는 5-fold CV, Bioresponse 는 TFM fold 0 만). 대회별 표·분석은 [EXPERIMENTS.md](EXPERIMENTS.md).
-† `limix2` 는 느려서 실행 목록에서 뺀 모델 — 기록은 남겼지만 지금 코드로는 다시 돌릴 수 없고 `km lb` 집계에서도 빠짐.
+`(ctx 전체)` · `(ctx 20만)` = TFM 컨텍스트 상한(`tfm_max_rows: 10000`)을 풀고 다시 돌린 kumo.
 
 | 대회 | 학습 행 | 지표 | CV 1위 | 최고 LB 순위 (public) |
 |---|---|---|---|---|
@@ -20,17 +20,19 @@ Tabular Foundation Model(TabPFN, TabICL, Kumo 등)을 GBDT 베이스라인(Light
 | House Prices | 1,460 | RMSE ↓ | tabpfn_v2 | **상위 1.8%** (kumo) |
 | Bioresponse | 3,751 | logloss ↓ | 5-fold 미실행 | 미제출 |
 | Mercedes-Benz | 4,209 | R² ↑ | kumo | 상위 47.1% (kumo) |
-| Spaceship Titanic | 8,693 | acc ↑ | limix2† (현재 모델 중 kumo) | **상위 2.0%** (limix2†+kumo) |
-| S4E2 | 20,758 | acc ↑ | limix2† (현재 모델 중 tabicl) | 상위 25.5% (limix2†) |
+| Spaceship Titanic | 8,693 | acc ↑ | kumo | 상위 5.9% (exaone@knn1000) |
+| S4E2 | 20,758 | acc ↑ | tabicl | 상위 40.4% (kumo@knn1000 · exaone@knn1000) |
 | Amazon | 32,769 | AUC ↑ | catboost | 상위 3.8% (catboost) |
-| Otto | 61,878 | logloss ↓ | lgbm | 상위 12.0% (kumo) |
-| GiveMeSomeCredit | 150,000 | AUC ↑ | catboost | 상위 2.9% (catboost) |
-| Allstate | 188,318 | MAE ↓ | kumo | 상위 63.0% (kumo) |
-| S6E1 | 630,000 | RMSE ↓ | xgb | 상위 62.7% (xgb) |
-| S6E10 | 699,635 | AUC ↑ | lgbm | 상위 77.9% (lgbm+catboost) |
+| Otto | 61,878 | logloss ↓ | kumo (ctx 전체) | **1위** (kumo (ctx 전체)) |
+| GiveMeSomeCredit | 150,000 | AUC ↑ | kumo (ctx 전체) | **1위** (kumo (ctx 전체)) |
+| Allstate | 188,318 | MAE ↓ | kumo (ctx 전체) | **1위** (kumo (ctx 전체)) |
+| S6E1 | 630,000 | RMSE ↓ | kumo (ctx 20만) | 상위 17.7% (kumo (ctx 20만)) |
+| S6E10 | 699,635 | AUC ↑ | kumo (ctx 20만) | 상위 65.4% (kumo (ctx 20만)) |
 
-- 작은 데이터에서는 TFM 이 GBDT 와 같거나 앞서고, 수십만 행에서는 GBDT 가 확실히 앞섬 (TFM 은 컨텍스트를 1만 행으로 잘라 씀).
-- TFM 중에서는 kumo 가 가장 꾸준함. 범주 ID 만 있는 데이터(Amazon)는 catboost 가 크게 앞섬 (원인은 추정).
+종료된 대회의 LB 순위는 늦은 제출 점수로 매긴 위치 (Otto·GiveMeSomeCredit·Allstate 1위 포함).
+
+- 작은 데이터에서는 TFM 이 GBDT 와 같거나 앞섬. 큰 데이터의 GBDT 우위는 대부분 TFM 컨텍스트 1만 행 상한 탓 — 상한을 푼 kumo 가 Otto·GiveMeSomeCredit·Allstate·S6E1 에서 GBDT 최고를 넘고 S6E10 은 동률.
+- TFM 중에서는 kumo 가 가장 꾸준함. 범주 ID 만 있는 데이터(Amazon)는 상한을 풀어도 catboost 가 앞섬 (원인은 추정).
 - 상위 모델 간 차이는 대부분 fold std 안 → 작은 대회일수록 CV 순위가 LB 에서 자주 뒤집힘.
 
 ## 구조
@@ -124,7 +126,7 @@ uv run km lb bioresponse --submit 2
 | `tabicl` | TabICL v2 | |
 | `kumo` | NVIDIA Kumo-Tabular (large) | 회귀는 999 분위수 평균 (지표가 MAE 면 중앙값). `kumo_e4` 는 estimator 4개 (2.4배 빠름) |
 | `exaone` | EXAONE-Tabular (LG) | 가중치 비상업 라이선스 |
-| `limix2m` | LimiX-2M | 비상업 라이선스. `--no-deps` 설치 (torch==2.9.1 고정 회피). `limix2`(400M)는 느려서 제거 |
+| `limix2m` | LimiX-2M | 비상업 라이선스. `--no-deps` 설치 (torch==2.9.1 고정 회피) |
 | `mitra` / `mitra_ft` | Mitra-v2 zero-shot / +50 step fine-tune | AutoGluon sklearn 인터페이스. 회귀는 v1 체크포인트 |
 | `causilo` | Nums AI Causilo | 가중치 비상업 라이선스 |
 | `sap_rpt` / `sap_rpt8k` | SAP-RPT-1-OSS (구 ConTextTab), 컨텍스트 2048 / 8192 | HF gated + 연구용 라이선스. `km databricks` 가 가중치를 로컬에서 받아 Volume `weights/` 에 올림 (Kaggle 원격은 미지원) |
