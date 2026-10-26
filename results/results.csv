@@ -178,3 +178,4 @@ timestamp,comp,model,metric,cv,cv_std,n_folds,seconds,cv_mae,note,where,cv_auc,c
 2026-10-26T05:11:22,allstate-claims-severity,kumo@full,mae,1143.958120329388,6.350158159508618,5,910.4,,full context (tfm_max_rows 무시),databricks,,,,1836.9700331954816
 2026-10-26T05:28:46,playground-series-s6e1,kumo@rand200000,rmse,8.676717835475726,0.0164385025754212,5,1952.4,6.893106775333829,context 20만 행 무작위 (TabArena 기본 상한),databricks,,,,
 2026-10-26T05:32:33,playground-series-s6e10,kumo@rand200000,auc,0.9587982466345104,0.0005530260104167,5,2130.8,,context 20만 행 무작위 (TabArena 기본 상한),databricks,,0.2254273143394717,0.927000507407434,
+2026-10-26T06:50:02,allstate-claims-severity,kumo@full,mae,1114.2085681902065,7.778887194677289,5,959.1,,"full context, MAE 라 분위수 중앙값으로 예측",databricks,,,,1876.380860920696

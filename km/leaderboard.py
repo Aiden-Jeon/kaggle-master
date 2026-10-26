@@ -26,7 +26,7 @@ import pandas as pd
 from km.competition import COMP_DIR, load_competition
 from km.metrics import METRICS
 from km.models import REGISTRY, RETIRED, base_name
-from km.results import RESULTS
+from km.results import RESULTS, latest_cv
 from km.submit import make_submission, push
 
 
@@ -83,16 +83,6 @@ def is_retired(model: str) -> bool:
     return any(base_name(p) in RETIRED for p in model.split("+"))
 
 
-def latest_cv(comp, model: str) -> float | None:
-    """results.csv 에서 해당 모델의 전체 fold 실행 중 가장 최근 CV."""
-    csv = RESULTS / "results.csv"
-    if not csv.exists():
-        return None
-    r = pd.read_csv(csv)
-    r = r[(r.comp == comp.name) & (r.model == model) & (r.n_folds == comp.cv["n_splits"])]
-    return float(r.sort_values("timestamp").cv.iloc[-1]) if len(r) else None
-
-
 def submit_pending(comp_name: str, n: int) -> int:
     """test.npy 가 있지만 아직 제출 안 한 단일 모델을 CV 좋은 순으로 최대 n 개 제출. 제출한 개수 반환."""
     comp = load_competition(comp_name)
@@ -105,7 +95,7 @@ def submit_pending(comp_name: str, n: int) -> int:
     for cv, model in todo[:n]:
         print(f"{comp_name}: {model} 제출 (CV {comp.metric}={cv:.5f})")
         try:
-            push(comp_name, make_submission(comp_name, [model]), model, f"{comp.cv['n_splits']}-fold CV {cv:.5f}")
+            push(comp_name, make_submission(comp_name, [model]), model)
         except subprocess.CalledProcessError:  # 대개 하루 제출 한도 초과
             print(f"{comp_name}: 제출 실패 → 중단")
             break

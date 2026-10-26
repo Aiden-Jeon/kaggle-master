@@ -76,10 +76,11 @@ def base_name(name: str) -> str:
 
 
 def make_model(name: str, task: str, cat_cols: list[str], seed: int, max_rows: int | None = None,
-               max_features: int | None = None, prompt: dict | None = None):
+               max_features: int | None = None, prompt: dict | None = None, metric: str | None = None):
     """max_rows / max_features: TFM 컨텍스트 행·피처 상한 (대회 설정 tfm_max_rows / tfm_max_features).
     GBDT 와 `@spec` 래퍼(컨텍스트를 직접 고름)에는 적용 안 함.
-    prompt: LLM 결정 모델용 질문 (팩토리가 prompt 인자를 받을 때만 전달)."""
+    prompt: LLM 결정 모델용 질문 (팩토리가 prompt 인자를 받을 때만 전달).
+    metric: 대회 지표 (팩토리가 metric 인자를 받을 때만 전달. 예: kumo 는 mae 면 분포의 중앙값으로 예측)."""
     base, _, spec = name.partition("@")
     base, kwargs = VARIANTS.get(base, (base, {}))
     kwargs = dict(kwargs)
@@ -88,8 +89,11 @@ def make_model(name: str, task: str, cat_cols: list[str], seed: int, max_rows: i
         raise KeyError(f"알 수 없는 모델 '{base}'. 사용 가능: {', '.join([*REGISTRY, *VARIANTS])}")
     module, fn = REGISTRY[base]
     factory = getattr(importlib.import_module(module), fn)
-    if "prompt" in inspect.signature(factory).parameters:
+    params = inspect.signature(factory).parameters
+    if "prompt" in params:
         kwargs["prompt"] = prompt
+    if "metric" in params:
+        kwargs["metric"] = metric
     if not spec:
         from km.models.tfm import _TFM
 
