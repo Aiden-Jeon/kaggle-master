@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 
 from km.competition import TRANSFORMS, load_competition, load_data
-from km.results import RESULTS
+from km.results import RESULTS, latest_cv
 
 
 def make_submission(comp_name: str, models: list[str]) -> Path:
@@ -48,7 +48,12 @@ def make_submission(comp_name: str, models: list[str]) -> Path:
 
 
 def push(comp_name: str, path: Path, name: str, message: str | None = None):
-    """설명 맨 앞에 모델 이름 → `km lb` 가 제출을 모델에 연결."""
+    """설명 맨 앞에 모델 이름 → `km lb` 가 제출을 모델에 연결.
+    message 가 없으면 results.csv 의 CV 를 붙임 (예: `kumo@full | 5-fold CV 0.37738`, 앙상블은 이름만)."""
+    if message is None:
+        comp = load_competition(comp_name)
+        cv = latest_cv(comp, name)
+        message = f"{comp.cv['n_splits']}-fold CV {cv:.5f}" if cv is not None else None
     subprocess.run(["kaggle", "competitions", "submit", "-c", comp_name, "-f", str(path),
                     "-m", f"{name} | {message}" if message else name], check=True)
 

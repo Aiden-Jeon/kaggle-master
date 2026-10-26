@@ -22,6 +22,16 @@ def append_rows(rows: pd.DataFrame):
         pd.concat([pd.read_csv(csv), rows] if csv.exists() else [rows]).to_csv(csv, index=False)
 
 
+def latest_cv(comp, model: str) -> float | None:
+    """results.csv 에서 해당 모델의 전체 fold 실행 중 가장 최근 CV."""
+    csv = RESULTS / "results.csv"
+    if not csv.exists():
+        return None
+    r = pd.read_csv(csv)
+    r = r[(r.comp == comp.name) & (r.model == model) & (r.n_folds == comp.cv["n_splits"])]
+    return float(r.sort_values("timestamp").cv.iloc[-1]) if len(r) else None
+
+
 def merge_results(remote: Path, where: str):
     """원격 실행의 results/ 를 로컬 results/ 에 병합 (results.csv 는 where 열을 붙여 행 추가)."""
     for d in remote.iterdir():

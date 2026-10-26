@@ -100,7 +100,7 @@ def run_model(name, comp, X, y, X_test, cat_cols, folds, max_folds=None, no_test
     for f in run_folds:
         tr, va = folds != f, folds == f
         model = make_model(name, comp.task, cat_cols, seed=comp.cv["seed"], max_rows=comp.tfm_max_rows,
-                           max_features=comp.tfm_max_features, prompt=comp.llm_prompt(classes))
+                           max_features=comp.tfm_max_features, prompt=comp.llm_prompt(classes), metric=comp.metric)
         t_fit = time.time()
         model.fit(X[tr], y[tr])
         t_pred = time.time()

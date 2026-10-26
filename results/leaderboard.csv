@@ -1,6 +1,8 @@
 comp,model,metric,cv,public,private,rank,teams,top_pct,date,description,ref
+GiveMeSomeCredit,kumo@full,auc,0.8693609946614833,0.86528,0.87112,1,926,0.1,2026-10-26,kumo@full,57654452
 GiveMeSomeCredit,catboost,auc,0.8659546771974531,0.86271,0.86886,27,926,2.9,2026-10-22,catboost | 5-fold CV 0.86595,57513135
 GiveMeSomeCredit,lgbm,auc,0.8653352819383563,0.86195,0.86797,64,926,6.9,2026-10-22,lgbm | 5-fold CV 0.86534,57513142
+allstate-claims-severity,kumo@full,mae,1143.958120329388,1126.62013,1135.66663,1555,3048,51.0,2026-10-26,kumo@full,57654595
 allstate-claims-severity,kumo,mae,1181.2052231520777,1153.97893,1162.57154,1919,3048,63.0,2026-10-23,kumo | 5-fold CV 1181.20522,57559980
 allstate-claims-severity,kumo,mae,1181.2052231520777,1153.97893,1162.57154,1919,3048,63.0,2026-10-23,kumo | 5-fold CV 1181.20522,57559842
 allstate-claims-severity,lgbm,mae,1188.3029668757413,1169.84993,1179.54147,2054,3048,67.4,2026-10-23,lgbm | 5-fold CV 1188.30297,57559982
@@ -13,6 +15,7 @@ allstate-claims-severity,catboost,mae,1188.3834167996297,1172.79015,1181.71188,2
 allstate-claims-severity,catboost,mae,1188.3834167996297,1172.79015,1181.71188,2084,3048,68.4,2026-10-23,catboost | 5-fold CV 1188.38342,57559852
 allstate-claims-severity,tabpfn_v2,mae,1209.4635313868498,1189.70518,1195.76517,2180,3048,71.5,2026-10-23,tabpfn_v2 | 5-fold CV 1209.46353,57559998
 amazon-employee-access-challenge,catboost,auc,0.8957373076349873,0.91582,0.911,64,1689,3.8,2026-10-22,catboost | 5-fold CV 0.89574,57513127
+amazon-employee-access-challenge,kumo@full,auc,0.8794801870713336,0.89432,0.89114,502,1689,29.7,2026-10-26,kumo@full,57654169
 amazon-employee-access-challenge,xgb,auc,0.8733991580929394,0.89187,0.88595,529,1689,31.3,2026-10-22,xgb | 5-fold CV 0.87340,57513131
 house-prices-advanced-regression-techniques,kumo,rmse,0.1190980989041099,0.10895,,79,4372,1.8,2026-10-19,kumo 5-fold (CV rmse from EXPERIMENTS.md),57399774
 house-prices-advanced-regression-techniques,tabpfn_v2+kumo,rmse,,0.10925,,80,4372,1.8,2026-10-21,ensemble avg: tabpfn_v2+kumo (OOF-selected),57480050
@@ -29,6 +32,7 @@ mercedes-benz-greener-manufacturing,catboost,r2,0.5563480004121028,0.54961,0.545
 mercedes-benz-greener-manufacturing,lgbm,r2,0.5127362736836694,0.53074,0.50519,3300,3825,86.3,2026-10-23,lgbm | 5-fold CV 0.51274,57559948
 mercedes-benz-greener-manufacturing,lgbm,r2,0.5127362736836694,0.53074,0.50519,3300,3825,86.3,2026-10-23,lgbm | 5-fold CV 0.51274,57559832
 mercedes-benz-greener-manufacturing,xgb,r2,0.4871235171864212,0.5248,0.4927,3359,3825,87.8,2026-10-23,xgb | 5-fold CV 0.48712,57559954
+otto-group-product-classification-challenge,kumo@full,logloss,0.3773795830020175,0.36714,0.36924,1,3510,0.0,2026-10-26,kumo@full,57654177
 otto-group-product-classification-challenge,kumo,logloss,0.4665122150924918,0.43476,0.43612,420,3510,12.0,2026-10-23,kumo | 5-fold CV 0.46651,57559963
 otto-group-product-classification-challenge,kumo,logloss,0.4665122150924918,0.43476,0.43612,420,3510,12.0,2026-10-23,kumo | 5-fold CV 0.46651,57559806
 otto-group-product-classification-challenge,lgbm,logloss,0.4648113570385627,0.45106,0.45273,726,3510,20.7,2026-10-23,lgbm | 5-fold CV 0.46481,57559961
@@ -41,6 +45,7 @@ otto-group-product-classification-challenge,tabpfn_v2,logloss,0.5641153275961441
 playground-series-s4e2,exaone@knn1000_g16_imp,accuracy,0.9087098949802486,0.91076,0.90688,1452,3590,40.4,2026-10-21,"exaone@knn1000_g16_imp (5-fold, kNN context)",57479967
 playground-series-s4e2,kumo@knn1000_g16_imp,accuracy,0.9087580691781482,0.91076,0.90959,1452,3590,40.4,2026-10-21,"kumo@knn1000_g16_imp (5-fold, kNN context)",57479963
 playground-series-s4e2,tabpfn_v2@knn1000_g16_imp,accuracy,0.9072164948453608,0.90787,0.90634,1843,3590,51.3,2026-10-21,"tabpfn_v2@knn1000_g16_imp (5-fold, kNN context)",57479971
+playground-series-s6e1,kumo@rand200000,rmse,8.676717835475726,8.63047,8.6608,764,4320,17.7,2026-10-26,kumo@rand200000,57655099
 playground-series-s6e1,xgb,rmse,8.773606696524917,8.74403,8.76778,2707,4320,62.7,2026-10-23,xgb | 5-fold CV 8.77361,57560005
 playground-series-s6e1,xgb,rmse,8.773606696524917,8.74403,8.76778,2707,4320,62.7,2026-10-23,xgb | 5-fold CV 8.77361,57559872
 playground-series-s6e1,lgbm,rmse,8.78468584519662,8.75654,8.77902,2950,4320,68.3,2026-10-23,lgbm | 5-fold CV 8.78469,57560010
@@ -52,8 +57,9 @@ playground-series-s6e1,kumo,rmse,8.856150097502011,8.81343,8.83475,3449,4320,79.
 playground-series-s6e1,tabicl,rmse,8.892721223959333,8.84787,8.87107,3534,4320,81.8,2026-10-23,tabicl | 5-fold CV 8.89272,57560027
 playground-series-s6e1,tabicl,rmse,8.892721223959333,8.84787,8.87107,3534,4320,81.8,2026-10-23,tabicl | 5-fold CV 8.89272,57559893
 playground-series-s6e1,tabpfn_v2,rmse,8.89849285036696,8.85954,8.8804,3572,4320,82.7,2026-10-23,tabpfn_v2 | 5-fold CV 8.89849,57560030
-playground-series-s6e10,lgbm+catboost,auc,,0.958,,2064,2649,77.9,2026-10-21,ensemble avg: lgbm+catboost (OOF-selected),57480071
-playground-series-s6e10,lgbm,auc,0.9583820596544326,0.95792,,2110,2649,79.7,2026-10-21,"lgbm (5-fold CV best, default)",57464321
+playground-series-s6e10,kumo@rand200000,auc,0.9587982466345104,0.95835,,2009,3071,65.4,2026-10-26,kumo@rand200000,57655101
+playground-series-s6e10,lgbm+catboost,auc,,0.958,,2413,3071,78.6,2026-10-21,ensemble avg: lgbm+catboost (OOF-selected),57480071
+playground-series-s6e10,lgbm,auc,0.9583820596544326,0.95792,,2470,3071,80.4,2026-10-21,"lgbm (5-fold CV best, default)",57464321
 restaurant-revenue-prediction,tabpfn_v2,rmse,2441738.2757494496,1684067.91673,1876123.24826,345,2260,15.3,2026-10-23,tabpfn_v2 | 5-fold CV 2441738.27575,57559922
 restaurant-revenue-prediction,kumo,rmse,2426650.170290696,1716773.87278,1965574.8467,618,2260,27.3,2026-10-23,kumo | 5-fold CV 2426650.17029,57559911
 restaurant-revenue-prediction,kumo,rmse,2426650.170290696,1716773.87278,1965574.8467,618,2260,27.3,2026-10-23,kumo | 5-fold CV 2426650.17029,57559786

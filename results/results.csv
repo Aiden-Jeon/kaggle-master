@@ -172,3 +172,10 @@ timestamp,comp,model,metric,cv,cv_std,n_folds,seconds,cv_mae,note,where,cv_auc,c
 2026-10-22T05:49:45,amazon-employee-access-challenge,exaone,auc,0.8269555160198253,0.0114389763920004,5,153.8,,tabarena,databricks,,0.1645463605789029,0.9488540999115016,
 2026-10-22T05:50:47,amazon-employee-access-challenge,causilo,auc,0.81639843218852,0.0086129576294999,5,61.8,,tabarena,databricks,,0.1688551828418358,0.9460770850498949,
 2026-10-22T06:44:18,amazon-employee-access-challenge,limix2,auc,0.8418984715982724,0.0108580529555031,5,3210.1,,tabarena,databricks,,0.1600249657487518,0.9489151332051634,
+2026-10-26T02:42:01,amazon-employee-access-challenge,kumo@full,auc,0.8794801870713336,0.0093754506402374,5,95.7,,full context (tfm_max_rows 무시),databricks,,0.1414167401787371,0.9530959138209892,
+2026-10-26T02:45:13,otto-group-product-classification-challenge,kumo@full,logloss,0.3773795830020175,0.0033488978393137,5,302.1,,full context (tfm_max_rows 무시),databricks,,,0.8485406768156696,
+2026-10-26T05:04:24,GiveMeSomeCredit,kumo@full,auc,0.8693609946614833,0.0033945696780457,5,500.2,,full context (tfm_max_rows 무시),databricks,,0.1757100009937094,0.93786,
+2026-10-26T05:11:22,allstate-claims-severity,kumo@full,mae,1143.958120329388,6.350158159508618,5,910.4,,full context (tfm_max_rows 무시),databricks,,,,1836.9700331954816
+2026-10-26T05:28:46,playground-series-s6e1,kumo@rand200000,rmse,8.676717835475726,0.0164385025754212,5,1952.4,6.893106775333829,context 20만 행 무작위 (TabArena 기본 상한),databricks,,,,
+2026-10-26T05:32:33,playground-series-s6e10,kumo@rand200000,auc,0.9587982466345104,0.0005530260104167,5,2130.8,,context 20만 행 무작위 (TabArena 기본 상한),databricks,,0.2254273143394717,0.927000507407434,
+2026-10-26T06:50:02,allstate-claims-severity,kumo@full,mae,1114.2085681902065,7.778887194677289,5,959.1,,"full context, MAE 라 분위수 중앙값으로 예측",databricks,,,,1876.380860920696

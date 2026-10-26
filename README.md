@@ -117,7 +117,7 @@ uv run km lb bioresponse --submit 2
 | `tabpfn_v2` | TabPFN v2 | 라이선스 동의 없이 사용 가능 |
 | `tabpfn` / `tabpfn35` | TabPFN 최신 / 3.5 | 브라우저 라이선스 동의 필요 → Kaggle 에서 사용 불가 |
 | `tabicl` | TabICL v2 | |
-| `kumo` | NVIDIA Kumo-Tabular (large) | 회귀는 999 분위수 평균. `kumo_e4` 는 estimator 4개 (2.4배 빠름) |
+| `kumo` | NVIDIA Kumo-Tabular (large) | 회귀는 999 분위수 평균 (지표가 MAE 면 중앙값). `kumo_e4` 는 estimator 4개 (2.4배 빠름) |
 | `exaone` | EXAONE-Tabular (LG) | 가중치 비상업 라이선스 |
 | `limix2m` | LimiX-2M | 비상업 라이선스. `--no-deps` 설치 (torch==2.9.1 고정 회피). `limix2`(400M)는 느려서 제거 |
 | `mitra` / `mitra_ft` | Mitra-v2 zero-shot / +50 step fine-tune | AutoGluon sklearn 인터페이스. 회귀는 v1 체크포인트 |

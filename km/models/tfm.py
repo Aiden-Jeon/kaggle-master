@@ -206,11 +206,14 @@ class _LimiX(_Transductive):
 
 
 class _Kumo(_Transductive):
-    """컨텍스트는 sdm 의 fit() 으로 한 번만 인코딩해 KV 캐시에 두고, 쿼리 청크마다 predict() 로 재사용."""
+    """컨텍스트는 sdm 의 fit() 으로 한 번만 인코딩해 KV 캐시에 두고, 쿼리 청크마다 predict() 로 재사용.
 
-    def __init__(self, task, cat_idx, n_estimators=8):
+    회귀는 999개 분위수(q001~q999)로 분포를 예측 → point 로 점추정: mean(기대값, RMSE 용) / median(MAE 용).
+    """
+
+    def __init__(self, task, cat_idx, n_estimators=8, point="mean"):
         super().__init__(task, cat_idx)
-        self.n_estimators = n_estimators
+        self.n_estimators, self.point = n_estimators, point
 
     def _run(self, X):
         import sdm
@@ -232,8 +235,9 @@ class _Kumo(_Transductive):
         with autocast:
             out = self.model_.predict(query)
         out = out.to_pandas() if hasattr(out, "to_pandas") else pd.DataFrame(out.float().cpu().numpy())
-        if self.task == "regression":  # 999개 분위수(q001~q999) 평균 ≈ 기대값
-            return out.to_numpy(dtype=float).mean(1)
+        if self.task == "regression":
+            q = out.to_numpy(dtype=float)
+            return np.median(q, 1) if self.point == "median" else q.mean(1)
         return out[sorted(out.columns, key=lambda c: int(c) if str(c).isdigit() else str(c))].to_numpy(float)
 
 
@@ -242,9 +246,11 @@ def make_limix2m(task, cat_cols, seed):
     return _TFM(lambda cat_idx: _LimiX(task, cat_idx, "stable-ai/LimiX-1_2M", "LimiX-1_2M.ckpt"), cat_cols)
 
 
-def make_kumo(task, cat_cols, seed, n_estimators=8):
+def make_kumo(task, cat_cols, seed, n_estimators=8, metric=None):
+    # MAE 는 중앙값이 최적 점추정 (평균은 오른쪽 꼬리가 긴 타깃에서 위로 치우침, Allstate)
+    point = "median" if metric == "mae" else "mean"
     # 컨텍스트가 1만 행을 넘으면 질의 2만 행으로는 T4 메모리를 넘음 (S4E2 에서 13.7GiB 요청)
-    return _TFM(lambda cat_idx: _Kumo(task, cat_idx, n_estimators), cat_cols, chunk=2048)
+    return _TFM(lambda cat_idx: _Kumo(task, cat_idx, n_estimators, point), cat_cols, chunk=2048)
 
 
 class _Causilo(BaseEstimator):
