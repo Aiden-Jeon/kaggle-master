@@ -26,13 +26,14 @@ import subprocess
 import tempfile
 import time
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
 
 from km.core.competition import COMP_DIR, load_competition
 from km.core.metrics import METRICS
-from km.core.results import RESULTS, full_runs, made_test, test_info
+from km.core.results import RESULTS, made_test, test_info
 from km.leaderboard.submit import make_submission, parse_message, push
 from km.models import REGISTRY, RETIRED, base_name
 
@@ -124,32 +125,60 @@ def is_retired(model: str) -> bool:
     return any(base_name(p) in RETIRED for p in model.split("+"))
 
 
-def prediction_runs(comp) -> pd.DataFrame:
-    """제출과 연결할 후보: 전체 fold 실행 중 테스트 예측을 만든 것 (탐색 실험·--no-test 재실행 제외)."""
-    runs = full_runs(comp)
+def read_results() -> pd.DataFrame:
+    """results.csv 전체. km lb 는 한 번만 읽고 대회마다 넘김 (prediction_runs 참고)."""
+    csv = RESULTS / "results.csv"
+    if not csv.exists():
+        return pd.DataFrame(columns=["timestamp", "comp", "model", "cv", "n_folds", "note", "test"])
+    return pd.read_csv(csv)
+
+
+def prediction_runs(comp, results: pd.DataFrame) -> pd.DataFrame:
+    """제출과 연결할 후보: 전체 fold 실행 중 테스트 예측을 만든 것 (탐색 실험·--no-test 재실행 제외), 시각 순.
+    results: read_results() 의 results.csv 전체."""
+    runs = results[(results.comp == comp.name) & (results.n_folds == comp.cv["n_splits"])].sort_values("timestamp")
     return runs[made_test(runs)]
 
 
-def submit_pending(comp_name: str, n: int, known: dict | None = None) -> int:
+def parse_utc(text) -> datetime:
+    """시각 문자열 → UTC 기준 naive datetime. 문자열 비교 대신 이걸로 비교.
+    타임존이 없으면 UTC 로 봄: results.csv timestamp·test.json run 은 datetime.now(timezone.utc) 로 쓰고,
+    Kaggle 제출 날짜는 kagglesdk 가 UTC 'Z' 를 떼고 naive 로 준 값 (2026-10-27 확인). 타임존이 붙어 있으면 UTC 로 환산.
+    못 읽으면 RuntimeError (조용히 틀리지 않도록 그 대회·모델 처리를 멈춤)."""
+    try:
+        t = datetime.fromisoformat(str(text).strip())
+    except ValueError as e:
+        raise RuntimeError(f"시각을 읽지 못함: {text!r}") from e
+    return t.astimezone(timezone.utc).replace(tzinfo=None) if t.tzinfo else t
+
+
+def submit_pending(comp_name: str, n: int, known: dict | None, subs: list[dict], results: pd.DataFrame) -> int:
     """test.npy 가 있지만 그 실행을 아직 제출 안 한 단일 모델을 CV 좋은 순으로 최대 n 개 제출. 제출한 개수 반환.
-    known: 제출 ref → (cv, run), 이전 leaderboard.csv 에서 찾은 값."""
+    known: 제출 ref → (cv, run), 이전 leaderboard.csv 에서 찾은 값. subs: 이 대회의 제출 목록 (submissions 결과, 다시 읽지 않음)."""
     comp = load_competition(comp_name)
     # 이미 제출한 실행: (모델, run). 실행을 알 수 없는 제출은 그 제출 시각까지의 예측을 이미 낸 것으로 봄
     # (그 뒤에 만든 예측은 낸 적이 없으니 제출 대상)
-    runs = prediction_runs(comp)
+    runs = prediction_runs(comp, results)
     done, unknown_until = set(), {}
-    for s in submissions(comp_name):
+    for s in subs:
         model = model_of(s)
         run = submission_run(comp, s, runs[runs.model == model])[1] or (known or {}).get(str(s["ref"]), (None, None))[1]
         if run:
-            done.add((model, run))
+            done.add((model, parse_utc(run)))
         else:
-            unknown_until[model] = max(unknown_until.get(model, ""), s["date"].replace(" ", "T"))
+            sent_at = parse_utc(s["date"])
+            unknown_until[model] = max(unknown_until.get(model, sent_at), sent_at)
     todo = []
     for d in (RESULTS / comp_name).glob("*/"):
         t = test_info(comp_name, d.name)  # 제출할 test.npy 를 만든 실행. 출처를 모르면 자동 제출 안 함
-        if (t and t["n_folds"] == comp.cv["n_splits"] and (d.name, t["run"]) not in done
-                and t["run"] > unknown_until.get(d.name, "") and not is_retired(d.name)):
+        if not t or t["n_folds"] != comp.cv["n_splits"] or is_retired(d.name):
+            continue
+        try:
+            run_at = parse_utc(t["run"])
+        except RuntimeError as e:
+            print(f"{comp_name}: {d.name} 의 test.json 을 읽지 못해 자동 제출 안 함 ({e})")
+            continue
+        if (d.name, run_at) not in done and run_at > unknown_until.get(d.name, datetime.min):
             todo.append((t["cv"], d.name))
     todo.sort(reverse=METRICS[comp.metric][1])
     sent = 0
@@ -166,38 +195,44 @@ def submit_pending(comp_name: str, n: int, known: dict | None = None) -> int:
     return sent
 
 
-def wait_scored(comp_name: str, timeout: int = 900):
-    """방금 낸 제출이 채점될 때까지 대기."""
+def wait_scored(comp_name: str, timeout: int = 900) -> list[dict]:
+    """방금 낸 제출이 채점될 때까지 대기. 마지막으로 읽은 제출 목록을 돌려줌 (rank_rows 가 다시 읽지 않도록)."""
+    subs = submissions(comp_name)
     for _ in range(timeout // 15):
-        if not any("PENDING" in s["status"] for s in submissions(comp_name)):
-            return
+        if not any("PENDING" in s["status"] for s in subs):
+            break
         time.sleep(15)
+        subs = submissions(comp_name)
+    return subs
 
 
 def submission_run(comp, sub: dict, runs: pd.DataFrame) -> tuple[float | None, str | None]:
     """제출을 만든 실행의 (CV, 실행 시각). runs = 그 모델의 예측 실행 (prediction_runs, 시각 순, UTC).
     1) 설명의 `run <시각>` (km submit 기본, 2026-10-27~)  2) 설명의 `<n>-fold CV <점수>` 와 같은 점수의 실행
     3) 제출 시각(UTC) 전 마지막 실행. 실행을 못 찾으면 실행 시각은 None (km board 는 모델 이름으로만 연결).
+    시각 비교는 parse_utc 로 datetime 끼리 함 (문자열 비교는 타임존·형식이 다르면 틀림). 반환하는 실행 시각은 results.csv 의 문자열 그대로.
     모델 이름만으로 찾으면 같은 이름으로 다시 돌린 뒤 예전 제출에도 새 CV 가 붙음 (2026-10-26 Allstate kumo@full 평균 → 중앙값)."""
     info = parse_message(sub["description"])
     cv_ok = info.cv is not None and info.n_folds == comp.cv["n_splits"]
     if info.cv is not None and not cv_ok:  # 1-fold 시험 등 → 전체 fold 실행이 아님, 날짜로 추측하지 않음
         return None, None
+    at = runs.timestamp.map(parse_utc)
     if info.run:  # 적힌 실행이 없으면 (지워짐 등) 추측하지 않음
-        hit = runs[runs.timestamp == info.run]
-        return (float(hit.cv.iloc[-1]), info.run) if len(hit) else (float(info.cv) if cv_ok else None, None)
-    before = runs[runs.timestamp <= sub["date"].replace(" ", "T")]
+        hit = runs[at == parse_utc(info.run)]
+        return (float(hit.cv.iloc[-1]), hit.timestamp.iloc[-1]) if len(hit) else (float(info.cv) if cv_ok else None, None)
+    before = runs[at <= parse_utc(sub["date"])]
     if cv_ok:  # 설명을 쓸 때와 같은 형식으로 비교 (반올림 차이 없음), 제출 뒤 실행은 제외
         hit = before[[f"{x:.5f}" == info.cv for x in before.cv]]
         return (float(hit.cv.iloc[-1]), hit.timestamp.iloc[-1]) if len(hit) else (float(info.cv), None)
     return (float(before.cv.iloc[-1]), before.timestamp.iloc[-1]) if len(before) else (None, None)
 
 
-def rank_rows(comp_name: str, user: str, known: dict | None = None) -> list[dict]:
-    """known: 제출 ref → (cv, run), 이전 leaderboard.csv 에서 찾은 값. 이번에 실행을 못 찾으면 그 값을 유지."""
+def rank_rows(comp_name: str, user: str, known: dict | None, subs: list[dict], results: pd.DataFrame) -> list[dict]:
+    """known: 제출 ref → (cv, run), 이전 leaderboard.csv 에서 찾은 값. 이번에 실행을 못 찾으면 그 값을 유지.
+    subs: 이 대회의 제출 목록 (submissions 결과), results: results.csv 전체 (read_results)."""
     comp = load_competition(comp_name)
     higher = METRICS[comp.metric][1]
-    subs = [s for s in submissions(comp_name) if s["publicScore"] not in (None, "")]
+    subs = [s for s in subs if s["publicScore"] not in (None, "")]
     if not subs:
         return []
     lb = public_leaderboard(comp_name)
@@ -212,7 +247,7 @@ def rank_rows(comp_name: str, user: str, known: dict | None = None) -> list[dict
         subs = [s for s in subs if s["privateScore"] not in (None, "")]
     else:
         others = lb.loc[~mine, "Score"].to_numpy()
-    runs = prediction_runs(comp)  # 제출마다 results.csv 를 다시 읽지 않도록 한 번만
+    runs = prediction_runs(comp, results)
     rows = []
     for s in subs:
         score = float(s["privateScore"] if basis == "private" else s["publicScore"])
@@ -243,12 +278,14 @@ def main(argv: list[str] | None = None):
     path = RESULTS / "leaderboard.csv"
     prev = pd.read_csv(path, dtype={"ref": str}) if path.exists() else pd.DataFrame()
     known = {r.ref: (r.cv, r.run) for r in prev.itertuples() if "run" in prev and pd.notna(r.run)}  # 이전에 찾은 실행
+    results = read_results()  # results.csv 는 한 번만 읽고 대회마다 넘김
     rows, tallied = [], set()
     for c in comps:
         try:
-            if args.submit and submit_pending(c, args.submit, known):
-                wait_scored(c)
-            rows += rank_rows(c, user, known)
+            subs = submissions(c)  # 대회마다 한 번. 새로 제출했을 때만 wait_scored 가 다시 읽은 목록을 씀
+            if args.submit and submit_pending(c, args.submit, known, subs, results):
+                subs = wait_scored(c)
+            rows += rank_rows(c, user, known, subs, results)
             tallied.add(c)
         except subprocess.CalledProcessError as e:  # Rules 미동의 대회 등은 건너뜀
             print(f"{c}: 건너뜀 ({e.stderr.strip().splitlines()[-1] if e.stderr else e})")
