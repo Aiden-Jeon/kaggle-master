@@ -11,7 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from km.core.results import RESULTS, TEST_INFO, made_test, parse_utc, read_results, save_test_info, test_info
+from km.core.results import OUTPUTS, TEST_INFO, made_test, parse_utc, read_results, save_test_info, test_info
 
 SOURCE = "backfill: meta.json (2026-10-27 이전 실행)"
 
@@ -30,7 +30,7 @@ def backfill_test_info(dry_run: bool = False) -> tuple[list[str], list[str]]:
     res = read_results()
     res = res.assign(test=made_test(res), run_at=res.timestamp.map(run_time))
     filled, skipped = [], []
-    for d in sorted(RESULTS.glob("*/*/")):
+    for d in sorted(OUTPUTS.glob("*/*/")):
         if not (d / "test.npy").exists():
             continue
         name = f"{d.parent.name}/{d.name}"
