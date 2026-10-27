@@ -16,19 +16,19 @@ Tabular Foundation Model(TabPFN, TabICL, Kumo 등)을 GBDT 베이스라인(Light
 
 | 대회 | 학습 행 | 지표 | CV 1위 | 최고 LB 순위 |
 |---|---|---|---|---|
-| Restaurant Revenue | 137 | RMSE ↓ | limix2m | 상위 51.0% (tabpfn_v2) |
-| Titanic | 891 | acc ↑ | exaone | 상위 40.3% (exaone) |
-| House Prices | 1,460 | RMSE ↓ | tabpfn_v2 | **상위 1.8%** (kumo) |
-| Bioresponse | 3,751 | logloss ↓ | causilo | 미제출 |
+| Restaurant Revenue | 137 | RMSE ↓ | limix2m | 상위 13.9% (limix2m) |
+| Titanic | 891 | acc ↑ | exaone | 상위 17.4% (kumo) |
+| House Prices | 1,460 | RMSE ↓ | tabpfn_v2 | **상위 1.9%** (kumo) |
+| Bioresponse | 3,751 | logloss ↓ | causilo | **1위** (kumo·tabicl·causilo) |
 | Mercedes-Benz | 4,209 | R² ↑ | exaone | **3위 · 상위 0.1%** (kumo) |
-| Spaceship Titanic | 8,693 | acc ↑ | kumo | 상위 6.3% (exaone@knn1000) |
+| Spaceship Titanic | 8,693 | acc ↑ | kumo | 상위 2.2% (kumo) |
 | S4E2 | 20,758 | acc ↑ | causilo | 상위 7.2% (kumo@knn1000) |
 | Amazon | 32,769 | AUC ↑ | catboost | 상위 4.3% (catboost) |
 | Otto | 61,878 | logloss ↓ | kumo (ctx 전체) | **1위** (kumo (ctx 전체)) |
 | GiveMeSomeCredit | 150,000 | AUC ↑ | kumo (ctx 전체) | **1위** (kumo (ctx 전체)) |
 | Allstate | 188,318 | MAE ↓ | kumo (ctx 전체) | **1위** (kumo (ctx 전체)) |
 | S6E1 | 630,000 | RMSE ↓ | kumo (ctx 20만) | 상위 17.0% (kumo (ctx 20만)) |
-| S6E10 | 699,635 | AUC ↑ | kumo (ctx 20만) | 상위 65.5% (kumo (ctx 20만)) |
+| S6E10 | 699,635 | AUC ↑ | kumo (ctx 20만) | 상위 65.6% (kumo (ctx 20만)) |
 
 LB 순위는 `km lb` 집계: 종료된 대회는 private 점수, 진행 중·상시 대회 (Titanic·House Prices·Spaceship·S6E10) 는 public 점수 기준.
 종료된 대회의 순위는 늦은 제출 점수로 매긴 위치 (Otto·GiveMeSomeCredit·Allstate 1위, Mercedes 3위 포함).

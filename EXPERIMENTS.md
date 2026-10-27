@@ -44,21 +44,21 @@ LB 순위는 표마다 집계 시점을 적음 — `km lb` 집계(`results/leade
 
 | 대회 | 학습 행 | 과제 · 지표 | CV 1위 | GBDT 최고 | TFM 최고 | 최고 LB 순위 (종료=private, 진행=public) |
 |---|---|---|---|---|---|---|
-| Restaurant Revenue | 137 | 회귀 · RMSE ↓ | limix2m 2,395,841 | catboost 2,640,319 | limix2m | tabpfn_v2 1,153 / 2,260 (51.0%) |
-| Titanic | 891 | 이진 · acc ↑ | exaone 0.8462 | catboost 0.8418 | exaone | exaone 4,692 / 11,655 (40.3%) |
-| House Prices | 1,460 | 회귀 · RMSE ↓ | tabpfn_v2 0.1151 | catboost 0.1250 | tabpfn_v2 | kumo 83 / 4,493 (1.8%) |
-| Bioresponse | 3,751 | 이진 · logloss ↓ | causilo 0.4262 | xgb 0.4500 | causilo | 미제출 |
+| Restaurant Revenue | 137 | 회귀 · RMSE ↓ | limix2m 2,395,841 | catboost 2,640,319 | limix2m | limix2m 315 / 2,260 (13.9%) |
+| Titanic | 891 | 이진 · acc ↑ | exaone 0.8462 | catboost 0.8451 | exaone | kumo 2,029 / 11,667 (17.4%) |
+| House Prices | 1,460 | 회귀 · RMSE ↓ | tabpfn_v2 0.1151 | catboost 0.1250 | tabpfn_v2 | kumo 85 / 4,501 (1.9%) |
+| Bioresponse | 3,751 | 이진 · logloss ↓ | causilo 0.4262 | xgb 0.4500 | causilo | kumo·tabicl·causilo 1 / 703 (0.1%) |
 | Mercedes-Benz | 4,209 | 회귀 · R² ↑ | exaone 0.5748 | catboost 0.5564 | exaone | kumo 3 / 3,825 (0.1%) |
-| Spaceship Titanic | 8,693 | 이진 · acc ↑ | kumo 0.8237 | catboost 0.8125 | kumo | exaone@knn1000 111 / 1,757 (6.3%) |
+| Spaceship Titanic | 8,693 | 이진 · acc ↑ | kumo 0.8243 | catboost 0.8117 | kumo | kumo 39 / 1,756 (2.2%) |
 | S4E2 | 20,758 | 7-class · acc ↑ | causilo 0.9118 | xgb 0.9077 | causilo | kumo@knn1000 259 / 3,590 (7.2%) |
 | Amazon | 32,769 | 이진 · AUC ↑ | catboost 0.8957 | catboost | kumo 0.8795 (ctx 전체) | catboost 72 / 1,689 (4.3%) |
 | Otto | 61,878 | 9-class · logloss ↓ | kumo 0.3774 (ctx 전체) | lgbm 0.4648 | kumo 0.3774 (ctx 전체) | kumo (ctx 전체) 1 / 3,510 (<0.1%) |
 | GiveMeSomeCredit | 150,000 | 이진 · AUC ↑ | kumo 0.8694 (ctx 전체) | catboost 0.8660 | kumo 0.8694 (ctx 전체) | kumo (ctx 전체) 1 / 926 (0.1%) |
 | Allstate | 188,318 | 회귀 · MAE ↓ | kumo 1,114.2 (ctx 전체) | lgbm 1,188.3 | kumo 1,114.2 (ctx 전체) | kumo (ctx 전체, 중앙값) 1 / 3,048 (<0.1%) |
 | S6E1 | 630,000 | 회귀 · RMSE ↓ | kumo 8.6767 (ctx 20만) | xgb 8.7736 | kumo 8.6767 (ctx 20만) | kumo (ctx 20만) 736 / 4,320 (17.0%) |
-| S6E10 | 699,635 | 이진 · AUC ↑ | kumo 0.95880 (ctx 20만) | lgbm 0.95838 | kumo 0.95880 (ctx 20만) | kumo (ctx 20만) 2,087 / 3,185 (65.5%) |
+| S6E10 | 699,635 | 이진 · AUC ↑ | kumo 0.95880 (ctx 20만) | lgbm 0.95838 | kumo 0.95880 (ctx 20만) | kumo (ctx 20만) 2,102 / 3,202 (65.6%) |
 
-순위는 `results/leaderboard.csv` 기준 (`basis` 열). 종료된 대회는 private 점수로 매긴 위치 (Kaggle 조회 API 가 private 을 공개한 대회: Restaurant·Mercedes·S4E2·Amazon·Otto·GiveMeSomeCredit·Allstate·S6E1), 진행 중 대회와 Titanic·Spaceship·House Prices 는 public 점수 기준. 늦은 제출이라 실제 순위표에는 없음. `(ctx …)` 는 상한을 푼 TFM 재실행 (2026-10-26, kumo·tabicl·tabpfn_v2).
+순위는 `results/leaderboard.csv` 기준 (`basis` 열). 종료된 대회는 private 점수로 매긴 위치 (Kaggle 조회 API 가 private 을 공개한 대회: Restaurant·Bioresponse·Mercedes·S4E2·Amazon·Otto·GiveMeSomeCredit·Allstate·S6E1), 진행 중 대회와 Titanic·Spaceship·House Prices 는 public 점수 기준. 늦은 제출이라 실제 순위표에는 없음. `(ctx …)` 는 상한을 푼 TFM 재실행 (2026-10-26, kumo·tabicl·tabpfn_v2).
 
 **지금까지의 결론**
 
@@ -704,11 +704,11 @@ fold 당 모델 시간이 10~30초까지 줄어 실행 준비(pip 설치·가중
 
 - [x] tabicl·tabpfn_v2 컨텍스트 상한 해제 재실행 (2026-10-26): 대회별 표의 `(ctx …)` 행. tabpfn_v2 는 Allstate·S6E1 시간 초과, S6E10 미실행
 - [ ] tabpfn_v2 Allstate (ctx 전체)·S6E1 (ctx 20만) 240분 초과 원인 확인 (S6E1 1-fold 시험은 1,116s/fold 라 5-fold 는 약 1.5시간 예상). task 로그를 받아 fold 진행을 본 뒤 재실행 여부 결정
-- [ ] 상한 해제한 tabicl·tabpfn_v2 제출 (5-fold·테스트 예측은 있음, 아직 미제출)
+- [x] 상한 해제한 tabicl·tabpfn_v2 제출 (2026-10-27)
 - [ ] S4E2 전체 컨텍스트 (fold 학습 약 1.66만 행): tabpfn_v2 는 한도 해제 후 전체로, kumo·exaone 은 T4 메모리로 못 돌렸던 전체 컨텍스트를 H100 에서 시도 → kNN 1000 과 비교
 - [ ] S6E10 kumo 컨텍스트 전체 (56만 행): 20만 행 대비 추가 이득과 시간 확인
 - [ ] Amazon 격차 원인 검증 (kumo 0.8795 ↔ catboost 0.8957, 범주 ID 처리 가설)
-- [ ] Bioresponse 제출 (5-fold·테스트 예측은 2026-10-27 완료)
+- [x] Bioresponse 제출 (2026-10-27, 11개 모델 전부)
 - [ ] sap_rpt8k (컨텍스트 8192) H100 에서 5-fold — 컨텍스트를 키우면 TFM 상위권에 붙는지
 - [ ] TFM + GBDT 스태킹
 - [ ] 패키지 버전 고정 및 실행 시 버전 기록
