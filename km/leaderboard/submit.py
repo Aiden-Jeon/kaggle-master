@@ -18,21 +18,21 @@ import numpy as np
 import pandas as pd
 
 from km.core.competition import TRANSFORMS, load_competition, load_data
-from km.core.results import RESULTS, test_info
+from km.core.results import OUTPUTS, test_info
 
 
 def make_submission(comp_name: str, models: list[str]) -> Path:
     """모델들의 test.npy 평균으로 제출 파일을 만들어 경로를 반환."""
     comp = load_competition(comp_name)
     _, test = load_data(comp)
-    pred = np.mean([np.load(RESULTS / comp.name / m / "test.npy") for m in models], axis=0)
+    pred = np.mean([np.load(OUTPUTS / comp.name / m / "test.npy") for m in models], axis=0)
 
     ids = test[comp.id_col] if comp.id_col else np.arange(1, len(test) + 1)
     id_name, target_name = comp.submit_columns or [comp.id_col, comp.target]
     if comp.is_classification:
         # 예측 열 순서: test.json (예측과 함께 저장) → 없으면 meta.json (--no-test 재실행이 덮어썼을 수 있음)
         classes = (test_info(comp.name, models[0]) or {}).get("classes") or \
-            json.loads((RESULTS / comp.name / models[0] / "meta.json").read_text())["classes"]
+            json.loads((OUTPUTS / comp.name / models[0] / "meta.json").read_text())["classes"]
     if comp.task == "multiclass" and comp.submit_proba:  # 클래스마다 확률 열 하나 (열 이름 = 클래스 값)
         sub = pd.concat([pd.DataFrame({id_name: ids}), pd.DataFrame(pred, columns=classes)], axis=1)
     else:
@@ -44,7 +44,7 @@ def make_submission(comp_name: str, models: list[str]) -> Path:
             target = TRANSFORMS[comp.target_transform][1](pred) if comp.target_transform else pred
         sub = pd.DataFrame({id_name: ids, target_name: target})
 
-    path = RESULTS / comp.name / "submissions" / f"{'+'.join(models)}.csv"
+    path = OUTPUTS / comp.name / "submissions" / f"{'+'.join(models)}.csv"
     path.parent.mkdir(parents=True, exist_ok=True)
     sub.to_csv(path, index=False)
     print(f"저장: {path}\n{sub.head()}")

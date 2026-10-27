@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import fcntl
 import json
 import re
 import shutil
@@ -36,13 +37,13 @@ import yaml
 
 from km.core.competition import ROOT, load_competition
 from km.core.download import download
-from km.core.results import RESULTS, merge_results
+from km.core.results import OUTPUTS, merge_results
 from km.models import GATED, base_name
 from km.runner.common import CODE_PATHS, add_run_args, check_fold_args, pip_args, run_argv
 
 LOCAL_CONFIG = ROOT / "databricks.local.yaml"
 DEFAULT_ACCELERATOR = "GPU_1xH100"  # A10G(24GB)는 TFM 이 OOM 재시도를 반복해 느림
-RUNS = RESULTS / "_air" / "runs.json"  # run_id → 결과 위치 (나중에 --fetch 용)
+RUNS = OUTPUTS / "_air" / "runs.json"  # run_id → 결과 위치 (나중에 --fetch 용, 어느 worktree 에서 제출했든 수집 가능)
 BASE_PIP = [["scikit-learn", "lightgbm", "xgboost", "catboost"]]  # AI Runtime 기본 환경에는 없음
 
 # GPU 를 안 쓰는 모델 → CPU serverless 작업으로 따로 실행. GPU 노드에서 TFM 과 같이 돌리면 CPU 를 나눠 쓰느라
@@ -250,10 +251,13 @@ def submit(cfg: dict, comp: str, data: str, run_args: list[str], models: list[st
 
 
 def record(run_id: str, run: dict):
-    runs = json.loads(RUNS.read_text()) if RUNS.exists() else {}
-    runs[run_id] = run
+    """runs.json 은 메인 체크아웃 하나를 모든 worktree 가 같이 씀 (OUTPUTS) → 잠금을 걸고 읽은 뒤 씀."""
     RUNS.parent.mkdir(parents=True, exist_ok=True)
-    RUNS.write_text(json.dumps(runs, indent=2))
+    with open(RUNS.parent / ".runs.lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        runs = json.loads(RUNS.read_text()) if RUNS.exists() else {}
+        runs[run_id] = run
+        RUNS.write_text(json.dumps(runs, indent=2))
     print(f"제출 완료: run_id={run_id}\n  {run['url']}")
 
 
@@ -430,7 +434,7 @@ def main(argv: list[str] | None = None):
         if not (comp.data_dir / comp.train_file).exists():  # 다 끝난 뒤 합칠 때 로컬 타깃이 필요 → 미리 받아 둠
             download(comp)
         for name in gpu:  # 예전 시도에서 남은 fold 가 이번 묶음과 섞이지 않게 (합칠 때 batch 로도 확인)
-            if (stale := RESULTS / comp.name / name / "folds").exists():
+            if (stale := OUTPUTS / comp.name / name / "folds").exists():
                 print(f"예전 fold 결과 삭제: {stale}")
                 shutil.rmtree(stale)
     data = ensure_data(comp, cfg["profile"], cfg["volume"])

@@ -7,6 +7,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -14,7 +15,26 @@ import pandas as pd
 
 from km.core.competition import ROOT
 
-RESULTS = ROOT / "results"
+
+def outputs_dir() -> Path:
+    """실행 출력 (git 제외: <대회>/<모델>/ 예측·OOF·test.json, submissions/, _air/runs.json) 위치.
+    worktree 에서도 메인 체크아웃의 results/ → worktree 를 지워도 남음 (#22: worktree 에서 받은 Kaggle 예측 37개가 사라짐).
+    KM_OUTPUTS 가 있으면 그 경로. 메인 체크아웃·원격 실행 (코드 묶음이라 .git 이 없음) 은 ROOT/results."""
+    if env := os.environ.get("KM_OUTPUTS"):
+        return Path(env).expanduser().resolve()
+    if not (ROOT / ".git").is_file():  # worktree·submodule 만 .git 이 파일 ('gitdir: …')
+        return ROOT / "results"
+    try:
+        common = Path(subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                                     capture_output=True, text=True, check=True, timeout=30).stdout.strip())
+    except (OSError, subprocess.SubprocessError) as e:  # 조용히 worktree 에 쓰면 #22 가 다시 생김 → 멈춤
+        raise SystemExit(f"메인 체크아웃을 찾지 못함 ({e!r}). KM_OUTPUTS 로 실행 출력 위치를 지정") from e
+    # submodule·bare 저장소의 worktree 는 메인 체크아웃이 없음 → 이 체크아웃의 results/
+    return common.parent / "results" if common.name == ".git" else ROOT / "results"
+
+
+RESULTS = ROOT / "results"  # git 추적 표 (results.csv, leaderboard.csv) 와 그 잠금: 체크아웃마다 → PR 로 메인에 들어감
+OUTPUTS = outputs_dir()  # 실행 출력. 원격 실행·메인 체크아웃에서는 RESULTS 와 같음
 # 탐색 실행 (km board 에서 뺌): 컨텍스트 탐색(`ctx …`), 결정 모델 실험 중 같이 돌린 GBDT(`llm…`, `sap…`).
 # 결정 모델(llm·sap) 실행도 테스트 예측이 있어 km lb 는 이 규칙을 쓰지 않음 (제출 ↔ 실행 연결이 끊김).
 EXPLORATION = re.compile(r"ctx |llm|sap")
@@ -85,7 +105,7 @@ def write_test_info(out: Path, run: str, cv: float, n_folds: int, classes: list 
 
 def test_info(comp_name: str, model: str) -> dict | None:
     """저장된 test.npy 를 만든 실행 {run, cv, n_folds, classes}. test.json 이 없거나 깨졌으면 None (추측하지 않음)."""
-    d = RESULTS / comp_name / model
+    d = OUTPUTS / comp_name / model
     if not ((d / TEST_INFO).exists() and (d / "test.npy").exists()):
         return None
     try:
@@ -96,14 +116,16 @@ def test_info(comp_name: str, model: str) -> dict | None:
 
 
 def merge_results(remote: Path, where: str):
-    """원격 실행의 results/ 를 로컬 results/ 에 병합 (results.csv 는 where 열을 붙여 행 추가)."""
+    """원격 실행의 results/ 를 병합: 예측 등 실행 출력은 OUTPUTS 에 복사, results.csv 는 where 열을 붙여 이 체크아웃의 표에 행 추가."""
     for d in remote.iterdir():
         if d.is_dir():
             # test.json 없이 test.npy 만 온 모델 (test.json 을 안 쓰던 코드로 돌린 원격 실행) → 로컬의 예전 출처를 지움
             for m in d.iterdir():
                 if (m / "test.npy").exists() and not (m / TEST_INFO).exists():
-                    clear_test_info(RESULTS / d.name / m.name)
-            shutil.copytree(d, RESULTS / d.name, dirs_exist_ok=True)
+                    clear_test_info(OUTPUTS / d.name / m.name)
+            shutil.copytree(d, OUTPUTS / d.name, dirs_exist_ok=True)
+    if OUTPUTS != RESULTS:
+        print(f"실행 출력 저장: {OUTPUTS} (results.csv 는 {RESULTS})")
     if not (remote / "results.csv").exists():  # --fold 실행은 results.csv 를 안 씀 (합칠 때 씀)
         return
     rows = pd.read_csv(remote / "results.csv").assign(where=where)

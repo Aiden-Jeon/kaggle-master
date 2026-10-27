@@ -26,7 +26,7 @@ from sklearn.preprocessing import LabelEncoder
 from km.core.competition import TRANSFORMS, get_folds, load_competition, load_data, load_features
 from km.core.download import download
 from km.core.metrics import EXTRA, score
-from km.core.results import RESULTS, append_rows, clear_test_info, write_test_info
+from km.core.results import OUTPUTS, append_rows, clear_test_info, write_test_info
 from km.models import make_model
 from km.runner.common import add_run_args, check_fold_args, run_argv
 
@@ -147,7 +147,7 @@ def utc_now() -> str:
 
 def save_run(comp, name, oof, test_pred, scores, fold_scores, secs, classes, note, no_test, where=None):
     """전체 실행 결과: results/<대회>/<모델>/{oof,test}.npy·meta.json·test.json + results.csv 한 줄."""
-    out = RESULTS / comp.name / name
+    out = OUTPUTS / comp.name / name
     out.mkdir(parents=True, exist_ok=True)
     np.save(out / "oof.npy", oof)
     meta = dict(comp=comp.name, model=name, metric=comp.metric, scores=scores, fold_scores=fold_scores,
@@ -168,7 +168,7 @@ def save_run(comp, name, oof, test_pred, scores, fold_scores, secs, classes, not
 
 def save_fold(comp, name, fold, oof, test_pred, fold_score, secs, classes, note, no_test, batch):
     """--fold 실행 결과: results/<대회>/<모델>/folds/<k>/ (results.csv 에는 merge_folds 가 합친 뒤 씀)."""
-    out = RESULTS / comp.name / name / "folds" / str(fold)
+    out = OUTPUTS / comp.name / name / "folds" / str(fold)
     out.mkdir(parents=True, exist_ok=True)
     np.save(out / "oof.npy", oof)
     if not no_test:
@@ -183,7 +183,7 @@ def merge_folds(comp, name, y, where=None) -> bool:
     """folds/<k>/ 가 전부 있으면 합쳐 save_run (OOF 는 fold 별로 채우고 test 는 평균 = 한 번에 돌린 것과 같음).
     seconds 는 fold 시간 합. 모델 로드가 fold 마다 들어가 한 번에 돌린 것보다 길 수 있어 note 에 `(fold 분할)` 표시.
     합친 뒤 folds/ 는 지움. 빠진 fold 가 있거나 fold 끼리 조건(묶음·no_test·classes·note)이 다르면 False."""
-    d = RESULTS / comp.name / name / "folds"
+    d = OUTPUTS / comp.name / name / "folds"
     n = comp.cv["n_splits"]
     metas = {k: json.loads((d / str(k) / "meta.json").read_text())
              for k in range(n) if (d / str(k) / "meta.json").exists()}
@@ -214,7 +214,7 @@ def merge_folds(comp, name, y, where=None) -> bool:
 def merge_ready(comp, where=None, models=None) -> list[str]:
     """folds/ 가 있는 모델(models 를 주면 그 중에서)을 합침. 원격 수집 뒤에 부름 → 마지막 fold 가 오면 자동으로 합쳐짐.
     합치지 못한 모델 목록을 돌려줌 (한 모델이 실패해도 나머지는 계속)."""
-    names = [p.parent.name for p in sorted((RESULTS / comp.name).glob("*/folds"))]
+    names = [p.parent.name for p in sorted((OUTPUTS / comp.name).glob("*/folds"))]
     names = [m for m in names if models is None or m in models]
     if not names:
         return []

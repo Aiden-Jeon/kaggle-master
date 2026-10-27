@@ -94,7 +94,8 @@ def wait(kernel: str, poll: int = 30) -> str:
 
 
 def fetch(kernel: str):
-    """kernel 출력 다운로드 → results/ 에 병합 (results.csv 는 행 추가)."""
+    """kernel 출력 다운로드 → 병합 (예측은 메인 체크아웃 results/ = OUTPUTS, results.csv 는 행 추가).
+    Kaggle 은 마지막 버전 출력만 남기므로 같은 kernel 을 다시 돌리기 전에 받아야 함."""
     dl = Path(tempfile.mkdtemp())
     kaggle("kernels", "output", kernel, "-p", str(dl))
     log = next(dl.glob("*.log"), None)
