@@ -14,7 +14,7 @@ import sys
 import threading
 import time
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -171,7 +171,15 @@ def main(argv: list[str] | None = None):
             np.save(out / "test.npy", test_pred)
         meta = dict(comp=comp.name, model=name, metric=comp.metric, scores=scores, fold_scores=fold_scores,
                     seconds=round(secs, 1), classes=classes, n_folds=len(fold_scores), note=args.note,
-                    timestamp=datetime.now().isoformat(timespec="seconds"))
+                    # UTC (Kaggle 제출 시각과 비교하므로). 2026-10-22 로컬 실행 4행은 KST 였다가 UTC 로 고침
+                    timestamp=datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds"))
+        # test.npy 를 만든 실행 (km submit 이 제출 설명에 적음). --no-test 는 test.npy 를 그대로 두므로 이전 값을 이어받음
+        test = dict(run=meta["timestamp"], cv=scores[comp.metric], n_folds=len(fold_scores))
+        if args.no_test:
+            prev = json.loads((out / "meta.json").read_text()) if (out / "meta.json").exists() else {}
+            test = prev.get("test") or (prev and (out / "test.npy").exists() and dict(
+                run=prev["timestamp"], cv=prev["scores"][comp.metric], n_folds=prev["n_folds"])) or None
+        meta["test"] = test
         (out / "meta.json").write_text(json.dumps(meta, indent=2, default=str))
 
         row = dict(timestamp=meta["timestamp"], comp=comp.name, model=name, metric=comp.metric,

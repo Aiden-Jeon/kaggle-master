@@ -77,7 +77,7 @@ def label(model: str, en: bool = False) -> str:
 
 def load() -> tuple[pd.DataFrame, dict]:
     res = pd.read_csv(RESULTS / "results.csv")
-    lb = pd.read_csv(RESULTS / "leaderboard.csv").drop_duplicates(["comp", "model"])  # 순위 순 정렬 → 같은 모델은 최고 순위
+    lb = pd.read_csv(RESULTS / "leaderboard.csv")  # 제출마다 한 행, 대회·순위 순 정렬
     comps = sorted(p.name for p in COMP_DIR.iterdir() if (p / "config.yaml").exists() and not p.name.startswith("_"))
     d = res[res.comp.isin(comps) & (res.n_folds == 5) & res.cv.notna() & res.seconds.notna()]
     d = d[~d.model.str.contains(r"\+|llm|sap_rpt")]  # 앙상블, LLM 결정 모델, sap_rpt
@@ -97,7 +97,16 @@ def load() -> tuple[pd.DataFrame, dict]:
     d["base"] = d.label.str.partition(" (")[0]
     d["better"] = [cv if METRICS[m][1] else -cv for cv, m in zip(d.cv, d.metric)]
     d["cv_rank"] = d.groupby("comp").better.rank(ascending=False, method="min").astype(int)
-    d = d.merge(lb[["comp", "model", "public", "rank", "teams", "top_pct"]], on=["comp", "model"], how="left")
+    # 제출은 그 제출을 만든 실행(leaderboard.csv 의 run = results.csv 의 timestamp)에만 붙임 → 같은 이름으로 다시 돌린 실행에
+    # 예전 제출 LB 가 붙지 않음. 같은 실행을 여러 번 냈으면 최고 순위 (leaderboard.csv 가 대회·순위 순)
+    run = (lb["run"] if "run" in lb else pd.Series(None, index=lb.index)).astype(object)  # 비어 있어도 문자열 열로
+    single = ~lb.model.astype(str).str.contains(r"\+")
+    if (missing := int((single & run.isna()).sum())):
+        print(f"leaderboard.csv: 실행(run)을 모르는 단일 모델 제출 {missing}건은 LB 를 붙이지 않음 (`km lb` 로 다시 집계)",
+              file=sys.stderr)
+    known = lb[run.notna()].assign(timestamp=run[run.notna()]).drop_duplicates(["comp", "model", "timestamp"])
+    d = d.merge(known[["comp", "model", "timestamp", "public", "rank", "teams", "top_pct"]],
+                on=["comp", "model", "timestamp"], how="left")
     return d, sizes
 
 
@@ -122,11 +131,15 @@ def best_per_base(d: pd.DataFrame) -> pd.DataFrame:
 
 
 def summary_rows(d: pd.DataFrame) -> pd.DataFrame:
-    """모델별 종합 (점수·LB·시간 모두 대회별 최고 설정 행 기준), 평균 CV 순위 순."""
+    """모델별 종합, 평균 CV 순위 순. 점수·시간은 대회별 최고 CV 설정 행 기준.
+    최고 LB 는 제출한 모든 설정 중 최고 (최고 CV 설정이 미제출이면 그 행만으로는 LB 가 비거나 나빠 보임)."""
     rows = []
     for m, g in best_per_base(d).groupby("base"):
+        best_lb = d.loc[d.base == m, "top_pct"].min()  # 제출한 모든 설정 중
         rows.append(dict(model=m, family=g.family.iloc[0], n=len(g), wins=int((g.cv_rank == 1).sum()),
-                         pct=((g.cv_rank - 1) / (g.n_models - 1).clip(lower=1)).mean(), lb=g.top_pct.min(),
+                         pct=((g.cv_rank - 1) / (g.n_models - 1).clip(lower=1)).mean(), lb=best_lb,
+                         # 최고 LB 가 최고 CV 설정이 아닌 행에서 옴 (최고 CV 설정이 미제출이거나 순위가 더 낮음)
+                         lb_other=pd.notna(best_lb) and not g.top_pct.min() <= best_lb,
                          s1k=g[g.env.isin(["DBX H100", "DBX CPU4"])].s_per_1k.median(), s1k_all=g.s_per_1k.median(),
                          ctx=int(g.model.str.contains("@").sum())))
     return pd.DataFrame(rows).sort_values("pct")
@@ -136,7 +149,8 @@ def summary(d: pd.DataFrame) -> list[str]:
     out = ["| 모델 | 계열 | 대회 수 | CV 1위 | 평균 CV 순위 | 최고 LB (상위 %) | s/1K (DBX) | s/1K (전체) | 컨텍스트 변형 |",
            "|---|---|---|---|---|---|---|---|---|"]
     for r in summary_rows(d).itertuples():
-        cells = [r.model, r.family, r.n, r.wins, f"{r.pct:.2f}", fmt_pct(r.lb) if pd.notna(r.lb) else "—",
+        lb = fmt_pct(r.lb) + ("*" if r.lb_other else "") if pd.notna(r.lb) else "—"
+        cells = [r.model, r.family, r.n, r.wins, f"{r.pct:.2f}", lb,
                  f"{r.s1k:.2f}" if pd.notna(r.s1k) else "—", f"{r.s1k_all:.2f}" if pd.notna(r.s1k_all) else "—",
                  r.ctx or ""]
         out.append("| " + " | ".join(map(str, cells)) + " |")
@@ -184,25 +198,42 @@ HEADER = """\
 ## 종합
 
 평균 CV 순위 = 대회마다 (순위−1)/(모델 수−1) 의 평균 (0 = 항상 1위, 1 = 항상 꼴찌). 실행한 대회가 모델마다 달라 대략적인 비교.
-모델마다 대회별로 CV 가 가장 좋은 설정 하나만 셈 (`컨텍스트 변형` 열 = 그중 `@` 설정 수). 최고 LB · s/1K 도 그 행의 값.
+모델마다 대회별로 CV 가 가장 좋은 설정 하나만 셈 (`컨텍스트 변형` 열 = 그중 `@` 설정 수). s/1K 도 그 행의 값, 최고 LB 는 제출한 모든 설정 중 최고 (`*` = 최고 CV 설정이 아닌 설정의 제출).
 s/1K 중앙값: `DBX` = 2026-10-23 이후 Databricks 실행만 (TFM H100, GBDT CPU 4코어), `전체` = 환경 섞임.
 
 **해석 주의**
-- **조건이 같지 않을 수 있음**: 상한이 걸린 대회에서 `@full`·`@rand` 로 다시 돌린 모델만 큰 컨텍스트를 씀 (2026-10-26 기준 kumo 뿐).
-  다른 TFM 은 상한 그대로라, 그 모델의 CV 1위·평균 순위 일부는 모델 차이가 아니라 컨텍스트 차이
-  (예: S6E10 fold 0 에서 tabicl 무작위 20만 행 0.9577, [EXPERIMENTS](../EXPERIMENTS.md#s6e10)).
+- **조건이 같지 않을 수 있음**: 상한이 걸린 대회에서 `@full`·`@rand` 로 다시 돌린 모델만 큰 컨텍스트를 씀 ({rerun}).
+  다시 돌리지 않은 모델은 상한 그대로라, 그 대회의 순위 일부는 모델 차이가 아니라 컨텍스트 차이.
 - **사전학습 데이터 중복 가능성**: Otto·GiveMeSomeCredit·Amazon 등은 OpenML 등에 공개된 데이터라 TFM 사전학습에 학습 데이터가 들어갔을 수 있음 → CV 는 부풀었을 수 있음.
   테스트 라벨은 공개된 적이 없어 LB 점수는 영향 없음. 확인은 안 함.
 """
 
 
+def rerun_status(d: pd.DataFrame, caps: dict) -> str:
+    """상한(caps: 대회 → tfm_max_rows)보다 큰 컨텍스트(`@full`, `@rand<k>` k > 상한)의 5-fold 결과가 있는 대회 수, 모델별
+    (예: `kumo 6/6, tabpfn_v2 3/6 (Amazon, Otto)`)."""
+    def bigger(model: str, comp: str) -> bool:
+        m = re.search(r"@(full|rand(\d+))", model)  # 숫자 없는 `@rand` 등은 큰 컨텍스트로 안 셈
+        return bool(m) and (m.group(1) == "full" or int(m.group(2)) > caps[comp])
+
+    capped = list(caps)
+    big = d[[c in caps and bigger(m, c) for m, c in zip(d.model, d.comp)]]
+    parts = []
+    for base, g in big.groupby("base"):
+        done = sorted(g.comp.unique(), key=lambda c: TITLES.get(c, c))
+        names = f" ({', '.join(TITLES.get(c, c) for c in done)})" if len(done) < len(capped) else ""
+        parts.append(f"{base} {len(done)}/{len(capped)}{names}")
+    return ", ".join(parts) or "없음"
+
+
 def render(d: pd.DataFrame, sizes: dict) -> str:
-    capped = {}  # 상한 → 대회들
-    for c in sorted(d.comp.unique(), key=lambda c: (sizes[c] or (0, 0))[0]):
-        if (n := load_competition(c).tfm_max_rows):
-            capped.setdefault(n, []).append(TITLES.get(c, c))
-    capped = "; ".join(f"{n:,}행: {', '.join(cs)}" for n, cs in capped.items()) or "없음"
-    head = HEADER.format(date=pd.Timestamp.now().strftime("%Y-%m-%d"), capped=capped)
+    comps = sorted(d.comp.unique(), key=lambda c: (sizes[c] or (0, 0))[0])
+    caps = {c: n for c in comps if (n := load_competition(c).tfm_max_rows)}  # 대회 → TFM 컨텍스트 상한
+    by_cap = {}  # 상한 → 대회들
+    for c, n in caps.items():
+        by_cap.setdefault(n, []).append(TITLES.get(c, c))
+    capped = "; ".join(f"{n:,}행: {', '.join(cs)}" for n, cs in by_cap.items()) or "없음"
+    head = HEADER.format(date=pd.Timestamp.now().strftime("%Y-%m-%d"), capped=capped, rerun=rerun_status(d, caps))
     return "\n".join([head, *summary(d), "", "## 대회별\n", *per_comp(d, sizes)])
 
 
@@ -218,11 +249,12 @@ def render_html(d: pd.DataFrame, sizes: dict) -> str:
     runs = d.merge(best, on=["comp", "model"], how="left").assign(label_en=lambda x: x.model.map(lambda m: label(m, en=True)))
     runs = runs[["comp", "model", "label", "label_en", "base", "family", "cv", "cv_std", "cv_rank", "base_rank", "public", "rank",
                  "teams", "top_pct", "seconds", "s_per_1k", "env"]]
+    caps = {c: n for c in comps if (n := load_competition(c).tfm_max_rows)}
     data = dict(
         date=pd.Timestamp.now().strftime("%Y-%m-%d"),
         comps=[dict(id=c, title=TITLES.get(c, c), metric=(m := d[d.comp == c].metric.iloc[0]), higher=METRICS[m][1],
-                    train=sizes[c] and sizes[c][0], test=sizes[c] and sizes[c][1],
-                    cap=load_competition(c).tfm_max_rows) for c in comps],
+                    train=sizes[c] and sizes[c][0], test=sizes[c] and sizes[c][1], cap=caps.get(c)) for c in comps],
+        rerun=rerun_status(d, caps),  # md 해석 주의와 같은 문구 (예: `kumo 6/6, tabicl 3/6 (...)`)
         runs=records(runs.sort_values(["comp", "cv_rank"])),
         summary=records(summary_rows(d)),
     )

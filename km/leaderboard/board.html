@@ -189,11 +189,11 @@ const I18N = {
     generated: d => `${d} 생성.`, howto: "표 읽는 법",
     notes: [
       "<b>평균 CV 순위</b> = 대회마다 (순위−1)/(모델 수−1) 의 평균. 0 = 항상 1위, 1 = 항상 꼴찌. 모델마다 실행한 대회가 달라 대략적인 비교.",
-      "종합·히트맵은 모델마다 대회별로 CV 가 가장 좋은 설정 하나만 셈 (컨텍스트 변형 <code>ctx 전체</code>·<code>ctx 20만</code>·<code>kNN 1000</code> 포함).",
+      "종합·히트맵은 모델마다 대회별로 CV 가 가장 좋은 설정 하나만 셈 (컨텍스트 변형 <code>ctx 전체</code>·<code>ctx 20만</code>·<code>kNN 1000</code> 포함). 종합의 최고 LB 는 제출한 모든 설정 중 최고 (<b>*</b> = 최고 CV 설정이 아닌 설정의 제출).",
       "<b>시간</b> = 5-fold 합계 (학습 + 검증·테스트 예측). <b>s/1K</b> = 시간 ÷ 예측 행 수 × 1000 (예측 행 = 학습 행 + 테스트 행 × 5). 작은 대회는 고정 비용 때문에 s/1K 가 부풀려짐.",
       "환경이 다르면 시간 비교 불가: DBX H100 (TFM) · DBX CPU4 (GBDT, serverless 4코어) · DBX A10G · Kaggle T4. <b>s/1K (DBX)</b> = H100·CPU4 실행만의 중앙값.",
       "<b>LB</b> = Kaggle public 점수 기준 위치. 종료 대회는 늦은 제출이라 실제 순위표에는 없음. — = 미제출.",
-      "TFM 컨텍스트 상한 <span class=\"caps\"></span> 은 무작위 샘플. 상한을 푼 실행은 일부 모델(kumo)만 있어 그 대회들의 순위 일부는 모델 차이가 아니라 컨텍스트 차이.",
+      "TFM 컨텍스트 상한 <span class=\"caps\"></span> 은 무작위 샘플. 상한을 풀거나 늘려 다시 돌린 모델: <span class=\"rerun\"></span>. 다시 돌리지 않은 모델은 상한 그대로라 그 대회들의 순위 일부는 모델 차이가 아니라 컨텍스트 차이.",
       "Otto·GiveMeSomeCredit·Amazon 등 공개 데이터는 TFM 사전학습에 들어갔을 수 있어 CV 가 부풀었을 수 있음 (LB 는 영향 없음).",
     ],
     family: "계열", all: "전체", auto: "자동", light: "라이트", dark: "다크", themeTitle: "테마",
@@ -222,11 +222,11 @@ const I18N = {
     generated: d => `Generated ${d}.`, howto: "How to read",
     notes: [
       "<b>Mean CV rank</b> = average over competitions of (rank−1)/(models−1). 0 = always first, 1 = always last. Models ran on different sets of competitions, so this is a rough comparison.",
-      "Summary and heatmap count only each model's best-CV configuration per competition (context variants <code>ctx full</code>·<code>ctx 200K</code>·<code>kNN 1000</code> included).",
+      "Summary and heatmap count only each model's best-CV configuration per competition (context variants <code>ctx full</code>·<code>ctx 200K</code>·<code>kNN 1000</code> included). Best LB in the summary is the best over every submitted configuration (<b>*</b> = from a configuration other than the best-CV one).",
       "<b>Time</b> = total over 5 folds (fit + validation/test prediction). <b>s/1K</b> = time ÷ predicted rows × 1000 (predicted rows = train rows + test rows × 5). Fixed overhead inflates s/1K on small competitions.",
       "Times are not comparable across environments: DBX H100 (TFM) · DBX CPU4 (GBDT, serverless 4 cores) · DBX A10G · Kaggle T4. <b>s/1K (DBX)</b> = median over H100·CPU4 runs only.",
       "<b>LB</b> = position by Kaggle public score. Closed competitions only take late submissions, so these entries are not on the real leaderboard. — = not submitted.",
-      "The TFM context cap <span class=\"caps\"></span> uses a random sample. Only some models (kumo) were rerun without the cap, so part of the ranking on those competitions reflects context size, not the model.",
+      "The TFM context cap <span class=\"caps\"></span> uses a random sample. Models rerun with the cap lifted or raised: <span class=\"rerun\"></span>. Models not rerun keep the cap, so part of the ranking on those competitions reflects context size, not the model.",
       "Public datasets such as Otto·GiveMeSomeCredit·Amazon may be in TFM pretraining data, which could inflate CV (LB is unaffected).",
     ],
     family: "Family", all: "All", auto: "Auto", light: "Light", dark: "Dark", themeTitle: "Theme",
@@ -353,7 +353,7 @@ function renderSummary() {
     { key: "n", name: C.n, desc: true },
     { key: "wins", name: C.wins, desc: true },
     { key: "pct", name: C.pct, fmt: fix2 },
-    { key: "lb", name: C.lb, fmt: pct },
+    { key: "lb", name: C.lb, fmt: (v, r) => v == null ? "—" : pct(v) + (r.lb_other ? "*" : "") },
     { key: "s1k", name: C.s1k, fmt: fix2 },
     { key: "s1k_all", name: C.s1k_all, fmt: fix2 },
     { key: "ctx", name: C.ctx, desc: true, fmt: v => v || "" },
@@ -567,6 +567,7 @@ function renderText() {
     const li = el("li", {}, ul);
     li.innerHTML = h;  // 직접 쓴 문구만 (데이터는 아래 textContent 로)
     for (const s of li.querySelectorAll(".caps")) s.textContent = capText;
+    for (const s of li.querySelectorAll(".rerun")) s.textContent = DATA.rerun === "없음" ? L.none : DATA.rerun;
   }
   for (const b of $("lang").children) b.setAttribute("aria-pressed", b.dataset.v === state.lang);
   for (const b of $("speedEnv").children) b.textContent = tabName(b.dataset.v);
