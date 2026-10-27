@@ -18,10 +18,10 @@ allstate-claims-severity,tabpfn_v2,mae,1209.4635313868498,1189.70518,1195.76517,
 amazon-employee-access-challenge,catboost,auc,0.8957373076349873,0.91582,0.911,72,1689,4.3,2026-10-22,catboost | 5-fold CV 0.89574,57513127,2026-10-22T05:44:17,private
 amazon-employee-access-challenge,kumo@full,auc,0.8794801870713336,0.89432,0.89114,484,1689,28.7,2026-10-26,kumo@full,57654169,2026-10-26T02:42:01,private
 amazon-employee-access-challenge,xgb,auc,0.8733991580929394,0.89187,0.88595,534,1689,31.6,2026-10-22,xgb | 5-fold CV 0.87340,57513131,2026-10-22T05:41:58,private
-house-prices-advanced-regression-techniques,kumo,rmse,0.1190980989041099,0.10895,,83,4491,1.8,2026-10-19,kumo 5-fold (CV rmse from EXPERIMENTS.md),57399774,2026-10-19T14:15:00,public
-house-prices-advanced-regression-techniques,tabpfn_v2+kumo,rmse,,0.10925,,84,4491,1.9,2026-10-21,ensemble avg: tabpfn_v2+kumo (OOF-selected),57480050,,public
-house-prices-advanced-regression-techniques,tabpfn_v2,rmse,0.115126771919351,0.11094,,97,4491,2.2,2026-10-19,tabpfn_v2 5-fold (CV rmse from EXPERIMENTS.md),57399770,2026-10-19T14:12:16,public
-house-prices-advanced-regression-techniques,catboost,rmse,0.1250131497343884,0.12199,,791,4491,17.6,2026-10-19,catboost 5-fold (CV rmse from EXPERIMENTS.md),57399777,2026-10-19T14:11:01,public
+house-prices-advanced-regression-techniques,kumo,rmse,0.1190980989041099,0.10895,,83,4493,1.8,2026-10-19,kumo 5-fold (CV rmse from EXPERIMENTS.md),57399774,2026-10-19T14:15:00,public
+house-prices-advanced-regression-techniques,tabpfn_v2+kumo,rmse,,0.10925,,84,4493,1.9,2026-10-21,ensemble avg: tabpfn_v2+kumo (OOF-selected),57480050,,public
+house-prices-advanced-regression-techniques,tabpfn_v2,rmse,0.115126771919351,0.11094,,97,4493,2.2,2026-10-19,tabpfn_v2 5-fold (CV rmse from EXPERIMENTS.md),57399770,2026-10-19T14:12:16,public
+house-prices-advanced-regression-techniques,catboost,rmse,0.1250131497343884,0.12199,,793,4493,17.6,2026-10-19,catboost 5-fold (CV rmse from EXPERIMENTS.md),57399777,2026-10-19T14:11:01,public
 mercedes-benz-greener-manufacturing,kumo,r2,0.574157660792367,0.55728,0.55461,3,3825,0.1,2026-10-23,kumo | 5-fold CV 0.57416,57559939,2026-10-23T04:23:46,private
 mercedes-benz-greener-manufacturing,kumo,r2,0.574157660792367,0.55728,0.55461,3,3825,0.1,2026-10-23,kumo | 5-fold CV 0.57416,57559822,2026-10-23T04:23:46,private
 mercedes-benz-greener-manufacturing,tabicl,r2,0.5672775894103439,0.55202,0.54922,1274,3825,33.3,2026-10-23,tabicl | 5-fold CV 0.56728,57559943,2026-10-23T04:22:54,private
@@ -58,9 +58,9 @@ playground-series-s6e1,kumo,rmse,8.856150097502011,8.81343,8.83475,3435,4320,79.
 playground-series-s6e1,tabicl,rmse,8.892721223959333,8.84787,8.87107,3532,4320,81.8,2026-10-23,tabicl | 5-fold CV 8.89272,57560027,2026-10-23T04:26:52,private
 playground-series-s6e1,tabicl,rmse,8.892721223959333,8.84787,8.87107,3532,4320,81.8,2026-10-23,tabicl | 5-fold CV 8.89272,57559893,2026-10-23T04:26:52,private
 playground-series-s6e1,tabpfn_v2,rmse,8.89849285036696,8.85954,8.8804,3566,4320,82.5,2026-10-23,tabpfn_v2 | 5-fold CV 8.89849,57560030,2026-10-23T04:25:35,private
-playground-series-s6e10,kumo@rand200000,auc,0.9587982466345104,0.95835,,2085,3184,65.5,2026-10-26,kumo@rand200000,57655101,2026-10-26T05:32:33,public
-playground-series-s6e10,lgbm+catboost,auc,,0.958,,2500,3184,78.5,2026-10-21,ensemble avg: lgbm+catboost (OOF-selected),57480071,,public
-playground-series-s6e10,lgbm,auc,0.9583820596544326,0.95792,,2560,3184,80.4,2026-10-21,"lgbm (5-fold CV best, default)",57464321,2026-10-20T16:13:09,public
+playground-series-s6e10,kumo@rand200000,auc,0.9587982466345104,0.95835,,2087,3185,65.5,2026-10-26,kumo@rand200000,57655101,2026-10-26T05:32:33,public
+playground-series-s6e10,lgbm+catboost,auc,,0.958,,2500,3185,78.5,2026-10-21,ensemble avg: lgbm+catboost (OOF-selected),57480071,,public
+playground-series-s6e10,lgbm,auc,0.9583820596544326,0.95792,,2560,3185,80.4,2026-10-21,"lgbm (5-fold CV best, default)",57464321,2026-10-20T16:13:09,public
 restaurant-revenue-prediction,tabpfn_v2,rmse,2441738.2757494496,1684067.91673,1876123.24826,1153,2260,51.0,2026-10-23,tabpfn_v2 | 5-fold CV 2441738.27575,57559922,2026-10-23T04:21:54,private
 restaurant-revenue-prediction,lgbm,rmse,2650611.0760306,1797245.74254,1927615.19828,1638,2260,72.5,2026-10-23,lgbm | 5-fold CV 2650611.07603,57559929,2026-10-23T04:21:05,private
 restaurant-revenue-prediction,kumo,rmse,2426650.170290696,1716773.87278,1965574.8467,1762,2260,78.0,2026-10-23,kumo | 5-fold CV 2426650.17029,57559911,2026-10-23T04:24:32,private
@@ -71,4 +71,4 @@ restaurant-revenue-prediction,catboost,rmse,2640318.5692575653,1795868.59507,198
 restaurant-revenue-prediction,catboost,rmse,2640318.5692575653,1795868.59507,1982133.09394,1795,2260,79.4,2026-10-23,catboost | 5-fold CV 2640318.56926,57559792,2026-10-23T04:21:47,private
 restaurant-revenue-prediction,xgb,rmse,2828951.480164966,1994554.72572,2145550.65425,2003,2260,88.6,2026-10-23,xgb | 5-fold CV 2828951.48016,57559933,2026-10-23T04:21:33,private
 spaceship-titanic,exaone@knn1000_g8_imp,accuracy,0.8151386172782699,0.81014,,111,1757,6.3,2026-10-21,"exaone@knn1000_g8_imp (5-fold, kNN context)",57479974,2026-10-21T07:35:01,public
-titanic,exaone,accuracy,0.8462401795735129,0.77511,,4691,11655,40.2,2026-10-21,"exaone (5-fold CV best, default)",57464313,2026-10-20T13:05:56,public
+titanic,exaone,accuracy,0.8462401795735129,0.77511,,4692,11655,40.3,2026-10-21,"exaone (5-fold CV best, default)",57464313,2026-10-20T13:05:56,public

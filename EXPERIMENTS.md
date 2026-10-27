@@ -44,8 +44,8 @@ LB 순위는 표마다 집계 시점을 적음 — `km lb` 집계(`results/leade
 | 대회 | 학습 행 | 과제 · 지표 | CV 1위 | GBDT 최고 | TFM 최고 | 최고 LB 순위 (종료=private, 진행=public) |
 |---|---|---|---|---|---|---|
 | Restaurant Revenue | 137 | 회귀 · RMSE ↓ | kumo 2,426,650 | catboost 2,640,319 | kumo | tabpfn_v2 1,153 / 2,260 (51.0%) |
-| Titanic | 891 | 이진 · acc ↑ | exaone 0.8462 | catboost 0.8418 | exaone | exaone 4,691 / 11,655 (40.2%) |
-| House Prices | 1,460 | 회귀 · RMSE ↓ | tabpfn_v2 0.1151 | catboost 0.1250 | tabpfn_v2 | kumo 83 / 4,491 (1.8%) |
+| Titanic | 891 | 이진 · acc ↑ | exaone 0.8462 | catboost 0.8418 | exaone | exaone 4,692 / 11,655 (40.3%) |
+| House Prices | 1,460 | 회귀 · RMSE ↓ | tabpfn_v2 0.1151 | catboost 0.1250 | tabpfn_v2 | kumo 83 / 4,493 (1.8%) |
 | Bioresponse | 3,751 | 이진 · logloss ↓ | 5-fold 미실행 | 미실행 | (fold 0) kumo 0.3942 | 미제출 |
 | Mercedes-Benz | 4,209 | 회귀 · R² ↑ | kumo 0.5742 | catboost 0.5564 | kumo | kumo 3 / 3,825 (0.1%) |
 | Spaceship Titanic | 8,693 | 이진 · acc ↑ | kumo 0.8237 | catboost 0.8125 | kumo | exaone@knn1000 111 / 1,757 (6.3%) |
@@ -55,7 +55,7 @@ LB 순위는 표마다 집계 시점을 적음 — `km lb` 집계(`results/leade
 | GiveMeSomeCredit | 150,000 | 이진 · AUC ↑ | kumo 0.8694 (ctx 전체) | catboost 0.8660 | kumo 0.8694 (ctx 전체) | kumo (ctx 전체) 1 / 926 (0.1%) |
 | Allstate | 188,318 | 회귀 · MAE ↓ | kumo 1,114.2 (ctx 전체) | lgbm 1,188.3 | kumo 1,114.2 (ctx 전체) | kumo (ctx 전체, 중앙값) 1 / 3,048 (<0.1%) |
 | S6E1 | 630,000 | 회귀 · RMSE ↓ | kumo 8.6767 (ctx 20만) | xgb 8.7736 | kumo 8.6767 (ctx 20만) | kumo (ctx 20만) 736 / 4,320 (17.0%) |
-| S6E10 | 699,635 | 이진 · AUC ↑ | kumo 0.95880 (ctx 20만) | lgbm 0.95838 | kumo 0.95880 (ctx 20만) | kumo (ctx 20만) 2,085 / 3,184 (65.5%) |
+| S6E10 | 699,635 | 이진 · AUC ↑ | kumo 0.95880 (ctx 20만) | lgbm 0.95838 | kumo 0.95880 (ctx 20만) | kumo (ctx 20만) 2,087 / 3,185 (65.5%) |
 
 순위는 `results/leaderboard.csv` 기준 (`basis` 열). 종료된 대회는 private 점수로 매긴 위치 (Kaggle 조회 API 가 private 을 공개한 대회: Restaurant·Mercedes·S4E2·Amazon·Otto·GiveMeSomeCredit·Allstate·S6E1), 진행 중 대회와 Titanic·Spaceship·House Prices 는 public 점수 기준. 늦은 제출이라 실제 순위표에는 없음. `(ctx …)` 는 상한을 푼 TFM 재실행 (2026-10-26, kumo·tabicl·tabpfn_v2).
 
@@ -127,7 +127,7 @@ CV 3위 tabpfn_v2 가 private 에서도 우리 제출 중 1위 — 테스트 10�
 - 891행이라 fold std(±1.5~1.9%p)가 모델 간 차이(최대 1.3%p)보다 큼 → accuracy 순위는 의미 없음.
 - AUC 도 exaone 이 가장 높음 (0.893).
 
-리더보드 (2026-10-21): exaone public 0.77511 → 점수 기준 4,691 / 11,655 (동점자가 많아 Kaggle 표시 순위는 제출 당시 6,994위).
+리더보드 (2026-10-21): exaone public 0.77511 → 점수 기준 4,692 / 11,655 (동점자가 많아 Kaggle 표시 순위는 제출 당시 6,994위).
 CV 와 LB 차이가 7%p — 418행 테스트라 변동이 크고, CV 1위 차이도 오차 범위였음.
 
 ### House Prices
@@ -159,9 +159,9 @@ CV 와 LB 차이가 7%p — 418행 테스트라 변동이 크고, CV 1위 차이
 
 | 모델 | CV RMSE | Public LB | 순위 |
 |---|---|---|---|
-| **kumo** | 0.1191 | **0.10895** | 83 / 4,491 (상위 1.8%) |
-| tabpfn_v2 | 0.1151 | 0.11094 | 97 / 4,491 (상위 2.2%) |
-| catboost | 0.1250 | 0.12199 | 791 / 4,491 (상위 17.6%) |
+| **kumo** | 0.1191 | **0.10895** | 83 / 4,493 (상위 1.8%) |
+| tabpfn_v2 | 0.1151 | 0.11094 | 97 / 4,493 (상위 2.2%) |
+| catboost | 0.1250 | 0.12199 | 793 / 4,493 (상위 17.6%) |
 
 - 튜닝 없는 TFM 단일 모델이 상위 2% 안. GBDT 기본 설정보다 훨씬 위.
 - CV 에서는 tabpfn_v2 > kumo 였지만 LB 에서는 뒤집힘 → 두 모델 차이는 오차 범위로 봐야 함.
@@ -421,12 +421,12 @@ TFM 은 fold 마다 학습 데이터에서 1만 행만 무작위로 뽑아 컨�
 - TFM 은 예측 행이 많아 느림 (fold 당 검증 14만 + 테스트 30만 행). Mitra 는 14,618s.
 - 컨텍스트를 kNN·무작위로 키워 격차를 줄이는 실험은 [컨텍스트 선택 › S6E10](#s6e10) 참고 (tabicl 무작위 20만 행에서 lgbm 과 −0.0008).
 
-리더보드 (public LB, 진행 중, 순위는 `km lb` 집계 — 팀 수가 2,649 → 3,184 로 늘어 이전 순위와 다름)
+리더보드 (public LB, 진행 중, 순위는 `km lb` 집계 — 팀 수가 2,649 → 3,185 로 늘어 이전 순위와 다름)
 
 | 모델 | CV | Public LB | 순위 |
 |---|---|---|---|
-| **kumo (ctx 20만)** | 0.9588 | **0.95835** | 2,085 / 3,184 (상위 65.5%) |
-| lgbm | 0.9584 | 0.95792 | 2,560 / 3,184 (상위 80.4%) |
+| **kumo (ctx 20만)** | 0.9588 | **0.95835** | 2,087 / 3,185 (상위 65.5%) |
+| lgbm | 0.9584 | 0.95792 | 2,560 / 3,185 (상위 80.4%) |
 
 ## 주제별 실험
 

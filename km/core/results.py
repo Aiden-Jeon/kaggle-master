@@ -33,15 +33,6 @@ def append_rows(rows: pd.DataFrame):
 TEST_INFO = "test.json"  # test.npy 옆: 그 예측을 만든 실행 {run, cv, n_folds}
 
 
-def full_runs(comp) -> pd.DataFrame:
-    """results.csv 에서 대회의 전체 fold 실행들, 시각 순 (timestamp 는 UTC)."""
-    csv = RESULTS / "results.csv"
-    if not csv.exists():
-        return pd.DataFrame(columns=["timestamp", "model", "cv", "note", "test"])
-    r = pd.read_csv(csv)
-    return r[(r.comp == comp.name) & (r.n_folds == comp.cv["n_splits"])].sort_values("timestamp")
-
-
 def is_exploration(note: pd.Series) -> pd.Series:
     """탐색 실행인지 (km board 가 LB 표에서 뺌). note 가 비었으면 False."""
     return note.fillna("").str.match(EXPLORATION)
