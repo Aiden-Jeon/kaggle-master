@@ -14,8 +14,8 @@ Tabular Foundation Model(TFM) vs GBDT 비교. 원본 수치는 `results/results.
 | 2026-10-19 ~ 22 | Kaggle Notebook (T4 ×2), Colab 무료 T4 | House Prices, Spaceship, Titanic, S4E2, S6E10, 컨텍스트 선택 |
 | 2026-10-22 | Databricks AI Runtime A10G → H100 | GiveMeSomeCredit, Amazon, Bioresponse, 결정 모델, 추론 속도 |
 | 2026-10-23 ~ | Databricks: TFM 은 H100 1장, GBDT 는 CPU serverless 4코어 | Restaurant, Mercedes, Otto, Allstate, S6E1 |
-| 2026-10-27 | Databricks H100 1장 | [빈 조합 채우기](#빈-조합-채우기-2026-10-27) (exaone·causilo·limix2m·mitra·mitra_ft, Bioresponse TFM) |
 | 2026-10-26 | Databricks H100 (kumo · tabicl · tabpfn_v2): 컨텍스트 상한 해제·20만 행 재실행 | Amazon, Otto, GiveMeSomeCredit, Allstate, S6E1, S6E10 |
+| 2026-10-27 | Databricks H100 1장 | [빈 조합 채우기](#빈-조합-채우기-2026-10-27) (exaone·causilo·limix2m·mitra·mitra_ft, Bioresponse TFM) |
 
 2026-10-23 이후 대회는 **같은 표 안에서도** GBDT(CPU 4코어)와 TFM(H100) 시간을 직접 비교하기 어려움.
 2026-10-26 `(ctx …)` 재실행 행(kumo·tabicl·tabpfn_v2)은 같은 H100 의 1만 행 행과만 시간 비교 가능: Otto·Allstate·S6E1.
@@ -172,8 +172,8 @@ CV 와 LB 차이가 7%p — 418행 테스트라 변동이 크고, CV 1위 차이
 
 3,751행, 이진 분류, 1,776 피처. 지표: logloss ↓
 
-TFM 5-fold 는 2026-10-27 (H100, TFM 은 LightGBM 중요도 상위 500 피처) — 결과는 [빈 조합 채우기](#빈-조합-채우기-2026-10-27).
-causilo 0.4262 · kumo 0.4270 · mitra 0.4291 이 xgb 0.4500 (GBDT 최고) 보다 좋음. fold 0 속도 비교는 [TFM 추론 속도](#tfm-추론-속도).
+5-fold 는 GBDT 3개·tabpfn_v2 (0.4766) 가 2026-10-22, 나머지 TFM 7개가 2026-10-27 (H100, TFM 은 LightGBM 중요도 상위 500 피처) — 결과는 [빈 조합 채우기](#빈-조합-채우기-2026-10-27).
+새로 돌린 TFM 7개 중 mitra_ft (0.4815) 를 뺀 6개가 xgb 0.4500 (GBDT 최고) 보다 좋음 (causilo 0.4262 · kumo 0.4270 · mitra 0.4291 · exaone 0.4310 · tabicl 0.4373 · limix2m 0.4379). fold 0 속도 비교는 [TFM 추론 속도](#tfm-추론-속도).
 
 ### Mercedes-Benz
 
@@ -690,13 +690,15 @@ fold 당 모델 시간이 10~30초까지 줄어 실행 준비(pip 설치·가중
 | S6E1 | RMSE ↓ | causilo 8.8812 (7/13위, 98s) · exaone 8.8882 (8/13위, 881s) · limix2m 8.9138 (11/13위, 212s) · mitra_ft 8.9166 (12/13위, 485s) · mitra 9.0153 (13/13위, 303s) |
 | S6E10 | AUC ↑ | causilo 0.9554 (6/11위, 117s) · exaone 0.9553 (7/11위, 552s) · mitra_ft 0.9550 (8/11위, 908s) |
 
-- CV 1위가 바뀐 대회 4개: Restaurant (kumo → limix2m), Bioresponse (5-fold 첫 실행, causilo), Mercedes (kumo → exaone), S4E2 (tabicl → causilo).
-  넷 다 2위와의 차이가 fold std 안 (Restaurant 31,000 vs std 690,000, Bioresponse 0.0008 vs 0.016, Mercedes 0.0006 vs 0.065, S4E2 0.0028 vs 0.005).
+- CV 1위가 바뀐 대회 4개: Restaurant (kumo → limix2m), Bioresponse (xgb → causilo), Mercedes (kumo → exaone), S4E2 (tabicl → causilo).
+  넷 다 2위와의 차이가 fold std 안 (Restaurant 2위 exaone 과 16,430 vs std 690,000, Bioresponse 0.0008 vs 0.016, Mercedes 0.0006 vs 0.065, S4E2 0.0028 vs 0.005).
 - causilo 는 빠르고 (대부분 30~160s) 13개 대회 중 5개에서 3위 안 (Bioresponse·S4E2 1위, House·Mercedes·Spaceship 3위). 큰 대회에서는 상한을 푼 kumo·tabicl 아래 (6~8위).
 - limix2m 은 큰 대회에서 뚜렷하게 처짐: GiveMeSomeCredit AUC 0.833 (다른 TFM 0.863 안팎, fold std 0.017 로 혼자 큼), Otto logloss 0.629 (다른 TFM 0.49~0.51). 원인은 확인 안 함.
 - mitra_ft (50 step fine-tune) 는 이번에 같이 돌린 7개 대회 중 4개에서 mitra 보다 나음 (Mercedes·Otto·Allstate·S6E1), 3개는 더 나쁨 (Restaurant·Bioresponse·GiveMeSomeCredit). 시간은 mitra 의 1.6~18배.
   T4 에서 2~3시간 걸리던 것이 H100 에서는 대회당 2~48분.
-- exaone 은 Allstate 에서 CUDA OOM → VRAM 상한 70% 를 주는 수정 후 실행 ([known-issues](docs/known-issues.md)). 이 수정은 Otto·Allstate exaone 실행에만 적용.
+- exaone 은 Allstate 1-fold 시험에서 CUDA OOM → VRAM 상한 70% 를 주는 수정 후 실행 ([known-issues](docs/known-issues.md)).
+  수정 뒤에 제출한 exaone 5-fold (Mercedes·Otto·GiveMeSomeCredit·Allstate·S6E1·S6E10, results.csv note `max_vram_bytes 70%`) 에 적용, Restaurant·Bioresponse 와 이전 exaone 실행은 상한 없음.
+  상한이 있으면 청크를 더 잘게 나눌 수 있어 시간은 상한 없는 실행과 직접 비교하지 않는 게 안전.
 
 ## 다음 할 일
 
