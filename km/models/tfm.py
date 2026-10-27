@@ -61,6 +61,9 @@ class _TFM(BaseEstimator):
 
 KV_CACHE_BYTES_PER_CELL = 50_000  # TabPFN KV 캐시 크기 추정: 컨텍스트 (행 × 피처) 한 칸당, estimator 8개 기준
 KV_CACHE_GPU_FRACTION = 0.3  # 추정 캐시가 GPU 메모리의 이 비율 안일 때만 캐시 사용
+# exaone 메모리 계획 상한 (GPU 메모리 비율). 기본은 남은 메모리 전부를 목표로 잡아 단편화된 캐시 때문에 OOM (Allstate, H100 80GB).
+# 상한을 주면 계획 전에 캐시를 비우고 그 안에서 청크를 나눔. GPU 에서는 모델마다 새 프로세스라 계획 시점에 잡힌 메모리는 가중치 정도
+EXAONE_VRAM_FRACTION = 0.7
 
 
 def _gpu_bytes() -> int:
@@ -357,7 +360,8 @@ def make_exaone(task, cat_cols, seed):
     _patch_exaone_sdpa()
 
     cls = EXAONETabularRegressor if task == "regression" else EXAONETabularClassifier
-    return _TFM(lambda cat_idx: cls.from_pretrained(device=_device()), cat_cols)
+    vram = int(EXAONE_VRAM_FRACTION * _gpu_bytes()) or None  # CPU 면 None
+    return _TFM(lambda cat_idx: cls.from_pretrained(device=_device(), max_vram_bytes=vram), cat_cols)
 
 
 class _Imputed(BaseEstimator):
