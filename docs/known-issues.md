@@ -30,6 +30,7 @@
 | 결과 수집 작업이 멈춤 | 맥 잠자기 중 kaggle CLI 호출이 무한 대기 | `kaggle()` 호출에 10분 timeout |
 | Allstate `Expected 132 fields in line 188321, saw 133` | 데이터 묶음 안에 `train.csv` 와 깨진 옛 버전 `train.csv.zip` 이 같이 있어 zip 이 정상 파일을 덮어씀 | `km/core/download.py` 의 `extract()` 를 `km download`·Kaggle·Colab 이 같이 씀: zip 안의 zip 까지 풀되, 이미 있는 파일과 같은 zip 안에 압축 안 된 쌍이 있는 x.zip 은 건너뜀 |
 | `km lb --submit` 가 이미 낸 모델을 또 제출, 순위 집계 0행 | kaggle CLI 가 JSON 앞에 버전 경고 줄을 출력 → `startswith("[")` 검사 실패로 제출 기록이 늘 빈 목록 | `[` 로 시작하는 줄부터 JSON 배열을 찾고, "No submissions found" 외에 못 읽으면 예외 (빈 목록으로 보고 다시 제출하지 않음). 이 버그로 신규 5개 대회에 21건이 중복 제출됨 (점수는 같음) |
+| results.csv 에 test=True 인 Kaggle 실행 37개의 test.npy 가 없어 제출 못 함 (#22) | 예측 위치가 코드 위치 기준 (`ROOT/results`) → 에이전트 worktree 에서 수집한 예측이 git 제외라 worktree 와 함께 사라짐 (results.csv 행만 PR 로 메인에 들어옴) | git 제외 실행 출력은 worktree 에서도 메인 체크아웃의 `results/` 에 씀 (`OUTPUTS`, `KM_OUTPUTS` 로 바꿈). `km lb` 가 아직 안 낸 마지막 실행의 예측이 없으면 알림 |
 | llm `No module named 'torch'` (Databricks) | AI Runtime 기본 환경에 torch 없음, transformers 는 torch 를 의존성으로 설치 안 함 | 설치 목록에 `torch` 추가 |
 | GBDT 가 Databricks GPU 노드에서 극도로 느림 (Restaurant 110행 xgb fold 하나 593s, 로컬 0s) | 모델별 프로세스 6개가 한 노드에서 동시 실행, lgbm·xgb 가 각자 전체 코어만큼 스레드를 띄워 CPU 경합 | GBDT 는 CPU serverless 작업으로 따로 제출 (`km databricks` 가 자동 분리), GPU 는 기본 H100 1장. 병렬 작업자마다 CPU 스레드를 CPU 수 / 작업자 수로 제한 (`OMP_NUM_THREADS`·`KM_THREADS`, Kaggle·로컬에도 적용) |
 | serverless CPU 작업이 정상 종료인데 FAILED | IPython 위에서 실행돼 `sys.exit(0)` 도 예외로 처리 | 종료 코드가 0 이 아닐 때만 `sys.exit` |

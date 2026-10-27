@@ -20,6 +20,11 @@ Kaggle 호출: 제출 기록·리더보드·마감일·username 은 kagglesdk (s
 실행: 제출을 만든 실행의 CV 와 시각(run 열 = results.csv timestamp)을 같이 기록 → km board 가 실행 단위로 LB 를 붙임.
      설명의 `run <시각>` (km submit 기본) → `<n>-fold CV <점수>` → 제출 시각 전 마지막 실행 순으로 찾음.
      못 찾으면 이전 leaderboard.csv 에서 찾은 값을 제출 ref 로 유지. --submit 도 이미 제출한 '실행' 은 다시 내지 않음.
+시각을 못 읽으면: 집계는 그 제출만 실행 연결 없이 (이전 leaderboard.csv 값이 있으면 유지) 두고 나머지는 집계.
+     단 종료 대회에서 그 때문에 마감 전 제출이 있는지 모르면 (우리 팀을 뺄지 모름) 그 대회를 건너뜀.
+     --submit 은 제출의 출처를 정하는 데 쓰는 시각 (설명의 run, 이전 leaderboard.csv 의 run, 설명의 run 으로 실행을 못 찾은 제출의 date) 을
+     못 읽으면 그 대회 제출·집계를 건너뜀 (출처를 모른 채 내면 이미 낸 실행을 다시 낼 수 있음).
+빠진 예측: 아직 제출 안 한 모델별 마지막 예측 실행 (results.csv test=True) 의 test.npy·test.json 이 없거나 다른 실행 것이면 대회마다 목록 출력.
 """
 
 from __future__ import annotations
@@ -38,7 +43,7 @@ import pandas as pd
 
 from km.core.competition import COMP_DIR, load_competition
 from km.core.metrics import METRICS
-from km.core.results import RESULTS, made_test, parse_utc, read_results, test_info
+from km.core.results import OUTPUTS, RESULTS, made_test, parse_utc, read_results, test_info
 from km.leaderboard.submit import make_submission, parse_message, push
 from km.models import REGISTRY, RETIRED, base_name
 
@@ -203,13 +208,9 @@ def prediction_runs(comp, results: pd.DataFrame) -> pd.DataFrame:
     return runs[runs.run_at.notna()].sort_values("run_at")
 
 
-def submit_pending(comp_name: str, n: int, known: dict | None, subs: list[dict], results: pd.DataFrame) -> int:
-    """test.npy 가 있지만 그 실행을 아직 제출 안 한 단일 모델을 CV 좋은 순으로 최대 n 개 제출. 제출한 개수 반환.
-    known: 제출 ref → (cv, run), 이전 leaderboard.csv 에서 찾은 값. subs: 이 대회의 제출 목록 (submissions 결과, 다시 읽지 않음)."""
-    comp = load_competition(comp_name)
-    # 이미 제출한 실행: (모델, run). 실행을 알 수 없는 제출은 그 제출 시각까지의 예측을 이미 낸 것으로 봄
-    # (그 뒤에 만든 예측은 낸 적이 없으니 제출 대상)
-    runs = prediction_runs(comp, results)
+def submitted(comp, runs: pd.DataFrame, known: dict | None, subs: list[dict]) -> tuple[set, dict]:
+    """이미 제출한 실행 {(모델, run_at)} 과 실행을 알 수 없는 제출의 모델별 마지막 제출 시각.
+    실행을 알 수 없는 제출은 그 제출 시각까지의 예측을 이미 낸 것으로 봄 (그 뒤에 만든 예측은 낸 적이 없으니 제출 대상)."""
     done, unknown_until = set(), {}
     for s in subs:
         model = model_of(s)
@@ -219,8 +220,39 @@ def submit_pending(comp_name: str, n: int, known: dict | None, subs: list[dict],
         else:
             sent_at = parse_utc(s["date"])
             unknown_until[model] = max(unknown_until.get(model, sent_at), sent_at)
+    return done, unknown_until
+
+
+def report_missing(comp_name: str, known: dict | None, subs: list[dict], results: pd.DataFrame):
+    """results.csv 에 테스트 예측을 만들었다고 (test=True) 남았지만 그 예측이 OUTPUTS 에 없어 제출할 수 없는 실행을 알림.
+    모델마다 마지막 예측 실행만 봄 (예전 실행의 test.npy 는 새 실행이 덮어쓰는 게 정상). 이미 제출한 실행은 뺌.
+    (#22: worktree 에서 받은 Kaggle 예측이 worktree 와 함께 사라져 LB 칸이 빈 채로 남았음)"""
+    comp = load_competition(comp_name)
+    runs = prediction_runs(comp, results)
+    done, unknown_until = submitted(comp, runs, known, subs)
+    lost = []
+    for model, last in runs.groupby("model").run_at.max().items():
+        if is_retired(model) or (model, last) in done or last <= unknown_until.get(model, datetime.min):
+            continue
+        t = test_info(comp_name, model)
+        try:
+            ok = t is not None and parse_utc(t["run"]) == last
+        except RuntimeError:
+            ok = False
+        if not ok:
+            lost.append(f"{model} (run {last:%Y-%m-%dT%H:%M:%S}, 있는 예측: {t['run'] if t else '없음'})")
+    if lost:
+        print(f"{comp_name}: 예측이 없어 제출 못 하는 실행 {len(lost)}개 ({OUTPUTS / comp_name}/<모델>/test.npy·test.json): "
+              + ", ".join(lost))
+
+
+def submit_pending(comp_name: str, n: int, known: dict | None, subs: list[dict], results: pd.DataFrame) -> int:
+    """test.npy 가 있지만 그 실행을 아직 제출 안 한 단일 모델을 CV 좋은 순으로 최대 n 개 제출. 제출한 개수 반환.
+    known: 제출 ref → (cv, run), 이전 leaderboard.csv 에서 찾은 값. subs: 이 대회의 제출 목록 (submissions 결과, 다시 읽지 않음)."""
+    comp = load_competition(comp_name)
+    done, unknown_until = submitted(comp, prediction_runs(comp, results), known, subs)
     todo = []
-    for d in (RESULTS / comp_name).glob("*/"):
+    for d in (OUTPUTS / comp_name).glob("*/"):
         t = test_info(comp_name, d.name)  # 제출할 test.npy 를 만든 실행. 출처를 모르면 자동 제출 안 함
         if not t or t["n_folds"] != comp.cv["n_splits"] or is_retired(d.name):
             continue
@@ -277,6 +309,14 @@ def submission_run(comp, sub: dict, runs: pd.DataFrame) -> tuple[float | None, s
     return (float(before.cv.iloc[-1]), before.timestamp.iloc[-1]) if len(before) else (None, None)
 
 
+def submitted_at(sub: dict) -> datetime | None:
+    """제출 시각 (UTC naive), 못 읽으면 None. rank_rows 용 (경고는 submission_run 실패 쪽에서 한 번). submit_pending 은 parse_utc 를 바로 써서 대회를 건너뜀."""
+    try:
+        return parse_utc(sub["date"])
+    except RuntimeError:
+        return None
+
+
 def rank_rows(comp_name: str, user: str, known: dict | None, subs: list[dict], results: pd.DataFrame) -> list[dict]:
     """known: 제출 ref → (cv, run), 이전 leaderboard.csv 에서 찾은 값. 이번에 실행을 못 찾으면 그 값을 유지.
     subs: 이 대회의 제출 목록 (submissions 결과), results: results.csv 전체 (read_results)."""
@@ -296,7 +336,11 @@ def rank_rows(comp_name: str, user: str, known: dict | None, subs: list[dict], r
         # 마감 뒤 제출 (late submission) 은 리더보드에 안 올라감 (2026-10-27 확인) → 마감 전 제출이 있을 때만 우리 팀을 찾아 뺌.
         # 조회 API 에는 멤버가 없어 팀 이름으로 찾음. 못 찾거나 같은 이름이 여럿이면 순위가 하나 틀리니 건너뜀
         mine = pd.Series(False, index=priv.index)
-        if any(parse_utc(s["date"]) <= closed_at for s in subs):
+        sent = [submitted_at(s) for s in subs]
+        early = any(t is not None and t <= closed_at for t in sent)
+        if not early and None in sent:  # 시각을 못 읽은 제출이 마감 전일 수 있음 → 우리 팀을 뺄지 모름, 순위가 하나 틀릴 수 있어 건너뜀
+            raise RuntimeError("시각을 못 읽은 제출이 있어 마감 전 제출이 있는지 모름")
+        if early:
             team = {s["teamName"] for s in subs}
             mine = priv.TeamName.isin(team)
             if mine.sum() != 1:
@@ -315,7 +359,11 @@ def rank_rows(comp_name: str, user: str, known: dict | None, subs: list[dict], r
         model = model_of(s)
         if is_retired(model):
             continue
-        cv, run = submission_run(comp, s, runs[runs.model == model])
+        try:
+            cv, run = submission_run(comp, s, runs[runs.model == model])
+        except RuntimeError as e:  # 제출 date·설명의 run 을 못 읽음 → 이 제출만 실행 연결 없이 (submit_pending 은 대회를 건너뜀)
+            print(f"{comp_name}: 제출 {s['ref']} 을 실행에 연결하지 못함 ({e})")
+            cv, run = None, None
         if run is None and str(s["ref"]) in (known or {}):
             cv, run = known[str(s["ref"])]
         rows.append(dict(comp=comp_name, model=model, metric=comp.metric, basis=basis, cv=cv,
@@ -343,6 +391,10 @@ def main(argv: list[str] | None = None):
     for c in comps:
         try:
             subs = submissions(c)  # 대회마다 한 번. 새로 제출했을 때만 wait_scored 가 다시 읽은 목록을 씀
+            try:  # 알림만 하는 검사 → 실패해도 제출·집계는 계속
+                report_missing(c, known, subs, results)
+            except RuntimeError as e:
+                print(f"{c}: 빠진 예측 확인 실패 ({e})")
             if args.submit and submit_pending(c, args.submit, known, subs, results):
                 subs = wait_scored(c)
             rows += rank_rows(c, user, known, subs, results)
