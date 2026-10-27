@@ -22,8 +22,8 @@ Kaggle 호출: 제출 기록·리더보드·마감일·username 은 kagglesdk (s
      못 찾으면 이전 leaderboard.csv 에서 찾은 값을 제출 ref 로 유지. --submit 도 이미 제출한 '실행' 은 다시 내지 않음.
 시각을 못 읽으면: 집계는 그 제출만 실행 연결 없이 (이전 leaderboard.csv 값이 있으면 유지) 두고 나머지는 집계.
      단 종료 대회에서 그 때문에 마감 전 제출이 있는지 모르면 (우리 팀을 뺄지 모름) 그 대회를 건너뜀.
-     --submit 은 제출 date·설명의 run·이전 leaderboard.csv 의 run 중 하나라도 못 읽으면 그 대회 제출·집계를 건너뜀
-     (출처를 모른 채 내면 이미 낸 실행을 다시 낼 수 있음).
+     --submit 은 제출의 출처를 정하는 데 쓰는 시각 (설명의 run, 이전 leaderboard.csv 의 run, 설명의 run 으로 실행을 못 찾은 제출의 date) 을
+     못 읽으면 그 대회 제출·집계를 건너뜀 (출처를 모른 채 내면 이미 낸 실행을 다시 낼 수 있음).
 """
 
 from __future__ import annotations
@@ -281,7 +281,7 @@ def submission_run(comp, sub: dict, runs: pd.DataFrame) -> tuple[float | None, s
     return (float(before.cv.iloc[-1]), before.timestamp.iloc[-1]) if len(before) else (None, None)
 
 
-def sent_at(sub: dict) -> datetime | None:
+def submitted_at(sub: dict) -> datetime | None:
     """제출 시각 (UTC naive), 못 읽으면 None. rank_rows 용 (경고는 submission_run 실패 쪽에서 한 번). submit_pending 은 parse_utc 를 바로 써서 대회를 건너뜀."""
     try:
         return parse_utc(sub["date"])
@@ -308,7 +308,7 @@ def rank_rows(comp_name: str, user: str, known: dict | None, subs: list[dict], r
         # 마감 뒤 제출 (late submission) 은 리더보드에 안 올라감 (2026-10-27 확인) → 마감 전 제출이 있을 때만 우리 팀을 찾아 뺌.
         # 조회 API 에는 멤버가 없어 팀 이름으로 찾음. 못 찾거나 같은 이름이 여럿이면 순위가 하나 틀리니 건너뜀
         mine = pd.Series(False, index=priv.index)
-        sent = [sent_at(s) for s in subs]
+        sent = [submitted_at(s) for s in subs]
         early = any(t is not None and t <= closed_at for t in sent)
         if not early and None in sent:  # 시각을 못 읽은 제출이 마감 전일 수 있음 → 우리 팀을 뺄지 모름, 순위가 하나 틀릴 수 있어 건너뜀
             raise RuntimeError("시각을 못 읽은 제출이 있어 마감 전 제출이 있는지 모름")

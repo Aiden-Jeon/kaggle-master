@@ -62,9 +62,9 @@ def env(r) -> str:
     if where == "databricks":
         try:  # 문자열 비교는 타임존·형식이 다르면 틀림 → parse_utc 로 datetime 끼리
             return "DBX A10G" if parse_utc(r["timestamp"]) < H100_SINCE else "DBX H100"
-        except RuntimeError as e:  # 노드를 모름 → s/1K 중앙값 (H100·CPU4 만) 에서도 빠짐
-            print(f"{r['comp']} {r['model']}: 실행 시각을 읽지 못해 환경을 DBX ? 로 표시 ({e})", file=sys.stderr)
-            return "DBX ?"  # "DBX" 는 HTML 의 10-23 이후 탭 이름이라 피함
+        except RuntimeError as e:  # 노드를 모름 → where 가 빈 행과 같이 '—' (s/1K (DBX) 중앙값에서도 빠짐)
+            print(f"{r['comp']} {r['model']}: 실행 시각을 읽지 못해 환경을 — 로 표시 ({e})", file=sys.stderr)
+            return "—"
     return {"kaggle": "Kaggle T4", "colab": "Colab T4", "local": "로컬"}.get(where, where)
 
 
