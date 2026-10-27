@@ -8,6 +8,7 @@
 
 | 문제 | 원인 | 해결 |
 |---|---|---|
+| exaone `CUDA out of memory` (Allstate, H100 80GB) | 기본 메모리 계획이 남은 메모리 전부를 목표로 잡는데, 캐시 단편화(예약됐지만 안 쓰는 16GiB)로 실제 할당이 실패 | `max_vram_bytes` 를 GPU 메모리의 70% 로 지정 → 계획 전에 캐시를 비우고 그 안에서 청크를 나눔 (`km/models/tfm.py`) |
 | limix 계열 import 실패 (`Numba needs NumPy 2.2 or less`) | 다른 패키지가 numpy 를 2.5 로 올림, Kaggle 기본 numba 0.61 은 numpy<2.3 | `pip install -U numba` (0.68 은 numpy<2.6 지원) 추가 |
 | limix2m `KeyError: 'tf_mlp_layer_type'` | `stable-ai/LimiX-2M` 체크포인트가 현재 LimiX 코드와 설정 키 불일치 | README 가 가리키는 `stable-ai/LimiX-1_2M` 사용 |
 | mitra 회귀 `different number of output (1!=1000)` | mitra-regressor-2 는 분위수 출력, AutoGluon 1.6 sklearn 인터페이스와 불일치 | 회귀만 `autogluon/mitra-regressor`(v1) 사용 |

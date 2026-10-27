@@ -356,8 +356,13 @@ def make_exaone(task, cat_cols, seed):
 
     _patch_exaone_sdpa()
 
+    import torch
+
     cls = EXAONETabularRegressor if task == "regression" else EXAONETabularClassifier
-    return _TFM(lambda cat_idx: cls.from_pretrained(device=_device()), cat_cols)
+    # 기본 메모리 계획은 남은 메모리 전부를 목표로 잡아 단편화된 캐시 때문에 OOM (Allstate, H100 80GB).
+    # 상한을 주면 계획 전에 캐시를 비우고 그 안에서 청크를 나눔
+    vram = int(0.7 * torch.cuda.get_device_properties(0).total_memory) if _device() == "cuda" else None
+    return _TFM(lambda cat_idx: cls.from_pretrained(device=_device(), max_vram_bytes=vram), cat_cols)
 
 
 class _Imputed(BaseEstimator):
