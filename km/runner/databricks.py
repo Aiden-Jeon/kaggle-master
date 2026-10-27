@@ -24,6 +24,7 @@ import argparse
 import copy
 import fcntl
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -251,13 +252,16 @@ def submit(cfg: dict, comp: str, data: str, run_args: list[str], models: list[st
 
 
 def record(run_id: str, run: dict):
-    """runs.json 은 메인 체크아웃 하나를 모든 worktree 가 같이 씀 (OUTPUTS) → 잠금을 걸고 읽은 뒤 씀."""
+    """runs.json 은 메인 체크아웃 하나를 모든 worktree 가 같이 씀 (OUTPUTS) → 잠금을 걸고 읽은 뒤 씀.
+    임시 파일 → 교체로 써서 잠금 없이 읽는 fetch 가 쓰다 만 파일을 보지 않음."""
     RUNS.parent.mkdir(parents=True, exist_ok=True)
     with open(RUNS.parent / ".runs.lock", "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         runs = json.loads(RUNS.read_text()) if RUNS.exists() else {}
         runs[run_id] = run
-        RUNS.write_text(json.dumps(runs, indent=2))
+        tmp = RUNS.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(runs, indent=2))
+        os.replace(tmp, RUNS)
     print(f"제출 완료: run_id={run_id}\n  {run['url']}")
 
 
@@ -433,7 +437,9 @@ def main(argv: list[str] | None = None):
             ap.error(f"--split-folds 는 GPU 1장 작업으로 (지금 {cfg['accelerator']} × fold {comp.cv['n_splits']}개)")
         if not (comp.data_dir / comp.train_file).exists():  # 다 끝난 뒤 합칠 때 로컬 타깃이 필요 → 미리 받아 둠
             download(comp)
-        for name in gpu:  # 예전 시도에서 남은 fold 가 이번 묶음과 섞이지 않게 (합칠 때 batch 로도 확인)
+        # 예전 시도에서 남은 fold 가 이번 묶음과 섞이지 않게 (합칠 때 batch 로도 확인).
+        # folds/ 는 모든 worktree 가 같이 씀 (OUTPUTS) → 다른 세션이 같은 대회·모델을 --split-folds 로 돌리는 중이면 그 fold 도 지워짐
+        for name in gpu:
             if (stale := OUTPUTS / comp.name / name / "folds").exists():
                 print(f"예전 fold 결과 삭제: {stale}")
                 shutil.rmtree(stale)

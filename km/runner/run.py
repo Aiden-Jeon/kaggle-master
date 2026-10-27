@@ -26,7 +26,7 @@ from sklearn.preprocessing import LabelEncoder
 from km.core.competition import TRANSFORMS, get_folds, load_competition, load_data, load_features
 from km.core.download import download
 from km.core.metrics import EXTRA, score
-from km.core.results import OUTPUTS, append_rows, clear_test_info, write_test_info
+from km.core.results import OUTPUTS, append_rows, clear_test_info, warn_overwrite, write_test_info
 from km.models import make_model
 from km.runner.common import add_run_args, check_fold_args, run_argv
 
@@ -154,6 +154,7 @@ def save_run(comp, name, oof, test_pred, scores, fold_scores, secs, classes, not
                 seconds=round(secs, 1), classes=classes, n_folds=len(fold_scores), note=note, timestamp=utc_now())
     (out / "meta.json").write_text(json.dumps(meta, indent=2, default=str))
     if not no_test:  # 예측과 그 출처(km submit 이 제출 설명에 적음)는 함께만 씀
+        warn_overwrite(out)
         clear_test_info(out)
         np.save(out / "test.npy", test_pred)
         write_test_info(out, meta["timestamp"], scores[comp.metric], len(fold_scores), classes)

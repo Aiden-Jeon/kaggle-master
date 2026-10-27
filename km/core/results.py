@@ -115,14 +115,36 @@ def test_info(comp_name: str, model: str) -> dict | None:
     return info if isinstance(info, dict) and {"run", "cv", "n_folds"} <= info.keys() else None
 
 
+def warn_overwrite(out: Path):
+    """test.npy 를 덮어쓰기 전에 호출. 지금 예측을 만든 실행이 이 체크아웃의 results.csv 에 없으면 경고만 함.
+    OUTPUTS 는 모든 worktree 가 같이 씀 → 다른 체크아웃에서 돌려 아직 PR 로 안 합친 실행의 예측일 수 있음 (덮어쓰면 그 실행은 제출 못 함)."""
+    info = test_info(out.parent.name, out.name)
+    if not info:
+        return
+
+    def at(text):
+        try:
+            return parse_utc(text)
+        except RuntimeError:
+            return None
+
+    res = read_results()
+    runs = res[(res.comp == out.parent.name) & (res.model == out.name)].timestamp.map(at)
+    if (run := at(info["run"])) is not None and not (runs == run).any():
+        print(f"경고: {out} 의 예측 (run {info['run']}) 을 만든 실행이 {RESULTS / 'results.csv'} 에 없음 → 덮어씀 "
+              "(다른 worktree 에서 아직 안 합친 실행이면 그 예측은 없어짐)")
+
+
 def merge_results(remote: Path, where: str):
     """원격 실행의 results/ 를 병합: 예측 등 실행 출력은 OUTPUTS 에 복사, results.csv 는 where 열을 붙여 이 체크아웃의 표에 행 추가."""
     for d in remote.iterdir():
         if d.is_dir():
             # test.json 없이 test.npy 만 온 모델 (test.json 을 안 쓰던 코드로 돌린 원격 실행) → 로컬의 예전 출처를 지움
             for m in d.iterdir():
-                if (m / "test.npy").exists() and not (m / TEST_INFO).exists():
-                    clear_test_info(OUTPUTS / d.name / m.name)
+                if (m / "test.npy").exists():
+                    warn_overwrite(OUTPUTS / d.name / m.name)
+                    if not (m / TEST_INFO).exists():
+                        clear_test_info(OUTPUTS / d.name / m.name)
             shutil.copytree(d, OUTPUTS / d.name, dirs_exist_ok=True)
     if OUTPUTS != RESULTS:
         print(f"실행 출력 저장: {OUTPUTS} (results.csv 는 {RESULTS})")

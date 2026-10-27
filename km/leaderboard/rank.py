@@ -371,7 +371,10 @@ def main(argv: list[str] | None = None):
     for c in comps:
         try:
             subs = submissions(c)  # 대회마다 한 번. 새로 제출했을 때만 wait_scored 가 다시 읽은 목록을 씀
-            report_missing(c, known, subs, results)
+            try:  # 알림만 하는 검사 → 실패해도 제출·집계는 계속
+                report_missing(c, known, subs, results)
+            except RuntimeError as e:
+                print(f"{c}: 빠진 예측 확인 실패 ({e})")
             if args.submit and submit_pending(c, args.submit, known, subs, results):
                 subs = wait_scored(c)
             rows += rank_rows(c, user, known, subs, results)

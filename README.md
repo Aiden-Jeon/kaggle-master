@@ -65,6 +65,7 @@ results/
   <slug>/<model>/                 # OOF·테스트 예측, test.json = test.npy 를 만든 실행 (km submit 이 제출 설명에 적음, git 제외)
                                   # git 제외 파일 (<slug>/, _air/runs.json) 은 worktree 에서 실행·수집해도 메인 체크아웃의 results/ 에 씀
                                   # (worktree 를 지워도 남음, KM_OUTPUTS 로 위치 지정). results.csv·leaderboard.csv 는 체크아웃마다 (PR 로 합침)
+                                  # 여러 세션이 같은 대회·모델을 돌리면 마지막에 쓴 예측만 남음 (아직 안 합친 실행의 예측을 덮어쓰면 경고)
 EXPERIMENTS.md                    # 실험 결과와 분석
 docs/known-issues.md              # 겪은 오류와 해결, Kaggle·Databricks 운영 메모
 ```
