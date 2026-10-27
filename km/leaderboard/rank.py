@@ -4,11 +4,12 @@
     uv run km lb spaceship-titanic titanic
     uv run km lb bioresponse --submit 2   # 아직 제출 안 한 모델을 CV 좋은 순으로 2개 제출 후 집계
 
-순위: 리더보드에서 우리 팀을 뺀 뒤 (점수가 더 좋은 팀 수 + 1). 기준 열 `basis`:
-     - public: 진행 중 대회. 리더보드의 public 점수끼리 비교 (private 은 아직 안 보임).
+순위: 리더보드에서 우리 팀을 뺀 뒤 (점수가 더 좋은 팀 수 + 1). 기준 열 `basis` 는 대회 마감일로 정함:
+     - public: 진행 중 대회 (마감 전. Titanic·House Prices 같은 상시 대회는 마감이 2030 년). 리더보드의 public 점수끼리 비교.
      - private: 종료된 대회. 리더보드 조회 API 의 기본 응답은 private 이 공개되어 있으면 private 이라, 우리 private 점수와 남의 private 점수를 비교.
        `kaggle competitions leaderboard -d` 다운로드는 종료 뒤에도 public 이라 (파일명 publicleaderboard, 2026-10-27 확인) 여기 쓰지 않음.
-       CLI 에는 조회 옵션이 없어 kagglesdk 로 직접 받음 (`override_public` 을 안 줘서 기본 = private 우선).
+       CLI 에는 조회·마감일 옵션이 없어 kagglesdk 로 직접 받음 (`override_public` 을 안 줘서 기본 = private 우선).
+       종료됐어도 우리 제출에 private 점수가 없으면 (private 비공개) public 으로 비교.
      public·private 점수는 둘 다 기록.
 모델 이름: 제출 설명에서 `lgbm`, `kumo+catboost`, `exaone@knn1000` 처럼 모델 이름으로 해석되는 첫 토큰.
          RETIRED 모델(limix2)이 들어간 제출은 순위 집계·자동 제출에서 뺌.
@@ -20,6 +21,7 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import re
 import subprocess
@@ -33,7 +35,7 @@ import pandas as pd
 
 from km.core.competition import COMP_DIR, load_competition
 from km.core.metrics import METRICS
-from km.core.results import RESULTS, made_test, test_info
+from km.core.results import RESULTS, made_test, parse_utc, read_results, test_info
 from km.leaderboard.submit import make_submission, parse_message, push
 from km.models import REGISTRY, RETIRED, base_name
 
@@ -79,37 +81,63 @@ def public_leaderboard(comp: str) -> pd.DataFrame:
                 return pd.read_csv(f, encoding="utf-8-sig")
 
 
-def private_leaderboard(comp: str) -> pd.DataFrame:
-    """리더보드 조회 API 의 기본 응답 전 페이지 (TeamId, Score). private 이 공개됐으면 private, 아니면 public.
-    CLI 에는 이 응답을 받는 옵션이 없어 kagglesdk 를 직접 호출 (kaggle 패키지에 이미 들어 있음)."""
-    import requests
+@functools.cache
+def sdk():
+    """kagglesdk 클라이언트. km lb 한 번에 인증·세션 하나 (세션은 프로세스가 끝날 때까지 씀).
+    CLI 에 없는 마감일·리더보드 조회용 (kaggle 패키지에 이미 들어 있음)."""
     from kaggle.api.kaggle_api_extended import KaggleApi
-    from kagglesdk.competitions.types.competition_api_service import ApiGetLeaderboardRequest
 
     api = KaggleApi()
     api.authenticate()
+    return api.build_kaggle_client().__enter__()
+
+
+def sdk_call(what: str, fn, req):
+    """429 (요청 제한, 연속 조회 중 자주 남) 는 잠깐 쉬고 다시. 그 밖의 네트워크·HTTP 오류는 RuntimeError → main 이 이 대회만 건너뜀."""
+    import requests
+
+    for attempt in range(5):
+        try:
+            return fn(req)
+        except requests.exceptions.HTTPError as e:
+            if e.response is None or e.response.status_code != 429 or attempt == 4:
+                raise RuntimeError(f"{what} 실패: {e}") from e
+            time.sleep(10 * (attempt + 1))
+        except requests.exceptions.RequestException as e:  # 연결 끊김·타임아웃 등
+            raise RuntimeError(f"{what} 실패: {e}") from e
+
+
+def is_closed(comp: str) -> bool:
+    """마감이 지난 대회인지. deadline 은 kagglesdk 가 UTC 'Z' 를 떼고 준 naive datetime."""
+    from kagglesdk.competitions.types.competition_api_service import ApiGetCompetitionRequest
+
+    req = ApiGetCompetitionRequest()
+    req.competition_name = comp
+    deadline = sdk_call("대회 정보 조회", sdk().competitions.competition_api_client.get_competition, req).deadline
+    if deadline is None:
+        raise RuntimeError("대회 마감일을 모름")
+    return deadline < datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def private_leaderboard(comp: str) -> pd.DataFrame:
+    """리더보드 조회 API 의 기본 응답 전 페이지 (TeamId, Score). private 이 공개됐으면 private, 아니면 public. 종료 대회에만 부름."""
+    from kagglesdk.competitions.types.competition_api_service import ApiGetLeaderboardRequest
+
     rows, token = [], None
-    with api.build_kaggle_client() as kc:
-        while True:
-            req = ApiGetLeaderboardRequest()
-            req.competition_name = comp
-            req.page_size = 200
-            if token:
-                req.page_token = token
-            for attempt in range(5):  # 연속 조회 중 429 (요청 제한) 이 자주 남 → 잠깐 쉬고 다시
-                try:
-                    resp = kc.competitions.competition_api_client.get_leaderboard(req)
-                    break
-                except requests.exceptions.HTTPError as e:
-                    if e.response is None or e.response.status_code != 429:
-                        raise RuntimeError(f"리더보드 조회 실패: {e}") from e  # main 이 이 대회만 건너뜀
-                    if attempt == 4:
-                        raise RuntimeError(f"리더보드 조회 429 가 계속됨: {e}") from e
-                    time.sleep(10 * (attempt + 1))
+    while True:
+        req = ApiGetLeaderboardRequest()
+        req.competition_name = comp
+        req.page_size = 200
+        if token:
+            req.page_token = token
+        resp = sdk_call("리더보드 조회", sdk().competitions.competition_api_client.get_leaderboard, req)
+        try:
             rows += [(s.team_id, float(s.score)) for s in resp.submissions or [] if s.score not in (None, "")]
-            token = resp.next_page_token
-            if not token:
-                break
+        except ValueError as e:
+            raise RuntimeError(f"리더보드 점수를 읽지 못함: {e}") from e
+        token = resp.next_page_token
+        if not token:
+            break
     return pd.DataFrame(rows, columns=["TeamId", "Score"])
 
 
@@ -125,31 +153,21 @@ def is_retired(model: str) -> bool:
     return any(base_name(p) in RETIRED for p in model.split("+"))
 
 
-def read_results() -> pd.DataFrame:
-    """results.csv 전체. km lb 는 한 번만 읽고 대회마다 넘김 (prediction_runs 참고)."""
-    csv = RESULTS / "results.csv"
-    if not csv.exists():
-        return pd.DataFrame(columns=["timestamp", "comp", "model", "cv", "n_folds", "note", "test"])
-    return pd.read_csv(csv)
-
-
 def prediction_runs(comp, results: pd.DataFrame) -> pd.DataFrame:
     """제출과 연결할 후보: 전체 fold 실행 중 테스트 예측을 만든 것 (탐색 실험·--no-test 재실행 제외), 시각 순.
-    results: read_results() 의 results.csv 전체."""
-    runs = results[(results.comp == comp.name) & (results.n_folds == comp.cv["n_splits"])].sort_values("timestamp")
-    return runs[made_test(runs)]
-
-
-def parse_utc(text) -> datetime:
-    """시각 문자열 → UTC 기준 naive datetime. 문자열 비교 대신 이걸로 비교.
-    타임존이 없으면 UTC 로 봄: results.csv timestamp·test.json run 은 datetime.now(timezone.utc) 로 쓰고,
-    Kaggle 제출 날짜는 kagglesdk 가 UTC 'Z' 를 떼고 naive 로 준 값 (2026-10-27 확인). 타임존이 붙어 있으면 UTC 로 환산.
-    못 읽으면 RuntimeError (조용히 틀리지 않도록 그 대회·모델 처리를 멈춤)."""
-    try:
-        t = datetime.fromisoformat(str(text).strip())
-    except ValueError as e:
-        raise RuntimeError(f"시각을 읽지 못함: {text!r}") from e
-    return t.astimezone(timezone.utc).replace(tzinfo=None) if t.tzinfo else t
+    results: read_results() 의 results.csv 전체. run_at = timestamp 를 parse_utc 로 한 번만 읽은 값 (submission_run 이 씀).
+    시각을 못 읽는 행은 경고하고 후보에서 뺌 (그 행 하나 때문에 대회 전체를 건너뛰지 않음)."""
+    runs = results[(results.comp == comp.name) & (results.n_folds == comp.cv["n_splits"])]
+    runs = runs[made_test(runs)]
+    at = []
+    for t in runs.timestamp:
+        try:
+            at.append(parse_utc(t))
+        except RuntimeError as e:
+            print(f"{comp.name}: results.csv 행을 제출 연결 후보에서 뺌 ({e})")
+            at.append(None)
+    runs = runs.assign(run_at=at)
+    return runs[runs.run_at.notna()].sort_values("run_at")
 
 
 def submit_pending(comp_name: str, n: int, known: dict | None, subs: list[dict], results: pd.DataFrame) -> int:
@@ -216,11 +234,10 @@ def submission_run(comp, sub: dict, runs: pd.DataFrame) -> tuple[float | None, s
     cv_ok = info.cv is not None and info.n_folds == comp.cv["n_splits"]
     if info.cv is not None and not cv_ok:  # 1-fold 시험 등 → 전체 fold 실행이 아님, 날짜로 추측하지 않음
         return None, None
-    at = runs.timestamp.map(parse_utc)
     if info.run:  # 적힌 실행이 없으면 (지워짐 등) 추측하지 않음
-        hit = runs[at == parse_utc(info.run)]
+        hit = runs[runs.run_at == parse_utc(info.run)]
         return (float(hit.cv.iloc[-1]), hit.timestamp.iloc[-1]) if len(hit) else (float(info.cv) if cv_ok else None, None)
-    before = runs[at <= parse_utc(sub["date"])]
+    before = runs[runs.run_at <= parse_utc(sub["date"])]
     if cv_ok:  # 설명을 쓸 때와 같은 형식으로 비교 (반올림 차이 없음), 제출 뒤 실행은 제외
         hit = before[[f"{x:.5f}" == info.cv for x in before.cv]]
         return (float(hit.cv.iloc[-1]), hit.timestamp.iloc[-1]) if len(hit) else (float(info.cv), None)
@@ -237,14 +254,15 @@ def rank_rows(comp_name: str, user: str, known: dict | None, subs: list[dict], r
         return []
     lb = public_leaderboard(comp_name)
     mine = lb.TeamMemberUserNames.fillna("").str.split(",").apply(lambda u: user in [x.strip() for x in u])
-    priv = private_leaderboard(comp_name)
-    if priv.empty:
-        raise RuntimeError("리더보드 조회 결과가 비어 있음")
-    # 조회 응답이 공개 리더보드와 다르면 (= private 공개됨, 종료 대회) private 기준. 같으면 public 기준
-    basis = "private" if sorted(priv.Score) != sorted(lb.Score) else "public"
+    # 종료 대회는 private 기준. 우리 제출에 private 점수가 없으면 (private 비공개) public 기준으로 둠
+    private_subs = [s for s in subs if s["privateScore"] not in (None, "")]
+    basis = "private" if private_subs and is_closed(comp_name) else "public"
     if basis == "private":
+        priv = private_leaderboard(comp_name)
+        if priv.empty:
+            raise RuntimeError("리더보드 조회 결과가 비어 있음")
         others = priv.loc[~priv.TeamId.isin(set(lb.loc[mine, "TeamId"])), "Score"].to_numpy()
-        subs = [s for s in subs if s["privateScore"] not in (None, "")]
+        subs = private_subs
     else:
         others = lb.loc[~mine, "Score"].to_numpy()
     runs = prediction_runs(comp, results)

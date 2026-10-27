@@ -109,6 +109,7 @@ def load() -> tuple[pd.DataFrame, dict]:
     known = lb[run.notna()].assign(timestamp=run[run.notna()]).drop_duplicates(["comp", "model", "timestamp"])
     d = d.merge(known[["comp", "model", "timestamp", "public", "private", "basis", "rank", "teams", "top_pct"]],
                 on=["comp", "model", "timestamp"], how="left")
+    d["lb_score"] = d.private.where(d.basis == "private", d.public)  # 순위와 같은 기준 점수 (종료 대회는 private)
     return d, sizes
 
 
@@ -159,14 +160,19 @@ def summary(d: pd.DataFrame) -> list[str]:
     return out
 
 
+def comp_basis(d: pd.DataFrame) -> dict:
+    """대회 → LB 기준 (public·private, km lb 의 basis 열). 제출이 없는 대회는 빠짐."""
+    return {c: b.iloc[-1] for c, b in d.dropna(subset=["basis"]).groupby("comp").basis}
+
+
 def per_comp(d: pd.DataFrame, sizes: dict) -> list[str]:
+    bases = comp_basis(d)
     out = []
     for comp in sorted(d.comp.unique(), key=lambda c: (sizes[c] or (0, 0))[0]):
         g = d[d.comp == comp].sort_values("cv_rank")
         metric = g.metric.iloc[0]
         rows = f"학습 {sizes[comp][0]:,}행 · 테스트 {sizes[comp][1]:,}행 · " if sizes[comp] else ""
-        basis = g.basis.dropna()
-        basis = f" · LB 기준 {BASIS_LABEL.get(basis.iloc[-1], basis.iloc[-1])}" if len(basis) else ""
+        basis = f" · LB 기준 {BASIS_LABEL.get(b, b)}" if (b := bases.get(comp)) else ""
         out += [f"### {TITLES.get(comp, comp)}\n", f"{rows}{metric} {'↑' if METRICS[metric][1] else '↓'}{basis}\n",
                 f"| # | 모델 | CV {metric} | ± std | LB 점수 | LB 순위 | 시간 | s/1K | 환경 |",
                 "|---|---|---|---|---|---|---|---|---|"]
@@ -174,11 +180,10 @@ def per_comp(d: pd.DataFrame, sizes: dict) -> list[str]:
         for r in g.itertuples():
             name = f"**{r.label}**" if r.better == best else r.label
             rank = "—" if pd.isna(r.rank) else f"{int(r.rank):,} / {int(r.teams):,} ({fmt_pct(r.top_pct)})"
-            score = r.private if r.basis == "private" else r.public  # 종료 대회는 private 기준 점수
             cells = [r.cv_rank, f"{name} 🌳" if r.family == "GBDT" else name,
                      f"{r.cv:,.1f}" if abs(r.cv) > 1000 else f"{r.cv:.4f}",
                      f"{r.cv_std:,.1f}" if abs(r.cv) > 1000 else f"{r.cv_std:.4f}",
-                     "—" if pd.isna(score) else fmt_num(score), rank, fmt_time(r.seconds),
+                     "—" if pd.isna(r.lb_score) else fmt_num(r.lb_score), rank, fmt_time(r.seconds),
                      "—" if pd.isna(r.s_per_1k) else f"{r.s_per_1k:.2f}", r.env]
             out.append("| " + " | ".join(map(str, cells)) + " |")
         out.append("")
@@ -251,9 +256,8 @@ def render_html(d: pd.DataFrame, sizes: dict) -> str:
     comps = sorted(d.comp.unique(), key=lambda c: (sizes[c] or (0, 0))[0])
     # base_rank = 종합·히트맵용 순위 (기본 모델끼리, 대회별 최고 설정 행에만). cv_rank 는 설정별 순위
     best = best_per_base(d)[["comp", "model", "cv_rank"]].rename(columns={"cv_rank": "base_rank"})
-    runs = d.merge(best, on=["comp", "model"], how="left").assign(label_en=lambda x: x.model.map(lambda m: label(m, en=True)),
-                                                                   lb_score=d.private.where(d.basis == "private", d.public))  # md 와 같은 기준 점수
-    basis = {c: b.iloc[-1] for c, b in d.dropna(subset=["basis"]).groupby("comp").basis}
+    runs = d.merge(best, on=["comp", "model"], how="left").assign(label_en=lambda x: x.model.map(lambda m: label(m, en=True)))
+    basis = comp_basis(d)
     runs = runs[["comp", "model", "label", "label_en", "base", "family", "cv", "cv_std", "cv_rank", "base_rank", "lb_score", "rank",
                  "teams", "top_pct", "seconds", "s_per_1k", "env"]]
     caps = {c: n for c in comps if (n := load_competition(c).tfm_max_rows)}

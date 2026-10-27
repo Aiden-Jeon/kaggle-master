@@ -7,6 +7,7 @@ import json
 import os
 import re
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -28,6 +29,26 @@ def append_rows(rows: pd.DataFrame):
     with open(RESULTS / ".results.lock", "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         pd.concat([pd.read_csv(csv), rows] if csv.exists() else [rows]).to_csv(csv, index=False)
+
+
+def read_results() -> pd.DataFrame:
+    """results.csv 전체. km lb 는 한 번만 읽고 대회마다 넘김."""
+    csv = RESULTS / "results.csv"
+    if not csv.exists():
+        return pd.DataFrame(columns=["timestamp", "comp", "model", "cv", "n_folds", "note", "test"])
+    return pd.read_csv(csv)
+
+
+def parse_utc(text) -> datetime:
+    """시각 문자열 → UTC 기준 naive datetime. 문자열 비교 대신 이걸로 비교.
+    타임존이 없으면 UTC 로 봄: results.csv timestamp·test.json run 은 datetime.now(timezone.utc) 로 쓰고,
+    Kaggle 제출 날짜는 kagglesdk 가 UTC 'Z' 를 떼고 naive 로 준 값 (2026-10-27 확인). 타임존이 붙어 있으면 UTC 로 환산.
+    못 읽으면 RuntimeError (조용히 틀리지 않도록 그 대회·모델 처리를 멈춤)."""
+    try:
+        t = datetime.fromisoformat(str(text).strip())
+    except ValueError as e:
+        raise RuntimeError(f"시각을 읽지 못함: {text!r}") from e
+    return t.astimezone(timezone.utc).replace(tzinfo=None) if t.tzinfo else t
 
 
 TEST_INFO = "test.json"  # test.npy 옆: 그 예측을 만든 실행 {run, cv, n_folds}

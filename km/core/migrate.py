@@ -11,17 +11,15 @@ from __future__ import annotations
 import argparse
 import json
 
-import pandas as pd
-
-from km.core.results import RESULTS, TEST_INFO, made_test, save_test_info
+from km.core.results import RESULTS, TEST_INFO, made_test, parse_utc, read_results, save_test_info
 
 SOURCE = "backfill: meta.json (2026-10-27 이전 실행)"
 
 
 def backfill_test_info(dry_run: bool = False) -> tuple[list[str], list[str]]:
     """(채운 모델, 비워 둔 모델과 이유). 모델 이름은 `대회/모델`."""
-    res = pd.read_csv(RESULTS / "results.csv")
-    res = res.assign(test=made_test(res))
+    res = read_results()
+    res = res.assign(test=made_test(res), run_at=res.timestamp.map(parse_utc))
     filled, skipped = [], []
     for d in sorted(RESULTS.glob("*/*/")):
         if not (d / "test.npy").exists() or (d / TEST_INFO).exists():
@@ -32,7 +30,7 @@ def backfill_test_info(dry_run: bool = False) -> tuple[list[str], list[str]]:
             continue
         meta = json.loads((d / "meta.json").read_text())
         hit = res[(res.comp == meta["comp"]) & (res.model == meta["model"])
-                  & (res.timestamp == meta["timestamp"]) & res.test]
+                  & (res.run_at == parse_utc(meta["timestamp"])) & res.test]
         if not len(hit):
             skipped.append(f"{name}: 실행 {meta['timestamp']} 이 results.csv 에 테스트 예측 실행으로 없음")
             continue
