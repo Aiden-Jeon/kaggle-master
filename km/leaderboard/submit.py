@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 
 from km.core.competition import TRANSFORMS, load_competition, load_data
-from km.core.results import RESULTS
+from km.core.results import RESULTS, test_info
 
 
 def make_submission(comp_name: str, models: list[str]) -> Path:
@@ -30,7 +30,9 @@ def make_submission(comp_name: str, models: list[str]) -> Path:
     ids = test[comp.id_col] if comp.id_col else np.arange(1, len(test) + 1)
     id_name, target_name = comp.submit_columns or [comp.id_col, comp.target]
     if comp.is_classification:
-        classes = json.loads((RESULTS / comp.name / models[0] / "meta.json").read_text())["classes"]
+        # 예측 열 순서: test.json (예측과 함께 저장) → 없으면 meta.json (--no-test 재실행이 덮어썼을 수 있음)
+        classes = (test_info(comp.name, models[0]) or {}).get("classes") or \
+            json.loads((RESULTS / comp.name / models[0] / "meta.json").read_text())["classes"]
     if comp.task == "multiclass" and comp.submit_proba:  # 클래스마다 확률 열 하나 (열 이름 = 클래스 값)
         sub = pd.concat([pd.DataFrame({id_name: ids}), pd.DataFrame(pred, columns=classes)], axis=1)
     else:
@@ -49,7 +51,7 @@ def make_submission(comp_name: str, models: list[str]) -> Path:
     return path
 
 
-# 제출 설명: `<모델> | <n>-fold CV <점수> | run <실행 시각>`. 실행 시각 = 제출하는 test.npy 를 만든 실행의 meta.json timestamp
+# 제출 설명: `<모델> | <n>-fold CV <점수> | run <실행 시각>`. 실행 시각 = 제출하는 test.npy 를 만든 실행 (test.json, km run 이 씀)
 # (= results.csv 의 timestamp, UTC) → km lb 가 제출을 그 실행에 정확히 연결. 쓰는 곳(run_message)과 읽는 곳(parse_message)은 여기만.
 _CV = re.compile(r"(\d+)-fold CV (-?\d+(?:\.\d+)?)(?!\.?\d)")  # `1.2.3` 같은 깨진 숫자는 무시
 _RUN = re.compile(r"\brun (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)")
@@ -62,20 +64,9 @@ class SubmissionInfo:
     run: str | None = None
 
 
-def test_run(comp, model: str) -> dict | None:
-    """저장된 test.npy 를 만든 실행 {run, cv, n_folds} (meta.json 의 test. 2026-10-27 전 meta 는 그 meta 의 실행으로 봄)."""
-    meta = RESULTS / comp.name / model / "meta.json"
-    if not meta.exists():
-        return None
-    m = json.loads(meta.read_text())
-    if "test" in m:
-        return m["test"]
-    return dict(run=m["timestamp"], cv=m["scores"][comp.metric], n_folds=m["n_folds"])
-
-
 def run_message(comp, model: str) -> str | None:
-    """단일 모델 제출 설명의 `<n>-fold CV <점수> | run <시각>` 부분. 저장된 예측이 없으면 None."""
-    t = test_run(comp, model)
+    """단일 모델 제출 설명의 `<n>-fold CV <점수> | run <시각>` 부분 (test.json 기준). 출처를 모르면 None."""
+    t = test_info(comp.name, model)
     return f"{t['n_folds']}-fold CV {t['cv']:.5f} | run {t['run']}" if t else None
 
 

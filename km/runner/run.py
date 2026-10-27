@@ -23,7 +23,7 @@ from sklearn.preprocessing import LabelEncoder
 
 from km.core.competition import TRANSFORMS, get_folds, load_competition, load_data, load_features
 from km.core.metrics import EXTRA, score
-from km.core.results import RESULTS, append_rows
+from km.core.results import RESULTS, append_rows, clear_test_info, write_test_info
 from km.models import make_model
 from km.runner.common import add_run_args, run_argv
 
@@ -167,25 +167,20 @@ def main(argv: list[str] | None = None):
         out = RESULTS / comp.name / name
         out.mkdir(parents=True, exist_ok=True)
         np.save(out / "oof.npy", oof)
-        if not args.no_test:
-            np.save(out / "test.npy", test_pred)
         meta = dict(comp=comp.name, model=name, metric=comp.metric, scores=scores, fold_scores=fold_scores,
                     seconds=round(secs, 1), classes=classes, n_folds=len(fold_scores), note=args.note,
                     # UTC (Kaggle 제출 시각과 비교하므로). 2026-10-22 로컬 실행 4행은 KST 였다가 UTC 로 고침
                     timestamp=datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds"))
-        # test.npy 를 만든 실행 (km submit 이 제출 설명에 적음). --no-test 는 test.npy 를 그대로 두므로 이전 값을 이어받음
-        test = dict(run=meta["timestamp"], cv=scores[comp.metric], n_folds=len(fold_scores))
-        if args.no_test:
-            prev = json.loads((out / "meta.json").read_text()) if (out / "meta.json").exists() else {}
-            test = prev.get("test") or (prev and (out / "test.npy").exists() and dict(
-                run=prev["timestamp"], cv=prev["scores"][comp.metric], n_folds=prev["n_folds"])) or None
-        meta["test"] = test
         (out / "meta.json").write_text(json.dumps(meta, indent=2, default=str))
+        if not args.no_test:  # 예측과 그 출처(km submit 이 제출 설명에 적음)는 함께만 씀
+            clear_test_info(out)
+            np.save(out / "test.npy", test_pred)
+            write_test_info(out, meta["timestamp"], scores[comp.metric], len(fold_scores), classes)
 
         row = dict(timestamp=meta["timestamp"], comp=comp.name, model=name, metric=comp.metric,
                    cv=scores[comp.metric], cv_std=float(np.std(fold_scores)), n_folds=len(fold_scores),
                    seconds=meta["seconds"], **{f"cv_{k}": v for k, v in scores.items() if k != comp.metric},
-                   note=args.note)
+                   note=args.note, test=not args.no_test)
         append_rows(pd.DataFrame([row]))
         print(f"=> {name}: {comp.metric}={scores[comp.metric]:.5f} ± {row['cv_std']:.5f}  ({secs:.0f}s)\n")
 

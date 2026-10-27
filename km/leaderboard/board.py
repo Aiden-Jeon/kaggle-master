@@ -20,7 +20,7 @@ import pandas as pd
 
 from km.core.competition import COMP_DIR, ROOT, load_competition
 from km.core.metrics import METRICS
-from km.core.results import RESULTS
+from km.core.results import RESULTS, made_test
 from km.models import REGISTRY
 
 OUT = ROOT / "docs" / "leaderboard.md"
@@ -80,6 +80,7 @@ def load() -> tuple[pd.DataFrame, dict]:
     d = d[~d.model.str.contains(r"\+|llm|sap_rpt")]  # 앙상블, LLM 결정 모델, sap_rpt
     # ctx: 컨텍스트 탐색 실험 (테스트 예측 없음). llm·sap: 결정 모델 실험 중 같이 다시 돌린 GBDT
     d = d[~d.note.fillna("").str.match(r"ctx |llm|sap")]
+    d = d[made_test(d)]  # 테스트 예측을 만든 실행만 → --no-test 재실행이 제출한 예측의 LB 를 가리지 않음
     d = d.sort_values("timestamp").drop_duplicates(["comp", "model"], keep="last")
 
     sizes = {}
