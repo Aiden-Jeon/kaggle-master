@@ -47,6 +47,7 @@ km/
   core/                           # 기반 라이브러리 (명령은 km download 하나)
     competition.py, features.py, metrics.py, results.py   # 대회 설정·데이터·fold, 공통 피처, 지표, 결과 저장
     download.py                   # km download: 로컬 실행용 데이터 다운로드 (원격 런처도 사용)
+    migrate.py                    # km migrate: 일회성 데이터 마이그레이션 (test-info: test.json 없는 예측에 출처 채움)
   models/                         # 모델 레지스트리 (km/models/__init__.py 에 등록), @spec 컨텍스트 선택 (context.py)
   runner/                         # 실험 실행
     run.py                        # km run: CV 실행 → results/<slug>/<model>/{oof,test}.npy, results/results.csv
@@ -111,6 +112,9 @@ uv run km submit spaceship-titanic catboost tabicl --push -m "cb+tabicl"
 # 제출 기록 → 리더보드 순위 (results/leaderboard.csv), --submit N: 미제출 모델을 CV 순으로 N개 제출 후 집계
 uv run km lb
 uv run km lb bioresponse --submit 2
+
+# test.json 이 없는 예전 예측에 출처(CV·run) 채움 (1회. 이미 있는 것은 건너뜀, 확인 못 하면 비움)
+uv run km migrate test-info
 ```
 
 공통 실행 인자: `--max-folds N` (앞 N개 fold 만), `--no-test` (테스트 예측 생략), `--note` (results.csv 에 남길 메모).

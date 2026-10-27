@@ -15,6 +15,7 @@ COMMANDS = {
     "kaggle": ("km.runner.kaggle", "Kaggle Notebook(GPU)에서 km run 실행 후 결과 수집"),
     "colab": ("km.runner.colab", "Colab 노트북 생성 / 출력에서 결과 수집"),
     "databricks": ("km.runner.databricks", "Databricks AI Runtime(서버리스 GPU)에서 km run 실행 후 결과 수집"),
+    "migrate": ("km.core.migrate", "일회성 데이터 마이그레이션 (km migrate test-info: test.json 없는 예측에 출처 채움)"),
 }
 
 
