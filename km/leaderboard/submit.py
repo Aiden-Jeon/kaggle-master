@@ -62,13 +62,21 @@ class SubmissionInfo:
     run: str | None = None
 
 
-def run_message(comp, model: str) -> str | None:
-    """단일 모델 제출 설명의 `<n>-fold CV <점수> | run <시각>` 부분. 저장된 예측이 없으면 None."""
+def test_run(comp, model: str) -> dict | None:
+    """저장된 test.npy 를 만든 실행 {run, cv, n_folds} (meta.json 의 test. 2026-10-27 전 meta 는 그 meta 의 실행으로 봄)."""
     meta = RESULTS / comp.name / model / "meta.json"
     if not meta.exists():
         return None
     m = json.loads(meta.read_text())
-    return f"{m['n_folds']}-fold CV {m['scores'][comp.metric]:.5f} | run {m['timestamp']}"
+    if "test" in m:
+        return m["test"]
+    return dict(run=m["timestamp"], cv=m["scores"][comp.metric], n_folds=m["n_folds"])
+
+
+def run_message(comp, model: str) -> str | None:
+    """단일 모델 제출 설명의 `<n>-fold CV <점수> | run <시각>` 부분. 저장된 예측이 없으면 None."""
+    t = test_run(comp, model)
+    return f"{t['n_folds']}-fold CV {t['cv']:.5f} | run {t['run']}" if t else None
 
 
 def parse_message(description: str | None) -> SubmissionInfo:

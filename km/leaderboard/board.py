@@ -94,16 +94,16 @@ def load() -> tuple[pd.DataFrame, dict]:
     d["base"] = d.label.str.partition(" (")[0]
     d["better"] = [cv if METRICS[m][1] else -cv for cv, m in zip(d.cv, d.metric)]
     d["cv_rank"] = d.groupby("comp").better.rank(ascending=False, method="min").astype(int)
-    # 제출은 그 제출을 만든 실행(leaderboard.csv 의 run = results.csv 의 timestamp)에 붙임 → 같은 이름으로 다시 돌린 실행에
-    # 예전 제출 LB 가 붙지 않음. run 을 모르는 예전 제출은 모델 이름으로만 연결 (그 모델의 최고 순위).
-    # 같은 실행을 여러 번 냈으면 최고 순위 (leaderboard.csv 가 대회·순위 순)
-    cols = ["public", "rank", "teams", "top_pct"]
-    run = lb["run"] if "run" in lb else pd.Series(np.nan, index=lb.index)
-    known = lb[run.notna()].assign(timestamp=run).drop_duplicates(["comp", "model", "timestamp"])
-    legacy = lb[run.isna()].drop_duplicates(["comp", "model"]).set_index(["comp", "model"])[cols]
-    d = d.merge(known[["comp", "model", "timestamp", *cols]], on=["comp", "model", "timestamp"], how="left")
-    miss = d.public.isna() & pd.Series([k in legacy.index for k in zip(d.comp, d.model)], index=d.index)
-    d.loc[miss, cols] = legacy.loc[list(zip(d.comp[miss], d.model[miss]))].to_numpy()
+    # 제출은 그 제출을 만든 실행(leaderboard.csv 의 run = results.csv 의 timestamp)에만 붙임 → 같은 이름으로 다시 돌린 실행에
+    # 예전 제출 LB 가 붙지 않음. 같은 실행을 여러 번 냈으면 최고 순위 (leaderboard.csv 가 대회·순위 순)
+    run = (lb["run"] if "run" in lb else pd.Series(None, index=lb.index)).astype(object)  # 비어 있어도 문자열 열로
+    single = ~lb.model.astype(str).str.contains(r"\+")
+    if (missing := int((single & run.isna()).sum())):
+        print(f"leaderboard.csv: 실행(run)을 모르는 단일 모델 제출 {missing}건은 LB 를 붙이지 않음 (`km lb` 로 다시 집계)",
+              file=sys.stderr)
+    known = lb[run.notna()].assign(timestamp=run[run.notna()]).drop_duplicates(["comp", "model", "timestamp"])
+    d = d.merge(known[["comp", "model", "timestamp", "public", "rank", "teams", "top_pct"]],
+                on=["comp", "model", "timestamp"], how="left")
     return d, sizes
 
 
