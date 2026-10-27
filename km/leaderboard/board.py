@@ -141,9 +141,32 @@ def best_per_base(d: pd.DataFrame) -> pd.DataFrame:
     return b
 
 
+DBX_ENVS = ["DBX H100", "DBX CPU4"]  # 종합 s/1K (DBX): 같은 시기 Databricks, 모델마다 둘 중 하나에서만 돌림
+
+
+def common_comps(b: pd.DataFrame) -> list[str]:
+    """s/1K 가 있는 모든 모델이 같이 돌린 대회 (b: best_per_base 행). 모델마다 대회가 다르면 작은 대회의 고정 비용이
+    일부 모델 중앙값에만 섞여 비교가 흔들림 → s/1K 중앙값은 이 대회들로만."""
+    sets = [set(g.comp) for _, g in b.dropna(subset=["s_per_1k"]).groupby("base")]
+    return sorted(set.intersection(*sets)) if sets else []
+
+
+def s1k_sets(d: pd.DataFrame) -> tuple[list[str], list[str]]:
+    """종합 s/1K 중앙값에 넣는 대회: (DBX, 전체)."""
+    b = best_per_base(d)
+    return common_comps(b[b.env.isin(DBX_ENVS)]), common_comps(b)
+
+
+def s1k_titles(cs: list[str], comps: list[str]) -> list[str]:
+    """s1k_sets 의 대회 → 짧은 이름, comps 순서 (학습 행 순)."""
+    return [TITLES.get(c, c) for c in comps if c in cs]
+
+
 def summary_rows(d: pd.DataFrame) -> pd.DataFrame:
     """모델별 종합, 평균 CV 순위 순. 점수·시간은 대회별 최고 CV 설정 행 기준.
-    최고 LB 는 제출한 모든 설정 중 최고 (최고 CV 설정이 미제출이면 그 행만으로는 LB 가 비거나 나빠 보임)."""
+    최고 LB 는 제출한 모든 설정 중 최고 (최고 CV 설정이 미제출이면 그 행만으로는 LB 가 비거나 나빠 보임).
+    s/1K 는 모든 모델이 같이 돌린 대회만의 중앙값 (common_comps)."""
+    dbx, every = s1k_sets(d)
     rows = []
     for m, g in best_per_base(d).groupby("base"):
         best_lb = d.loc[d.base == m, "top_pct"].min()  # 제출한 모든 설정 중
@@ -151,7 +174,8 @@ def summary_rows(d: pd.DataFrame) -> pd.DataFrame:
                          pct=((g.cv_rank - 1) / (g.n_models - 1).clip(lower=1)).mean(), lb=best_lb,
                          # 최고 LB 가 최고 CV 설정이 아닌 행에서 옴 (최고 CV 설정이 미제출이거나 순위가 더 낮음)
                          lb_other=pd.notna(best_lb) and not g.top_pct.min() <= best_lb,
-                         s1k=g[g.env.isin(["DBX H100", "DBX CPU4"])].s_per_1k.median(), s1k_all=g.s_per_1k.median(),
+                         s1k=g[g.env.isin(DBX_ENVS) & g.comp.isin(dbx)].s_per_1k.median(),
+                         s1k_all=g[g.comp.isin(every)].s_per_1k.median(),
                          ctx=int(g.model.str.contains("@").sum())))
     return pd.DataFrame(rows).sort_values("pct")
 
@@ -217,7 +241,8 @@ HEADER = """\
 
 평균 CV 순위 = 대회마다 (순위−1)/(모델 수−1) 의 평균 (0 = 항상 1위, 1 = 항상 꼴찌). 실행한 대회가 모델마다 달라 대략적인 비교.
 모델마다 대회별로 CV 가 가장 좋은 설정 하나만 셈 (`컨텍스트 변형` 열 = 그중 `@` 설정 수). s/1K 도 그 행의 값, 최고 LB 는 제출한 모든 설정 중 최고 (`*` = 최고 CV 설정이 아닌 설정의 제출).
-s/1K 중앙값: `DBX` = 2026-10-23 이후 Databricks 실행만 (TFM H100, GBDT CPU 4코어), `전체` = 환경 섞임.
+s/1K 중앙값: 모든 모델이 같이 돌린 대회만 셈 (모델마다 대회가 다르면 작은 대회의 고정 비용이 일부 모델에만 섞임).
+`DBX` = 2026-10-23 이후 Databricks 실행만 (TFM H100, GBDT CPU 4코어. {s1k_dbx}), `전체` = 환경 섞임 ({s1k_all}).
 
 **해석 주의**
 - **조건이 같지 않을 수 있음**: 상한이 걸린 대회에서 `@full`·`@rand` 로 다시 돌린 모델만 큰 컨텍스트를 씀 ({rerun}).
@@ -251,7 +276,9 @@ def render(d: pd.DataFrame, sizes: dict) -> str:
     for c, n in caps.items():
         by_cap.setdefault(n, []).append(TITLES.get(c, c))
     capped = "; ".join(f"{n:,}행: {', '.join(cs)}" for n, cs in by_cap.items()) or "없음"
-    head = HEADER.format(date=pd.Timestamp.now().strftime("%Y-%m-%d"), capped=capped, rerun=rerun_status(d, caps))
+    dbx, every = (s1k_titles(cs, comps) for cs in s1k_sets(d))
+    head = HEADER.format(date=pd.Timestamp.now().strftime("%Y-%m-%d"), capped=capped, rerun=rerun_status(d, caps),
+                         s1k_dbx=f"{len(dbx)}개: {', '.join(dbx) or '없음'}", s1k_all=f"{len(every)}개: {', '.join(every) or '없음'}")
     return "\n".join([head, *summary(d), "", "## 대회별\n", *per_comp(d, sizes)])
 
 
@@ -274,6 +301,7 @@ def render_html(d: pd.DataFrame, sizes: dict) -> str:
         comps=[dict(id=c, title=TITLES.get(c, c), metric=(m := d[d.comp == c].metric.iloc[0]), higher=METRICS[m][1],
                     train=sizes[c] and sizes[c][0], test=sizes[c] and sizes[c][1], cap=caps.get(c), basis=basis.get(c)) for c in comps],
         rerun=rerun_status(d, caps),  # md 해석 주의와 같은 문구 (예: `kumo 6/6, tabicl 3/6 (...)`)
+        s1k_comps=dict(zip(["dbx", "all"], (s1k_titles(cs, comps) for cs in s1k_sets(d)))),  # 종합 s/1K 중앙값에 넣은 대회
         runs=records(runs.sort_values(["comp", "cv_rank"])),
         summary=records(summary_rows(d)),
     )
