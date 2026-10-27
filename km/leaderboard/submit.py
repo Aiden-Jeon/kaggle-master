@@ -9,14 +9,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 from km.core.competition import TRANSFORMS, load_competition, load_data
-from km.core.results import RESULTS, latest_cv
+from km.core.results import RESULTS
 
 
 def make_submission(comp_name: str, models: list[str]) -> Path:
@@ -47,13 +49,38 @@ def make_submission(comp_name: str, models: list[str]) -> Path:
     return path
 
 
+# 제출 설명: `<모델> | <n>-fold CV <점수> | run <실행 시각>`. 실행 시각 = 제출하는 test.npy 를 만든 실행의 meta.json timestamp
+# (= results.csv 의 timestamp, UTC) → km lb 가 제출을 그 실행에 정확히 연결. 쓰는 곳(run_message)과 읽는 곳(parse_message)은 여기만.
+_CV = re.compile(r"(\d+)-fold CV (-?\d+(?:\.\d+)?)(?!\.?\d)")  # `1.2.3` 같은 깨진 숫자는 무시
+_RUN = re.compile(r"\brun (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)")
+
+
+@dataclass
+class SubmissionInfo:
+    n_folds: int | None = None
+    cv: str | None = None  # 설명에 적힌 그대로 (소수 5자리 문자열)
+    run: str | None = None
+
+
+def run_message(comp, model: str) -> str | None:
+    """단일 모델 제출 설명의 `<n>-fold CV <점수> | run <시각>` 부분. 저장된 예측이 없으면 None."""
+    meta = RESULTS / comp.name / model / "meta.json"
+    if not meta.exists():
+        return None
+    m = json.loads(meta.read_text())
+    return f"{m['n_folds']}-fold CV {m['scores'][comp.metric]:.5f} | run {m['timestamp']}"
+
+
+def parse_message(description: str | None) -> SubmissionInfo:
+    text = description or ""
+    cv, run = _CV.search(text), _RUN.search(text)
+    return SubmissionInfo(int(cv.group(1)) if cv else None, cv.group(2) if cv else None, run.group(1) if run else None)
+
+
 def push(comp_name: str, path: Path, name: str, message: str | None = None):
-    """설명 맨 앞에 모델 이름 → `km lb` 가 제출을 모델에 연결.
-    message 가 없으면 results.csv 의 CV 를 붙임 (예: `kumo@full | 5-fold CV 0.37738`, 앙상블은 이름만)."""
-    if message is None:
-        comp = load_competition(comp_name)
-        cv = latest_cv(comp, name)
-        message = f"{comp.cv['n_splits']}-fold CV {cv:.5f}" if cv is not None else None
+    """설명 맨 앞에 모델 이름 → `km lb` 가 제출을 모델에 연결. message 가 없으면 run_message (앙상블은 이름만)."""
+    if message is None and "+" not in name:
+        message = run_message(load_competition(comp_name), name)
     subprocess.run(["kaggle", "competitions", "submit", "-c", comp_name, "-f", str(path),
                     "-m", f"{name} | {message}" if message else name], check=True)
 

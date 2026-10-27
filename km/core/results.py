@@ -31,12 +31,6 @@ def full_runs(comp) -> pd.DataFrame:
     return r[(r.comp == comp.name) & (r.n_folds == comp.cv["n_splits"])].sort_values("timestamp")
 
 
-def latest_cv(comp, model: str) -> float | None:
-    """해당 모델의 전체 fold 실행 중 가장 최근 CV."""
-    r = full_runs(comp)
-    r = r[r.model == model]
-    return float(r.cv.iloc[-1]) if len(r) else None
-
 
 def merge_results(remote: Path, where: str):
     """원격 실행의 results/ 를 로컬 results/ 에 병합 (results.csv 는 where 열을 붙여 행 추가)."""

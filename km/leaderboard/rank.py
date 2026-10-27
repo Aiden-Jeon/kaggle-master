@@ -8,6 +8,8 @@
      Kaggle API 는 private 리더보드를 주지 않으므로 종료된 대회도 public 점수 기준이고, private 점수는 따로 기록.
 모델 이름: 제출 설명에서 `lgbm`, `kumo+catboost`, `exaone@knn1000` 처럼 모델 이름으로 해석되는 첫 토큰.
          RETIRED 모델(limix2)이 들어간 제출은 순위 집계·자동 제출에서 뺌.
+실행: 제출을 만든 실행의 CV 와 시각(run 열 = results.csv timestamp)을 같이 기록 → km board 가 실행 단위로 LB 를 붙임.
+     설명의 `run <시각>` (km submit 기본) → `<n>-fold CV <점수>` → 제출 시각 전 마지막 실행 순으로 찾음.
 """
 
 from __future__ import annotations
@@ -25,8 +27,8 @@ import pandas as pd
 
 from km.core.competition import COMP_DIR, load_competition
 from km.core.metrics import METRICS
-from km.core.results import RESULTS, full_runs, latest_cv
-from km.leaderboard.submit import make_submission, push
+from km.core.results import RESULTS, full_runs
+from km.leaderboard.submit import make_submission, parse_message, push
 from km.models import REGISTRY, RETIRED, base_name
 
 
@@ -87,9 +89,9 @@ def submit_pending(comp_name: str, n: int) -> int:
     """test.npy 가 있지만 아직 제출 안 한 단일 모델을 CV 좋은 순으로 최대 n 개 제출. 제출한 개수 반환."""
     comp = load_competition(comp_name)
     done = {model_of(s) for s in submissions(comp_name)}
-    todo = [(latest_cv(comp, d.name), d.name) for d in (RESULTS / comp_name).glob("*/")
-            if (d / "test.npy").exists() and d.name not in done and not is_retired(d.name)
-            and latest_cv(comp, d.name) is not None]
+    latest = full_runs(comp).groupby("model").cv.last()  # 모델별 가장 최근 CV (results.csv 한 번만 읽음)
+    todo = [(latest[d.name], d.name) for d in (RESULTS / comp_name).glob("*/")
+            if (d / "test.npy").exists() and d.name not in done and not is_retired(d.name) and d.name in latest]
     todo.sort(reverse=METRICS[comp.metric][1])
     sent = 0
     for cv, model in todo[:n]:
@@ -113,18 +115,21 @@ def wait_scored(comp_name: str, timeout: int = 900):
         time.sleep(15)
 
 
-def submission_cv(comp, sub: dict, runs: pd.DataFrame) -> float | None:
-    """제출 당시의 CV. runs = 그 모델의 전체 fold 실행 (full_runs, 시각 순, UTC).
-    설명의 `<n>-fold CV <점수>` (km submit 기본 형식, n 이 대회 fold 수일 때만) → 반올림이 같은 실행 값, 없으면 그 점수.
-    설명에 없으면 제출 시각(UTC) 전 마지막 실행.
+def submission_run(comp, sub: dict, runs: pd.DataFrame) -> tuple[float | None, str | None]:
+    """제출을 만든 실행의 (CV, 실행 시각). runs = 그 모델의 전체 fold 실행 (full_runs, 시각 순, UTC).
+    1) 설명의 `run <시각>` (km submit 기본, 2026-10-27~)  2) 설명의 `<n>-fold CV <점수>` 와 같은 점수의 실행
+    3) 제출 시각(UTC) 전 마지막 실행. 실행을 못 찾으면 실행 시각은 None (km board 는 모델 이름으로만 연결).
     모델 이름만으로 찾으면 같은 이름으로 다시 돌린 뒤 예전 제출에도 새 CV 가 붙음 (2026-10-26 Allstate kumo@full 평균 → 중앙값)."""
-    m = re.search(r"(\d+)-fold CV (-?\d+(?:\.\d+)?)(?!\.?\d)", sub["description"] or "")  # `1.2.3` 같은 깨진 숫자는 무시
-    if m and int(m.group(1)) == comp.cv["n_splits"]:
-        cv = float(m.group(2))  # 설명은 소수 5자리
-        same = runs.cv[runs.cv.round(5) == round(cv, 5)]
-        return float(same.iloc[-1]) if len(same) else cv
-    before = runs[runs.timestamp <= sub["date"].replace(" ", "T")]
-    return float(before.cv.iloc[-1]) if len(before) else None
+    info = parse_message(sub["description"])
+    cv_ok = info.cv is not None and info.n_folds == comp.cv["n_splits"]  # 1-fold 시험 등의 점수는 무시
+    hit = runs[runs.timestamp == info.run] if info.run else runs.iloc[:0]
+    if not len(hit) and cv_ok:
+        hit = runs[[f"{x:.5f}" == info.cv for x in runs.cv]]  # 설명을 쓸 때와 같은 형식으로 비교 (반올림 차이 없음)
+        if not len(hit):
+            return float(info.cv), None
+    if not len(hit):
+        hit = runs[runs.timestamp <= sub["date"].replace(" ", "T")]
+    return (float(hit.cv.iloc[-1]), hit.timestamp.iloc[-1]) if len(hit) else (None, None)
 
 
 def rank_rows(comp_name: str, user: str) -> list[dict]:
@@ -144,10 +149,11 @@ def rank_rows(comp_name: str, user: str) -> list[dict]:
         model = model_of(s)
         if is_retired(model):
             continue
-        rows.append(dict(comp=comp_name, model=model, metric=comp.metric, cv=submission_cv(comp, s, runs[runs.model == model]), public=pub,
+        cv, run = submission_run(comp, s, runs[runs.model == model])
+        rows.append(dict(comp=comp_name, model=model, metric=comp.metric, cv=cv, public=pub,
                          private=float(s["privateScore"]) if s["privateScore"] not in (None, "") else None,
                          rank=rank, teams=len(others) + 1, top_pct=round(100 * rank / (len(others) + 1), 1),
-                         date=s["date"][:10], description=s["description"], ref=s["ref"]))
+                         date=s["date"][:10], description=s["description"], ref=s["ref"], run=run))
     return rows
 
 

@@ -94,11 +94,16 @@ def load() -> tuple[pd.DataFrame, dict]:
     d["base"] = d.label.str.partition(" (")[0]
     d["better"] = [cv if METRICS[m][1] else -cv for cv, m in zip(d.cv, d.metric)]
     d["cv_rank"] = d.groupby("comp").better.rank(ascending=False, method="min").astype(int)
-    # 제출은 CV 가 같은 실행에만 붙임 (km lb 가 제출 당시 CV 를 기록) → 같은 이름으로 다시 돌린 실행에 예전 제출 LB 가 붙지 않음.
-    # 같은 실행을 여러 번 냈으면 최고 순위 (leaderboard.csv 가 순위 순)
-    lb["cv5"], d["cv5"] = lb.cv.round(5), d.cv.round(5)
-    lb = lb.dropna(subset=["cv5"]).drop_duplicates(["comp", "model", "cv5"])
-    d = d.merge(lb[["comp", "model", "cv5", "public", "rank", "teams", "top_pct"]], on=["comp", "model", "cv5"], how="left")
+    # 제출은 그 제출을 만든 실행(leaderboard.csv 의 run = results.csv 의 timestamp)에 붙임 → 같은 이름으로 다시 돌린 실행에
+    # 예전 제출 LB 가 붙지 않음. run 을 모르는 예전 제출은 모델 이름으로만 연결 (그 모델의 최고 순위).
+    # 같은 실행을 여러 번 냈으면 최고 순위 (leaderboard.csv 가 대회·순위 순)
+    cols = ["public", "rank", "teams", "top_pct"]
+    run = lb["run"] if "run" in lb else pd.Series(np.nan, index=lb.index)
+    known = lb[run.notna()].assign(timestamp=run).drop_duplicates(["comp", "model", "timestamp"])
+    legacy = lb[run.isna()].drop_duplicates(["comp", "model"]).set_index(["comp", "model"])[cols]
+    d = d.merge(known[["comp", "model", "timestamp", *cols]], on=["comp", "model", "timestamp"], how="left")
+    miss = d.public.isna() & pd.Series([k in legacy.index for k in zip(d.comp, d.model)], index=d.index)
+    d.loc[miss, cols] = legacy.loc[list(zip(d.comp[miss], d.model[miss]))].to_numpy()
     return d, sizes
 
 
@@ -122,9 +127,11 @@ def summary(d: pd.DataFrame) -> list[str]:
     b["n_models"] = b.groupby("comp").model.transform("size")
     rows = []
     for m, g in b.groupby("base"):
+        best_lb = d.loc[d.base == m, "top_pct"].min()  # 제출한 모든 설정 중
         rows.append(dict(model=m, family=g.family.iloc[0], n=len(g), wins=int((g.cv_rank == 1).sum()),
-                         pct=((g.cv_rank - 1) / (g.n_models - 1).clip(lower=1)).mean(), lb=d[d.base == m].top_pct.min(),
-                         lb_other=not (g.top_pct.min() <= d[d.base == m].top_pct.min()),  # 최고 LB 가 최고 CV 설정 밖에서 옴
+                         pct=((g.cv_rank - 1) / (g.n_models - 1).clip(lower=1)).mean(), lb=best_lb,
+                         # 최고 LB 가 최고 CV 설정이 아닌 행에서 옴 (최고 CV 설정이 미제출이거나 순위가 더 낮음)
+                         lb_other=pd.notna(best_lb) and not g.top_pct.min() <= best_lb,
                          s1k=g[g.env.isin(["DBX H100", "DBX CPU4"])].s_per_1k.median(), s1k_all=g.s_per_1k.median(),
                          ctx=int(g.model.str.contains("@").sum())))
     out = ["| 모델 | 계열 | 대회 수 | CV 1위 | 평균 CV 순위 | 최고 LB (상위 %) | s/1K (DBX) | s/1K (전체) | 컨텍스트 변형 |",
@@ -194,7 +201,7 @@ def rerun_status(d: pd.DataFrame, caps: dict) -> str:
     """상한(caps: 대회 → tfm_max_rows)보다 큰 컨텍스트(`@full`, `@rand<k>` k > 상한)의 5-fold 결과가 있는 대회 수, 모델별
     (예: `kumo 6/6, tabpfn_v2 3/6 (Amazon, Otto)`)."""
     def bigger(model: str, comp: str) -> bool:
-        m = re.search(r"@(full|rand)(\d*)", model)
+        m = re.search(r"@(full|rand(\d+))", model)  # 숫자 없는 `@rand` 등은 큰 컨텍스트로 안 셈
         return bool(m) and (m.group(1) == "full" or int(m.group(2)) > caps[comp])
 
     capped = list(caps)
