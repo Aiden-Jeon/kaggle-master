@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- km board 템플릿. `__DATA__` 자리에 board.py 가 JSON 을 넣어 docs/leaderboard.html 생성. -->
+<!-- km board 템플릿. board.py 가 script#data 의 자리표시자에 JSON 을 넣어 docs/leaderboard.html 생성. -->
 <html lang="ko">
 <head>
 <meta charset="utf-8">
@@ -189,7 +189,8 @@ const isDark = () => document.documentElement.dataset.theme === "dark" ||
 const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const famColor = f => cssVar(f === "GBDT" ? "--gbdt" : "--tfm");
 const famOk = f => state.family === "all" || state.family === f;
-const num = v => v == null ? "—" : Math.abs(v) > 1000 ? v.toLocaleString("en-US", { maximumFractionDigits: 1, minimumFractionDigits: 1 }) : v.toFixed(4);
+const num = (v, ref = v) => v == null ? "—" : Math.abs(ref) > 1000 ?  // std 는 ref=CV 로 자릿수 결정 (md 와 같게)
+  v.toLocaleString("en-US", { maximumFractionDigits: 1, minimumFractionDigits: 1 }) : v.toFixed(4);
 const pct = p => p == null ? "—" : p < 0.1 ? "<0.1%" : p.toFixed(1) + "%";
 const fix2 = v => v == null ? "—" : v.toFixed(2);
 const int = v => v == null ? "—" : Math.round(v).toLocaleString("en-US");
@@ -218,7 +219,7 @@ function hover(node, fn) {
   node.addEventListener("blur", hideTip);
 }
 const runTip = (r, c) => [
-  [`CV ${c.metric}`, `${num(r.cv)} ± ${num(r.cv_std)}`], ["설정별 CV 순위", `${r.cv_rank}`],
+  [`CV ${c.metric}`, `${num(r.cv)} ± ${num(r.cv_std, r.cv)}`], ["설정별 CV 순위", `${r.cv_rank}`],
   ["LB public", pub(r.public)], ["LB 순위", lbRank(r)],
   ["시간", `${int(r.seconds)}s`], ["s/1K", fix2(r.s_per_1k)], ["환경", r.env]];
 
@@ -317,7 +318,7 @@ function renderHeat() {
 // ---- 산점도: 속도 vs 성능 ----
 function renderScatter() {
   const box = $("scatter"); box.replaceChildren();
-  const pts = SUMMARY.filter(r => famOk(r.family) && r[state.speed] != null);
+  const pts = SUMMARY.filter(r => famOk(r.family) && r[state.speed] > 0);  // 로그 축이라 0 이하는 못 그림
   const W = Math.max(box.clientWidth, 320), H = 320, m = { l: 44, r: 16, t: 12, b: 36 };
   const svg = el("svg:svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "속도 대 평균 CV 순위 산점도" }, box);
   if (!pts.length) return;
@@ -408,7 +409,7 @@ function renderCompTable() {
     { key: "cv_rank", name: "#" },
     { key: "label", name: "모델", left: true, cell: (td, r) => modelCell(td, r.label, r.family, r.cv_rank === top) },
     { key: "cv", name: `CV ${c.metric}`, fmt: num, value: r => c.higher ? -r.cv : r.cv },
-    { key: "cv_std", name: "± std", fmt: num },
+    { key: "cv_std", name: "± std", fmt: (v, r) => num(v, r.cv) },
     { key: "public", name: "LB public", fmt: pub, value: r => r.public == null ? null : c.higher ? -r.public : r.public },
     { key: "rank", name: "LB 순위", cell: (td, r) => { td.textContent = lbRank(r); } },
     { key: "seconds", name: "시간", fmt: v => int(v) + "s" },
@@ -458,7 +459,7 @@ function renderAll() { renderSummary(); renderHeat(); renderScatter(); renderPil
 $("date").textContent = `${DATA.date} 생성.`;
 const caps = {}; for (const c of COMPS) if (c.cap) (caps[c.cap] = caps[c.cap] || []).push(c.title);
 $("caps").textContent = "(" + (Object.entries(caps).map(([n, cs]) => `${(+n).toLocaleString("en-US")}행: ${cs.join(", ")}`).join("; ") || "없음") + ")";
-const fromHash = decodeURIComponent(location.hash.slice(1));
+let fromHash = ""; try { fromHash = decodeURIComponent(location.hash.slice(1)); } catch (e) { /* 깨진 해시는 무시 */ }
 state.comp = compById[fromHash] ? fromHash : COMPS[COMPS.length - 1].id;
 renderAll();
 </script>

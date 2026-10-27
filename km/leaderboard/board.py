@@ -25,8 +25,7 @@ from km.core.results import RESULTS
 from km.models import REGISTRY
 
 OUT = ROOT / "docs" / "leaderboard.md"
-HTML_OUT = ROOT / "docs" / "leaderboard.html"
-TEMPLATE = Path(__file__).with_name("board.html")  # 데이터 자리 `__DATA__` 에 JSON 을 넣음
+TEMPLATE = Path(__file__).with_name("board.html")  # script#data 의 `__DATA__` 에 JSON 을 넣음
 GBDT = {name for name, (module, _) in REGISTRY.items() if module == "km.models.gbdt"}
 TITLES = {  # 표 제목용 짧은 이름 (없으면 대회 이름 그대로)
     "restaurant-revenue-prediction": "Restaurant", "titanic": "Titanic",
@@ -227,21 +226,21 @@ def render_html(d: pd.DataFrame, sizes: dict) -> str:
         summary=records(summary_rows(d)),
     )
     payload = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")  # <script> 안에 넣으므로 </script> 방지
-    return TEMPLATE.read_text().replace("__DATA__", payload)
+    return TEMPLATE.read_text(encoding="utf-8").replace("__DATA__", payload, 1)
 
 
 def main(argv: list[str] | None = None):
     ap = argparse.ArgumentParser(prog="km board")
     ap.add_argument("-o", "--out", default=str(OUT), help="md 출력 경로 (- 면 화면에 출력). 기본: docs/leaderboard.md")
-    ap.add_argument("--html", default=str(HTML_OUT), help="HTML 출력 경로 (- 면 생략). 기본: docs/leaderboard.html")
+    ap.add_argument("--html", help="HTML 출력 경로 (- 면 생략). 기본: md 와 같은 위치·이름의 .html (-o - 면 생략)")
     args = ap.parse_args(argv)
+    html = args.html or ("-" if args.out == "-" else str(Path(args.out).with_suffix(".html")))
     d, sizes = load()
     text = render(d, sizes)
-    if args.out == "-":
-        print(text)
-        return
-    outs = [(Path(args.out), text)] + ([(Path(args.html), render_html(d, sizes))] if args.html != "-" else [])
+    outs = ([] if args.out == "-" else [(Path(args.out), text)]) + ([] if html == "-" else [(Path(html), render_html(d, sizes))])
     for out, body in outs:
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(body)
-        print(f"저장: {out}")
+        out.write_text(body, encoding="utf-8")
+        print(f"저장: {out}", file=sys.stderr if args.out == "-" else sys.stdout)
+    if args.out == "-":
+        print(text)
