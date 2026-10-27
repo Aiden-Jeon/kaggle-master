@@ -1,0 +1,627 @@
+<!doctype html>
+<!-- km board 템플릿. board.py 가 script#data 의 자리표시자에 JSON 을 넣어 docs/leaderboard.html 생성. -->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kaggle-master leaderboard · TFM vs GBDT</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10); --wash: rgba(11,11,11,0.04);
+  --tfm: #2a78d6; --gbdt: #eb6834; --accent: #2a78d6;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.05);
+    --tfm: #3987e5; --gbdt: #d95926; --accent: #3987e5;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.05);
+  --tfm: #3987e5; --gbdt: #d95926; --accent: #3987e5;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1080px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+.top { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.top h1 { margin: 0; }
+.prefs { display: flex; gap: 8px; }
+h2 { font-size: 17px; margin: 0 0 4px; }
+p { margin: 4px 0; }
+a { color: var(--accent); }
+.sub { color: var(--ink-2); }
+.muted { color: var(--muted); font-size: 12px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-top: 16px; }
+.controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 16px; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; background: transparent; color: var(--ink-2); padding: 4px 10px; font: inherit; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--border); }
+.seg button[aria-pressed="true"] { background: var(--wash); color: var(--ink); font-weight: 600; }
+label.check { display: inline-flex; gap: 6px; align-items: center; color: var(--ink-2); cursor: pointer; }
+details summary { cursor: pointer; color: var(--ink-2); }
+details ul { margin: 8px 0 0; padding-left: 20px; color: var(--ink-2); }
+details li { margin: 2px 0; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { padding: 6px 8px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--grid); }
+th { color: var(--ink-2); font-weight: 600; font-size: 12px; }
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--ink); }
+th .arrow { color: var(--muted); }
+th:first-child, td:first-child, th.left, td.left { text-align: left; }
+tbody tr:hover { background: var(--wash); }
+tr.focus td { background: var(--wash); }
+tr.dim td { opacity: 0.45; }
+.model { cursor: pointer; }
+.model:hover { text-decoration: underline; }
+.fam { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.fam.TFM { background: var(--tfm); }
+.fam.GBDT { background: var(--gbdt); }
+.legend { display: flex; gap: 16px; color: var(--ink-2); font-size: 12px; margin: 8px 0; }
+.heat { table-layout: fixed; width: auto; }
+.heat td.left { overflow: hidden; text-overflow: ellipsis; }
+.heat td.cell { text-align: center; padding: 0; border: 2px solid var(--surface); border-radius: 4px; cursor: pointer; }
+.heat td.cell span { display: block; padding: 6px 4px; }
+.heat td.cell:hover, .heat td.cell:focus { outline: 2px solid var(--ink); outline-offset: -2px; }
+.heat td.empty { color: var(--muted); cursor: default; }
+.heat th.col { cursor: pointer; text-align: center; font-weight: 500; white-space: normal; hyphens: auto; overflow-wrap: anywhere; vertical-align: bottom; line-height: 1.25; padding: 6px 1px; font-size: 11px; letter-spacing: -0.2px; }
+.heat th.col.on { color: var(--ink); font-weight: 700; }
+.heat th.col small { display: block; color: var(--muted); font-weight: 400; }
+.heat tbody tr:hover { background: transparent; }
+.ramp { display: inline-flex; vertical-align: middle; margin: 0 6px; }
+.ramp i { width: 14px; height: 10px; }
+.pills { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
+.pills button { border: 1px solid var(--border); background: transparent; color: var(--ink-2); border-radius: 999px; padding: 3px 10px; font: inherit; font-size: 13px; cursor: pointer; }
+.pills button[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+svg text { fill: var(--muted); font-size: 11px; font-family: inherit; }
+svg text.lbl { fill: var(--ink-2); font-size: 12px; }
+svg text.lbl.best { fill: var(--ink); font-weight: 700; }
+svg .gridline { stroke: var(--grid); stroke-width: 1; }
+svg .axis { stroke: var(--axis); stroke-width: 1; }
+svg .hit { fill: transparent; cursor: pointer; }
+svg .hit:hover, svg .hit:focus { fill: var(--wash); outline: none; }
+svg .dimmed { opacity: 0.25; }
+#tip { position: fixed; pointer-events: none; z-index: 10; background: var(--surface); color: var(--ink); border: 1px solid var(--border);
+  border-radius: 6px; padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); display: none; max-width: 300px; }
+#tip .v { font-size: 14px; font-weight: 700; }
+#tip .k { color: var(--ink-2); }
+#tip .row { display: flex; gap: 8px; justify-content: space-between; }
+footer { margin-top: 24px; }
+</style>
+</head>
+<body>
+<main>
+  <header class="top">
+    <h1 data-t="title"></h1>
+    <div class="prefs">
+      <div class="seg" id="lang">
+        <button data-v="ko" aria-pressed="false" lang="ko">한국어</button><button data-v="en" aria-pressed="false" lang="en">English</button>
+      </div>
+      <div class="seg" id="theme">
+        <button data-v="auto" aria-pressed="true" data-t="auto"></button><button data-v="light" aria-pressed="false" data-t="light"></button><button data-v="dark" aria-pressed="false" data-t="dark"></button>
+      </div>
+    </div>
+  </header>
+  <p class="sub"><span data-t="sub"></span> <span id="date"></span></p>
+  <details>
+    <summary data-t="howto"></summary>
+    <ul id="notes"></ul>
+  </details>
+
+  <div class="controls">
+    <span class="muted" data-t="family"></span>
+    <div class="seg" id="family">
+      <button data-v="all" aria-pressed="true" data-t="all"></button><button data-v="TFM" aria-pressed="false">TFM</button><button data-v="GBDT" aria-pressed="false">GBDT</button>
+    </div>
+    <span class="muted" id="focusNote"></span>
+  </div>
+
+  <section class="card">
+    <h2 data-t="summary"></h2>
+    <p class="muted" data-t="summaryHelp"></p>
+    <div class="scroll"><table id="summary"></table></div>
+  </section>
+
+  <section class="card">
+    <h2 data-t="heat"></h2>
+    <p class="muted" data-t="heatHelp"></p>
+    <div class="legend"><span><span data-t="low"></span><span class="ramp" id="ramp"></span><span data-t="high"></span></span><span data-t="notRun"></span></div>
+    <div class="scroll"><table class="heat" id="heat"></table></div>
+  </section>
+
+  <section class="card">
+    <h2 data-t="speed"></h2>
+    <p class="muted" data-t="speedHelp"></p>
+    <div class="controls" style="margin-top:8px">
+      <div class="seg" id="speedEnv"></div>
+      <span class="legend" style="margin:0"><span><i class="fam TFM"></i>TFM</span><span><i class="fam GBDT"></i>GBDT</span></span>
+    </div>
+    <p class="muted" id="envNote"></p>
+    <div id="scatter"></div>
+  </section>
+
+  <section class="card" id="detail">
+    <h2 data-t="detail"></h2>
+    <div class="pills" id="pills"></div>
+    <p id="compMeta" class="sub"></p>
+    <div class="controls" style="margin-top:4px">
+      <label class="check"><input type="checkbox" id="variants" checked> <span data-t="variants"></span></label>
+      <span class="legend" style="margin:0"><span><i class="fam TFM"></i>TFM</span><span><i class="fam GBDT"></i>GBDT</span><span data-t="whisker"></span></span>
+    </div>
+    <div id="dots"></div>
+    <div class="scroll"><table id="comp"></table></div>
+  </section>
+
+  <footer class="muted">
+    <code>uv run km board</code> <span data-t="madeBy"></span> · <span data-t="data"></span>
+    <a href="https://github.com/Aiden-Jeon/kaggle-master/blob/main/results/results.csv">results.csv</a>,
+    <a href="https://github.com/Aiden-Jeon/kaggle-master/blob/main/results/leaderboard.csv">leaderboard.csv</a> ·
+    <a href="https://github.com/Aiden-Jeon/kaggle-master">github.com/Aiden-Jeon/kaggle-master</a>
+  </footer>
+</main>
+<div id="tip" role="tooltip"></div>
+
+<script id="data" type="application/json">{"date": "2026-10-27", "comps": [{"id": "restaurant-revenue-prediction", "title": "Restaurant", "metric": "rmse", "higher": false, "train": 137, "test": 100000, "cap": null}, {"id": "titanic", "title": "Titanic", "metric": "accuracy", "higher": true, "train": 891, "test": 418, "cap": null}, {"id": "house-prices-advanced-regression-techniques", "title": "House Prices", "metric": "rmse", "higher": false, "train": 1460, "test": 1459, "cap": null}, {"id": "bioresponse", "title": "Bioresponse", "metric": "logloss", "higher": false, "train": 3751, "test": 2501, "cap": null}, {"id": "mercedes-benz-greener-manufacturing", "title": "Mercedes", "metric": "r2", "higher": true, "train": 4209, "test": 4209, "cap": null}, {"id": "spaceship-titanic", "title": "Spaceship", "metric": "accuracy", "higher": true, "train": 8693, "test": 4277, "cap": null}, {"id": "playground-series-s4e2", "title": "S4E2", "metric": "accuracy", "higher": true, "train": 20758, "test": 13840, "cap": null}, {"id": "amazon-employee-access-challenge", "title": "Amazon", "metric": "auc", "higher": true, "train": 32769, "test": 58921, "cap": 10000}, {"id": "otto-group-product-classification-challenge", "title": "Otto", "metric": "logloss", "higher": false, "train": 61878, "test": 144368, "cap": 10000}, {"id": "GiveMeSomeCredit", "title": "GiveMeSomeCredit", "metric": "auc", "higher": true, "train": 150000, "test": 101503, "cap": 10000}, {"id": "allstate-claims-severity", "title": "Allstate", "metric": "mae", "higher": false, "train": 188318, "test": 125546, "cap": 10000}, {"id": "playground-series-s6e1", "title": "S6E1", "metric": "rmse", "higher": false, "train": 630000, "test": 270000, "cap": 10000}, {"id": "playground-series-s6e10", "title": "S6E10", "metric": "auc", "higher": true, "train": 699635, "test": 299844, "cap": 10000}], "rerun": "kumo 6/6, tabicl 6/6, tabpfn_v2 3/6 (Amazon, GiveMeSomeCredit, Otto)", "runs": [{"comp": "GiveMeSomeCredit", "model": "kumo@full", "label": "kumo (ctx 전체)", "label_en": "kumo (ctx full)", "base": "kumo", "family": "TFM", "cv": 0.8693609947, "cv_std": 0.0033945697, "cv_rank": 1, "base_rank": 1.0, "public": 0.86528, "rank": 1.0, "teams": 926.0, "top_pct": 0.1, "seconds": 500.2, "s_per_1k": 0.7607431009, "env": "DBX H100"}, {"comp": "GiveMeSomeCredit", "model": "tabicl@full", "label": "tabicl (ctx 전체)", "label_en": "tabicl (ctx full)", "base": "tabicl", "family": "TFM", "cv": 0.8670886411, "cv_std": 0.0042868975, "cv_rank": 2, "base_rank": 2.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 387.6, "s_per_1k": 0.5894922549, "env": "DBX H100"}, {"comp": "GiveMeSomeCredit", "model": "catboost", "label": "catboost", "label_en": "catboost", "base": "catboost", "family": "GBDT", "cv": 0.8659546772, "cv_std": 0.0031267688, "cv_rank": 3, "base_rank": 3.0, "public": 0.86271, "rank": 27.0, "teams": 926.0, "top_pct": 2.9, "seconds": 59.2, "s_per_1k": 0.0900359688, "env": "DBX A10G"}, {"comp": "GiveMeSomeCredit", "model": "lgbm", "label": "lgbm", "label_en": "lgbm", "base": "lgbm", "family": "GBDT", "cv": 0.8653352819, "cv_std": 0.0037447134, "cv_rank": 4, "base_rank": 4.0, "public": 0.86195, "rank": 64.0, "teams": 926.0, "top_pct": 6.9, "seconds": 14.1, "s_per_1k": 0.0214443777, "env": "DBX A10G"}, {"comp": "GiveMeSomeCredit", "model": "kumo", "label": "kumo", "label_en": "kumo", "base": "kumo", "family": "TFM", "cv": 0.8651527333, "cv_std": 0.0031787365, "cv_rank": 5, "base_rank": null, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 1247.4, "s_per_1k": 1.897143031, "env": "DBX A10G"}, {"comp": "GiveMeSomeCredit", "model": "xgb", "label": "xgb", "label_en": "xgb", "base": "xgb", "family": "GBDT", "cv": 0.8647097102, "cv_std": 0.003692827, "cv_rank": 6, "base_rank": 5.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 13.1, "s_per_1k": 0.0199234998, "env": "DBX A10G"}, {"comp": "GiveMeSomeCredit", "model": "tabicl", "label": "tabicl", "label_en": "tabicl", "base": "tabicl", "family": "TFM", "cv": 0.8631317829, "cv_std": 0.0033152514, "cv_rank": 7, "base_rank": null, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 102.3, "s_per_1k": 0.1555858041, "env": "DBX A10G"}, {"comp": "GiveMeSomeCredit", "model": "tabpfn_v2@full", "label": "tabpfn_v2 (ctx 전체)", "label_en": "tabpfn_v2 (ctx full)", "base": "tabpfn_v2", "family": "TFM", "cv": 0.8603702704, "cv_std": 0.0039261793, "cv_rank": 8, "base_rank": 6.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 2525.5, "s_per_1k": 3.8409770119, "env": "DBX H100"}, {"comp": "GiveMeSomeCredit", "model": "tabpfn_v2", "label": "tabpfn_v2", "label_en": "tabpfn_v2", "base": "tabpfn_v2", "family": "TFM", "cv": 0.8582475015, "cv_std": 0.0034314835, "cv_rank": 9, "base_rank": null, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 283.5, "s_per_1k": 0.4311688707, "env": "DBX A10G"}, {"comp": "allstate-claims-severity", "model": "kumo@full", "label": "kumo (ctx 전체)", "label_en": "kumo (ctx full)", "base": "kumo", "family": "TFM", "cv": 1114.2085681902, "cv_std": 7.7788871947, "cv_rank": 1, "base_rank": 1.0, "public": 1095.68937, "rank": 1.0, "teams": 3048.0, "top_pct": 0.0, "seconds": 959.1, "s_per_1k": 1.1752985119, "env": "DBX H100"}, {"comp": "allstate-claims-severity", "model": "kumo", "label": "kumo", "label_en": "kumo", "base": "kumo", "family": "TFM", "cv": 1181.2052231521, "cv_std": 6.1701306916, "cv_rank": 2, "base_rank": null, "public": 1153.97893, "rank": 1919.0, "teams": 3048.0, "top_pct": 63.0, "seconds": 211.9, "s_per_1k": 0.2596660981, "env": "DBX H100"}, {"comp": "allstate-claims-severity", "model": "tabicl@full", "label": "tabicl (ctx 전체)", "label_en": "tabicl (ctx full)", "base": "tabicl", "family": "TFM", "cv": 1184.7868923776, "cv_std": 6.6307778476, "cv_rank": 3, "base_rank": 2.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 2770.8, "s_per_1k": 3.3953885066, "env": "DBX H100"}, {"comp": "allstate-claims-severity", "model": "lgbm", "label": "lgbm", "label_en": "lgbm", "base": "lgbm", "family": "GBDT", "cv": 1188.3029668757, "cv_std": 5.7150151761, "cv_rank": 4, "base_rank": 3.0, "public": 1169.84993, "rank": 2054.0, "teams": 3048.0, "top_pct": 67.4, "seconds": 227.0, "s_per_1k": 0.2781699116, "env": "DBX CPU4"}, {"comp": "allstate-claims-severity", "model": "catboost", "label": "catboost", "label_en": "catboost", "base": "catboost", "family": "GBDT", "cv": 1188.3834167996, "cv_std": 6.2798535755, "cv_rank": 5, "base_rank": 4.0, "public": 1172.79015, "rank": 2084.0, "teams": 3048.0, "top_pct": 68.4, "seconds": 4764.3, "s_per_1k": 5.8382595141, "env": "DBX CPU4"}, {"comp": "allstate-claims-severity", "model": "xgb", "label": "xgb", "label_en": "xgb", "base": "xgb", "family": "GBDT", "cv": 1188.4934134931, "cv_std": 5.96585174, "cv_rank": 6, "base_rank": 5.0, "public": 1170.29349, "rank": 2056.0, "teams": 3048.0, "top_pct": 67.5, "seconds": 181.4, "s_per_1k": 0.2222908456, "env": "DBX CPU4"}, {"comp": "allstate-claims-severity", "model": "tabicl", "label": "tabicl", "label_en": "tabicl", "base": "tabicl", "family": "TFM", "cv": 1198.5939040751, "cv_std": 5.2296409802, "cv_rank": 7, "base_rank": null, "public": 1171.3979, "rank": 2078.0, "teams": 3048.0, "top_pct": 68.2, "seconds": 137.5, "s_per_1k": 0.1684949905, "env": "DBX H100"}, {"comp": "allstate-claims-severity", "model": "tabpfn_v2", "label": "tabpfn_v2", "label_en": "tabpfn_v2", "base": "tabpfn_v2", "family": "TFM", "cv": 1209.4635313868, "cv_std": 6.3422293537, "cv_rank": 8, "base_rank": 6.0, "public": 1189.70518, "rank": 2180.0, "teams": 3048.0, "top_pct": 71.5, "seconds": 676.5, "s_per_1k": 0.8289953532, "env": "DBX H100"}, {"comp": "amazon-employee-access-challenge", "model": "catboost", "label": "catboost", "label_en": "catboost", "base": "catboost", "family": "GBDT", "cv": 0.8957373076, "cv_std": 0.0078607985, "cv_rank": 1, "base_rank": 1.0, "public": 0.91582, "rank": 64.0, "teams": 1689.0, "top_pct": 3.8, "seconds": 139.1, "s_per_1k": 0.424896296, "env": "DBX A10G"}, {"comp": "amazon-employee-access-challenge", "model": "kumo@full", "label": "kumo (ctx 전체)", "label_en": "kumo (ctx full)", "base": "kumo", "family": "TFM", "cv": 0.8794801871, "cv_std": 0.0093754506, "cv_rank": 2, "base_rank": 2.0, "public": 0.89432, "rank": 502.0, "teams": 1689.0, "top_pct": 29.7, "seconds": 95.7, "s_per_1k": 0.2923262079, "env": "DBX H100"}, {"comp": "amazon-employee-access-challenge", "model": "xgb", "label": "xgb", "label_en": "xgb", "base": "xgb", "family": "GBDT", "cv": 0.8733991581, "cv_std": 0.0099316084, "cv_rank": 3, "base_rank": 3.0, "public": 0.89187, "rank": 529.0, "teams": 1689.0, "top_pct": 31.3, "seconds": 51.9, "s_per_1k": 0.1585342758, "env": "DBX A10G"}, {"comp": "amazon-employee-access-challenge", "model": "lgbm", "label": "lgbm", "label_en": "lgbm", "base": "lgbm", "family": "GBDT", "cv": 0.8630502903, "cv_std": 0.0119565187, "cv_rank": 4, "base_rank": 4.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 14.3, "s_per_1k": 0.0436809276, "env": "DBX A10G"}, {"comp": "amazon-employee-access-challenge", "model": "tabicl@full", "label": "tabicl (ctx 전체)", "label_en": "tabicl (ctx full)", "base": "tabicl", "family": "TFM", "cv": 0.8560192523, "cv_std": 0.0100064075, "cv_rank": 5, "base_rank": 5.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 55.2, "s_per_1k": 0.1686144898, "env": "DBX H100"}, {"comp": "amazon-employee-access-challenge", "model": "tabpfn_v2@full", "label": "tabpfn_v2 (ctx 전체)", "label_en": "tabpfn_v2 (ctx full)", "base": "tabpfn_v2", "family": "TFM", "cv": 0.8298495801, "cv_std": 0.0115063667, "cv_rank": 6, "base_rank": 6.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 97.9, "s_per_1k": 0.2990463507, "env": "DBX H100"}, {"comp": "amazon-employee-access-challenge", "model": "kumo", "label": "kumo", "label_en": "kumo", "base": "kumo", "family": "TFM", "cv": 0.8274307724, "cv_std": 0.0135107461, "cv_rank": 7, "base_rank": null, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 629.1, "s_per_1k": 1.9216553544, "env": "DBX A10G"}, {"comp": "amazon-employee-access-challenge", "model": "exaone", "label": "exaone", "label_en": "exaone", "base": "exaone", "family": "TFM", "cv": 0.826955516, "cv_std": 0.0114389764, "cv_rank": 8, "base_rank": 7.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 153.8, "s_per_1k": 0.4697990677, "env": "DBX A10G"}, {"comp": "amazon-employee-access-challenge", "model": "causilo", "label": "causilo", "label_en": "causilo", "base": "causilo", "family": "TFM", "cv": 0.8163984322, "cv_std": 0.0086129576, "cv_rank": 9, "base_rank": 8.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 61.8, "s_per_1k": 0.188774918, "env": "DBX A10G"}, {"comp": "amazon-employee-access-challenge", "model": "tabicl", "label": "tabicl", "label_en": "tabicl", "base": "tabicl", "family": "TFM", "cv": 0.8054368008, "cv_std": 0.0090540085, "cv_rank": 10, "base_rank": null, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 51.8, "s_per_1k": 0.1582288148, "env": "DBX A10G"}, {"comp": "amazon-employee-access-challenge", "model": "mitra", "label": "mitra", "label_en": "mitra", "base": "mitra", "family": "TFM", "cv": 0.8042289294, "cv_std": 0.0085710625, "cv_rank": 11, "base_rank": 9.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 286.5, "s_per_1k": 0.8751458576, "env": "DBX A10G"}, {"comp": "amazon-employee-access-challenge", "model": "limix2m", "label": "limix2m", "label_en": "limix2m", "base": "limix2m", "family": "TFM", "cv": 0.7795967498, "cv_std": 0.0168676725, "cv_rank": 12, "base_rank": 10.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 52.8, "s_per_1k": 0.1612834251, "env": "DBX A10G"}, {"comp": "amazon-employee-access-challenge", "model": "tabpfn_v2", "label": "tabpfn_v2", "label_en": "tabpfn_v2", "base": "tabpfn_v2", "family": "TFM", "cv": 0.7780497206, "cv_std": 0.0093463274, "cv_rank": 13, "base_rank": null, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 130.8, "s_per_1k": 0.3995430303, "env": "DBX A10G"}, {"comp": "bioresponse", "model": "xgb", "label": "xgb", "label_en": "xgb", "base": "xgb", "family": "GBDT", "cv": 0.4499760413, "cv_std": 0.0230137374, "cv_rank": 1, "base_rank": 1.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 56.3, "s_per_1k": 3.4633366142, "env": "DBX A10G"}, {"comp": "bioresponse", "model": "catboost", "label": "catboost", "label_en": "catboost", "base": "catboost", "family": "GBDT", "cv": 0.4626188624, "cv_std": 0.0205536957, "cv_rank": 2, "base_rank": 2.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 97.1, "s_per_1k": 5.9731791339, "env": "DBX A10G"}, {"comp": "bioresponse", "model": "lgbm", "label": "lgbm", "label_en": "lgbm", "base": "lgbm", "family": "GBDT", "cv": 0.4730551039, "cv_std": 0.0253448009, "cv_rank": 3, "base_rank": 3.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 26.3, "s_per_1k": 1.6178641732, "env": "DBX A10G"}, {"comp": "bioresponse", "model": "tabpfn_v2", "label": "tabpfn_v2", "label_en": "tabpfn_v2", "base": "tabpfn_v2", "family": "TFM", "cv": 0.4766361143, "cv_std": 0.015340878, "cv_rank": 4, "base_rank": 4.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 2454.6, "s_per_1k": 150.9965551181, "env": "DBX A10G"}, {"comp": "house-prices-advanced-regression-techniques", "model": "tabpfn_v2", "label": "tabpfn_v2", "label_en": "tabpfn_v2", "base": "tabpfn_v2", "family": "TFM", "cv": 0.1151267719, "cv_std": 0.0162134739, "cv_rank": 1, "base_rank": 1.0, "public": 0.11094, "rank": 91.0, "teams": 4372.0, "top_pct": 2.1, "seconds": 75.1, "s_per_1k": 8.577955454, "env": "Kaggle T4"}, {"comp": "house-prices-advanced-regression-techniques", "model": "kumo", "label": "kumo", "label_en": "kumo", "base": "kumo", "family": "TFM", "cv": 0.1190980989, "cv_std": 0.0229302564, "cv_rank": 2, "base_rank": 2.0, "public": 0.10895, "rank": 79.0, "teams": 4372.0, "top_pct": 1.8, "seconds": 66.3, "s_per_1k": 7.572815534, "env": "Kaggle T4"}, {"comp": "house-prices-advanced-regression-techniques", "model": "tabicl", "label": "tabicl", "label_en": "tabicl", "base": "tabicl", "family": "TFM", "cv": 0.1242132623, "cv_std": 0.0214650001, "cv_rank": 3, "base_rank": 3.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 20.6, "s_per_1k": 2.3529411765, "env": "Kaggle T4"}, {"comp": "house-prices-advanced-regression-techniques", "model": "catboost", "label": "catboost", "label_en": "catboost", "base": "catboost", "family": "GBDT", "cv": 0.1250131497, "cv_std": 0.0155202483, "cv_rank": 4, "base_rank": 4.0, "public": 0.12199, "rank": 733.0, "teams": 4372.0, "top_pct": 16.8, "seconds": 153.7, "s_per_1k": 17.5556824672, "env": "Kaggle T4"}, {"comp": "house-prices-advanced-regression-techniques", "model": "mitra_ft", "label": "mitra_ft", "label_en": "mitra_ft", "base": "mitra_ft", "family": "TFM", "cv": 0.1262813595, "cv_std": 0.0275838999, "cv_rank": 5, "base_rank": 5.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 7994.5, "s_per_1k": 913.1353512279, "env": "Kaggle T4"}, {"comp": "house-prices-advanced-regression-techniques", "model": "exaone", "label": "exaone", "label_en": "exaone", "base": "exaone", "family": "TFM", "cv": 0.1275264329, "cv_std": 0.0317168496, "cv_rank": 6, "base_rank": 6.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 204.0, "s_per_1k": 23.3009708738, "env": "Kaggle T4"}, {"comp": "house-prices-advanced-regression-techniques", "model": "lgbm", "label": "lgbm", "label_en": "lgbm", "base": "lgbm", "family": "GBDT", "cv": 0.1287738433, "cv_std": 0.0150699471, "cv_rank": 7, "base_rank": 7.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 20.7, "s_per_1k": 2.364363221, "env": "Kaggle T4"}, {"comp": "house-prices-advanced-regression-techniques", "model": "mitra", "label": "mitra", "label_en": "mitra", "base": "mitra", "family": "TFM", "cv": 0.1288573184, "cv_std": 0.0310657844, "cv_rank": 8, "base_rank": 8.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 258.8, "s_per_1k": 29.560251285, "env": "Kaggle T4"}, {"comp": "house-prices-advanced-regression-techniques", "model": "xgb", "label": "xgb", "label_en": "xgb", "base": "xgb", "family": "GBDT", "cv": 0.1306118795, "cv_std": 0.0127794611, "cv_rank": 9, "base_rank": 9.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 13.7, "s_per_1k": 1.5648201028, "env": "Kaggle T4"}, {"comp": "house-prices-advanced-regression-techniques", "model": "limix2m", "label": "limix2m", "label_en": "limix2m", "base": "limix2m", "family": "TFM", "cv": 0.1311212756, "cv_std": 0.0342496339, "cv_rank": 10, "base_rank": 10.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 58.3, "s_per_1k": 6.6590519703, "env": "Kaggle T4"}, {"comp": "mercedes-benz-greener-manufacturing", "model": "kumo", "label": "kumo", "label_en": "kumo", "base": "kumo", "family": "TFM", "cv": 0.5741576608, "cv_std": 0.0651327998, "cv_rank": 1, "base_rank": 1.0, "public": 0.55728, "rank": 1801.0, "teams": 3825.0, "top_pct": 47.1, "seconds": 49.4, "s_per_1k": 1.9561257623, "env": "DBX H100"}, {"comp": "mercedes-benz-greener-manufacturing", "model": "tabpfn_v2", "label": "tabpfn_v2", "label_en": "tabpfn_v2", "base": "tabpfn_v2", "family": "TFM", "cv": 0.5717124658, "cv_std": 0.0642876253, "cv_rank": 2, "base_rank": 2.0, "public": 0.55138, "rank": 2514.0, "teams": 3825.0, "top_pct": 65.7, "seconds": 87.9, "s_per_1k": 3.4806367308, "env": "DBX H100"}, {"comp": "mercedes-benz-greener-manufacturing", "model": "tabicl", "label": "tabicl", "label_en": "tabicl", "base": "tabicl", "family": "TFM", "cv": 0.5672775894, "cv_std": 0.0703719037, "cv_rank": 3, "base_rank": 3.0, "public": 0.55202, "rank": 2435.0, "teams": 3825.0, "top_pct": 63.7, "seconds": 45.2, "s_per_1k": 1.7898154748, "env": "DBX H100"}, {"comp": "mercedes-benz-greener-manufacturing", "model": "catboost", "label": "catboost", "label_en": "catboost", "base": "catboost", "family": "GBDT", "cv": 0.5563480004, "cv_std": 0.0628403202, "cv_rank": 4, "base_rank": 4.0, "public": 0.54961, "rank": 2713.0, "teams": 3825.0, "top_pct": 70.9, "seconds": 101.0, "s_per_1k": 3.999366437, "env": "DBX CPU4"}, {"comp": "mercedes-benz-greener-manufacturing", "model": "lgbm", "label": "lgbm", "label_en": "lgbm", "base": "lgbm", "family": "GBDT", "cv": 0.5127362737, "cv_std": 0.0618510824, "cv_rank": 5, "base_rank": 5.0, "public": 0.53074, "rank": 3300.0, "teams": 3825.0, "top_pct": 86.3, "seconds": 65.1, "s_per_1k": 2.5778094559, "env": "DBX CPU4"}, {"comp": "mercedes-benz-greener-manufacturing", "model": "xgb", "label": "xgb", "label_en": "xgb", "base": "xgb", "family": "GBDT", "cv": 0.4871235172, "cv_std": 0.0573504195, "cv_rank": 6, "base_rank": 6.0, "public": 0.5248, "rank": 3359.0, "teams": 3825.0, "top_pct": 87.8, "seconds": 69.7, "s_per_1k": 2.7599588184, "env": "DBX CPU4"}, {"comp": "otto-group-product-classification-challenge", "model": "kumo@full", "label": "kumo (ctx 전체)", "label_en": "kumo (ctx full)", "base": "kumo", "family": "TFM", "cv": 0.377379583, "cv_std": 0.0033488978, "cv_rank": 1, "base_rank": 1.0, "public": 0.36714, "rank": 1.0, "teams": 3510.0, "top_pct": 0.0, "seconds": 302.1, "s_per_1k": 0.385470284, "env": "DBX H100"}, {"comp": "otto-group-product-classification-challenge", "model": "tabicl@full", "label": "tabicl (ctx 전체)", "label_en": "tabicl (ctx full)", "base": "tabicl", "family": "TFM", "cv": 0.4082539541, "cv_std": 0.005284284, "cv_rank": 2, "base_rank": 2.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 298.2, "s_per_1k": 0.3804940042, "env": "DBX H100"}, {"comp": "otto-group-product-classification-challenge", "model": "lgbm", "label": "lgbm", "label_en": "lgbm", "base": "lgbm", "family": "GBDT", "cv": 0.464811357, "cv_std": 0.0059333402, "cv_rank": 3, "base_rank": 3.0, "public": 0.45106, "rank": 726.0, "teams": 3510.0, "top_pct": 20.7, "seconds": 842.0, "s_per_1k": 1.0743660347, "env": "DBX CPU4"}, {"comp": "otto-group-product-classification-challenge", "model": "kumo", "label": "kumo", "label_en": "kumo", "base": "kumo", "family": "TFM", "cv": 0.4665122151, "cv_std": 0.0033452399, "cv_rank": 4, "base_rank": null, "public": 0.43476, "rank": 420.0, "teams": 3510.0, "top_pct": 12.0, "seconds": 150.1, "s_per_1k": 0.1915229713, "env": "DBX H100"}, {"comp": "otto-group-product-classification-challenge", "model": "tabicl", "label": "tabicl", "label_en": "tabicl", "base": "tabicl", "family": "TFM", "cv": 0.4974369419, "cv_std": 0.0046824701, "cv_rank": 5, "base_rank": null, "public": 0.4626, "rank": 936.0, "teams": 3510.0, "top_pct": 26.7, "seconds": 97.0, "s_per_1k": 0.1237690088, "env": "DBX H100"}, {"comp": "otto-group-product-classification-challenge", "model": "xgb", "label": "xgb", "label_en": "xgb", "base": "xgb", "family": "GBDT", "cv": 0.5001799592, "cv_std": 0.0056358286, "cv_rank": 6, "base_rank": 4.0, "public": 0.49183, "rank": 1291.0, "teams": 3510.0, "top_pct": 36.8, "seconds": 455.8, "s_per_1k": 0.5815867442, "env": "DBX CPU4"}, {"comp": "otto-group-product-classification-challenge", "model": "catboost", "label": "catboost", "label_en": "catboost", "base": "catboost", "family": "GBDT", "cv": 0.5381594377, "cv_std": 0.0065606121, "cv_rank": 7, "base_rank": 5.0, "public": 0.5333, "rank": 1693.0, "teams": 3510.0, "top_pct": 48.2, "seconds": 959.8, "s_per_1k": 1.224675202, "env": "DBX CPU4"}, {"comp": "otto-group-product-classification-challenge", "model": "tabpfn_v2@full", "label": "tabpfn_v2 (ctx 전체)", "label_en": "tabpfn_v2 (ctx full)", "base": "tabpfn_v2", "family": "TFM", "cv": 0.5528520064, "cv_std": 0.0054896066, "cv_rank": 8, "base_rank": 6.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 4915.1, "s_per_1k": 6.27151603, "env": "DBX H100"}, {"comp": "otto-group-product-classification-challenge", "model": "tabpfn_v2", "label": "tabpfn_v2", "label_en": "tabpfn_v2", "base": "tabpfn_v2", "family": "TFM", "cv": 0.5641153276, "cv_std": 0.0059842133, "cv_rank": 9, "base_rank": null, "public": 0.55127, "rank": 1837.0, "teams": 3510.0, "top_pct": 52.3, "seconds": 652.5, "s_per_1k": 0.8325698785, "env": "DBX H100"}, {"comp": "playground-series-s4e2", "model": "tabicl", "label": "tabicl", "label_en": "tabicl", "base": "tabicl", "family": "TFM", "cv": 0.9089989402, "cv_std": 0.0045389665, "cv_rank": 1, "base_rank": 1.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 137.4, "s_per_1k": 1.5273794437, "env": "Kaggle T4"}, {"comp": "playground-series-s4e2", "model": "kumo@knn1000_g16_imp", "label": "kumo (kNN 1000)", "label_en": "kumo (kNN 1000)", "base": "kumo", "family": "TFM", "cv": 0.9087580692, "cv_std": 0.0045187342, "cv_rank": 2, "base_rank": 2.0, "public": 0.91076, "rank": 1452.0, "teams": 3590.0, "top_pct": 40.4, "seconds": 10854.5, "s_per_1k": 120.6618644256, "env": "Kaggle T4"}, {"comp": "playground-series-s4e2", "model": "exaone@knn1000_g16_imp", "label": "exaone (kNN 1000)", "label_en": "exaone (kNN 1000)", "base": "exaone", "family": "TFM", "cv": 0.908709895, "cv_std": 0.0036052912, "cv_rank": 3, "base_rank": 3.0, "public": 0.91076, "rank": 1452.0, "teams": 3590.0, "top_pct": 40.4, "seconds": 10890.2, "s_per_1k": 121.0587162898, "env": "Kaggle T4"}, {"comp": "playground-series-s4e2", "model": "xgb", "label": "xgb", "label_en": "xgb", "base": "xgb", "family": "GBDT", "cv": 0.9076982368, "cv_std": 0.003370002, "cv_rank": 4, "base_rank": 4.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 390.0, "s_per_1k": 4.3353564997, "env": "Kaggle T4"}, {"comp": "playground-series-s4e2", "model": "tabpfn_v2@knn1000_g16_imp", "label": "tabpfn_v2 (kNN 1000)", "label_en": "tabpfn_v2 (kNN 1000)", "base": "tabpfn_v2", "family": "TFM", "cv": 0.9072164948, "cv_std": 0.0055458083, "cv_rank": 5, "base_rank": 5.0, "public": 0.90787, "rank": 1843.0, "teams": 3590.0, "top_pct": 51.3, "seconds": 5572.7, "s_per_1k": 61.9477978612, "env": "Kaggle T4"}, {"comp": "playground-series-s4e2", "model": "lgbm", "label": "lgbm", "label_en": "lgbm", "base": "lgbm", "family": "GBDT", "cv": 0.9066865787, "cv_std": 0.0032308466, "cv_rank": 6, "base_rank": 6.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 224.1, "s_per_1k": 2.4911625425, "env": "Kaggle T4"}, {"comp": "playground-series-s4e2", "model": "catboost", "label": "catboost", "label_en": "catboost", "base": "catboost", "family": "GBDT", "cv": 0.9041815204, "cv_std": 0.0047691, "cv_rank": 7, "base_rank": 7.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 953.9, "s_per_1k": 10.6038373463, "env": "Kaggle T4"}, {"comp": "playground-series-s4e2", "model": "mitra", "label": "mitra", "label_en": "mitra", "base": "mitra", "family": "TFM", "cv": 0.898015223, "cv_std": 0.0026142639, "cv_rank": 8, "base_rank": 8.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 1381.3, "s_per_1k": 15.354943418, "env": "Kaggle T4"}, {"comp": "playground-series-s4e2", "model": "limix2m", "label": "limix2m", "label_en": "limix2m", "base": "limix2m", "family": "TFM", "cv": 0.8970999133, "cv_std": 0.0055609605, "cv_rank": 9, "base_rank": 9.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 311.1, "s_per_1k": 3.4582805309, "env": "Kaggle T4"}, {"comp": "playground-series-s4e2", "model": "mitra_ft", "label": "mitra_ft", "label_en": "mitra_ft", "base": "mitra_ft", "family": "TFM", "cv": 0.8969072165, "cv_std": 0.0065998358, "cv_rank": 10, "base_rank": 10.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 11081.2, "s_per_1k": 123.1819293448, "env": "Kaggle T4"}, {"comp": "playground-series-s6e1", "model": "kumo@rand200000", "label": "kumo (ctx 20만)", "label_en": "kumo (ctx 200K)", "base": "kumo", "family": "TFM", "cv": 8.6767178355, "cv_std": 0.0164385026, "cv_rank": 1, "base_rank": 1.0, "public": 8.63047, "rank": 764.0, "teams": 4320.0, "top_pct": 17.7, "seconds": 1952.4, "s_per_1k": 0.9860606061, "env": "DBX H100"}, {"comp": "playground-series-s6e1", "model": "xgb", "label": "xgb", "label_en": "xgb", "base": "xgb", "family": "GBDT", "cv": 8.7736066965, "cv_std": 0.0126208867, "cv_rank": 2, "base_rank": 2.0, "public": 8.74403, "rank": 2707.0, "teams": 4320.0, "top_pct": 62.7, "seconds": 172.3, "s_per_1k": 0.087020202, "env": "DBX CPU4"}, {"comp": "playground-series-s6e1", "model": "lgbm", "label": "lgbm", "label_en": "lgbm", "base": "lgbm", "family": "GBDT", "cv": 8.7846858452, "cv_std": 0.0124898868, "cv_rank": 3, "base_rank": 3.0, "public": 8.75654, "rank": 2950.0, "teams": 4320.0, "top_pct": 68.3, "seconds": 284.2, "s_per_1k": 0.1435353535, "env": "DBX CPU4"}, {"comp": "playground-series-s6e1", "model": "catboost", "label": "catboost", "label_en": "catboost", "base": "catboost", "family": "GBDT", "cv": 8.7924178737, "cv_std": 0.0123206341, "cv_rank": 4, "base_rank": 4.0, "public": 8.76427, "rank": 3068.0, "teams": 4320.0, "top_pct": 71.0, "seconds": 2157.6, "s_per_1k": 1.0896969697, "env": "DBX CPU4"}, {"comp": "playground-series-s6e1", "model": "tabicl@rand200000", "label": "tabicl (ctx 20만)", "label_en": "tabicl (ctx 200K)", "base": "tabicl", "family": "TFM", "cv": 8.8406961979, "cv_std": 0.0117923501, "cv_rank": 5, "base_rank": 5.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 2543.1, "s_per_1k": 1.2843939394, "env": "DBX H100"}, {"comp": "playground-series-s6e1", "model": "kumo", "label": "kumo", "label_en": "kumo", "base": "kumo", "family": "TFM", "cv": 8.8561500975, "cv_std": 0.0118021853, "cv_rank": 6, "base_rank": null, "public": 8.81343, "rank": 3449.0, "teams": 4320.0, "top_pct": 79.8, "seconds": 368.8, "s_per_1k": 0.1862626263, "env": "DBX H100"}, {"comp": "playground-series-s6e1", "model": "tabicl", "label": "tabicl", "label_en": "tabicl", "base": "tabicl", "family": "TFM", "cv": 8.892721224, "cv_std": 0.0106792915, "cv_rank": 7, "base_rank": null, "public": 8.84787, "rank": 3534.0, "teams": 4320.0, "top_pct": 81.8, "seconds": 71.0, "s_per_1k": 0.0358585859, "env": "DBX H100"}, {"comp": "playground-series-s6e1", "model": "tabpfn_v2", "label": "tabpfn_v2", "label_en": "tabpfn_v2", "base": "tabpfn_v2", "family": "TFM", "cv": 8.8984928504, "cv_std": 0.0075801678, "cv_rank": 8, "base_rank": 6.0, "public": 8.85954, "rank": 3572.0, "teams": 4320.0, "top_pct": 82.7, "seconds": 238.5, "s_per_1k": 0.1204545455, "env": "DBX H100"}, {"comp": "playground-series-s6e10", "model": "kumo@rand200000", "label": "kumo (ctx 20만)", "label_en": "kumo (ctx 200K)", "base": "kumo", "family": "TFM", "cv": 0.9587982466, "cv_std": 0.000553026, "cv_rank": 1, "base_rank": 1.0, "public": 0.95835, "rank": 2009.0, "teams": 3071.0, "top_pct": 65.4, "seconds": 2130.8, "s_per_1k": 0.9690498009, "env": "DBX H100"}, {"comp": "playground-series-s6e10", "model": "lgbm", "label": "lgbm", "label_en": "lgbm", "base": "lgbm", "family": "GBDT", "cv": 0.9583820597, "cv_std": 0.000617436, "cv_rank": 2, "base_rank": 2.0, "public": 0.95792, "rank": 2470.0, "teams": 3071.0, "top_pct": 80.4, "seconds": 556.0, "s_per_1k": 0.2528588743, "env": "Kaggle T4"}, {"comp": "playground-series-s6e10", "model": "catboost", "label": "catboost", "label_en": "catboost", "base": "catboost", "family": "GBDT", "cv": 0.9581955145, "cv_std": 0.0006990813, "cv_rank": 3, "base_rank": 3.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 1986.3, "s_per_1k": 0.9033337805, "env": "Kaggle T4"}, {"comp": "playground-series-s6e10", "model": "xgb", "label": "xgb", "label_en": "xgb", "base": "xgb", "family": "GBDT", "cv": 0.9581451634, "cv_std": 0.000649868, "cv_rank": 4, "base_rank": 4.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 819.2, "s_per_1k": 0.3725575356, "env": "Kaggle T4"}, {"comp": "playground-series-s6e10", "model": "tabicl@rand200000", "label": "tabicl (ctx 20만)", "label_en": "tabicl (ctx 200K)", "base": "tabicl", "family": "TFM", "cv": 0.9575990104, "cv_std": 0.0005328863, "cv_rank": 5, "base_rank": 5.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 2983.5, "s_per_1k": 1.3568425385, "env": "DBX H100"}, {"comp": "playground-series-s6e10", "model": "limix2m", "label": "limix2m", "label_en": "limix2m", "base": "limix2m", "family": "TFM", "cv": 0.9544179124, "cv_std": 0.0009253936, "cv_rank": 6, "base_rank": 6.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 2400.5, "s_per_1k": 1.0917045462, "env": "Kaggle T4"}, {"comp": "playground-series-s6e10", "model": "tabpfn_v2", "label": "tabpfn_v2", "label_en": "tabpfn_v2", "base": "tabpfn_v2", "family": "TFM", "cv": 0.9541078222, "cv_std": 0.0005079407, "cv_rank": 7, "base_rank": 7.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 5974.6, "s_per_1k": 2.7171414213, "env": "Kaggle T4"}, {"comp": "playground-series-s6e10", "model": "mitra", "label": "mitra", "label_en": "mitra", "base": "mitra", "family": "TFM", "cv": 0.9519496753, "cv_std": 0.0008329231, "cv_rank": 8, "base_rank": 8.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 14618.3, "s_per_1k": 6.6481418738, "env": "Kaggle T4"}, {"comp": "restaurant-revenue-prediction", "model": "kumo", "label": "kumo", "label_en": "kumo", "base": "kumo", "family": "TFM", "cv": 2426650.170290696, "cv_std": 643736.8998670083, "cv_rank": 1, "base_rank": 1.0, "public": 1716773.87278, "rank": 618.0, "teams": 2260.0, "top_pct": 27.3, "seconds": 111.9, "s_per_1k": 0.2237386956, "env": "DBX H100"}, {"comp": "restaurant-revenue-prediction", "model": "tabicl", "label": "tabicl", "label_en": "tabicl", "base": "tabicl", "family": "TFM", "cv": 2439687.164842046, "cv_std": 643226.7637251554, "cv_rank": 2, "base_rank": 2.0, "public": 1725678.17559, "rank": 708.0, "teams": 2260.0, "top_pct": 31.3, "seconds": 38.3, "s_per_1k": 0.0765790173, "env": "DBX H100"}, {"comp": "restaurant-revenue-prediction", "model": "tabpfn_v2", "label": "tabpfn_v2", "label_en": "tabpfn_v2", "base": "tabpfn_v2", "family": "TFM", "cv": 2441738.2757494496, "cv_std": 746207.3035424529, "cv_rank": 3, "base_rank": 3.0, "public": 1684067.91673, "rank": 345.0, "teams": 2260.0, "top_pct": 15.3, "seconds": 94.6, "s_per_1k": 0.1891481734, "env": "DBX H100"}, {"comp": "restaurant-revenue-prediction", "model": "catboost", "label": "catboost", "label_en": "catboost", "base": "catboost", "family": "GBDT", "cv": 2640318.5692575653, "cv_std": 606745.2425498918, "cv_rank": 4, "base_rank": 4.0, "public": 1795868.59507, "rank": 1239.0, "teams": 2260.0, "top_pct": 54.8, "seconds": 14.1, "s_per_1k": 0.0281922753, "env": "DBX CPU4"}, {"comp": "restaurant-revenue-prediction", "model": "lgbm", "label": "lgbm", "label_en": "lgbm", "base": "lgbm", "family": "GBDT", "cv": 2650611.0760306, "cv_std": 639362.746661575, "cv_rank": 5, "base_rank": 5.0, "public": 1797245.74254, "rank": 1250.0, "teams": 2260.0, "top_pct": 55.3, "seconds": 12.6, "s_per_1k": 0.0251930971, "env": "DBX CPU4"}, {"comp": "restaurant-revenue-prediction", "model": "xgb", "label": "xgb", "label_en": "xgb", "base": "xgb", "family": "GBDT", "cv": 2828951.480164966, "cv_std": 406260.3093544313, "cv_rank": 6, "base_rank": 6.0, "public": 1994554.72572, "rank": 1951.0, "teams": 2260.0, "top_pct": 86.3, "seconds": 28.4, "s_per_1k": 0.0567844411, "env": "DBX CPU4"}, {"comp": "spaceship-titanic", "model": "kumo", "label": "kumo", "label_en": "kumo", "base": "kumo", "family": "TFM", "cv": 0.8236512136, "cv_std": 0.0066443444, "cv_rank": 1, "base_rank": 1.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 272.8, "s_per_1k": 9.0697519782, "env": "Kaggle T4"}, {"comp": "spaceship-titanic", "model": "exaone@knn1000_g8_imp", "label": "exaone (kNN 1000)", "label_en": "exaone (kNN 1000)", "base": "exaone", "family": "TFM", "cv": 0.8151386173, "cv_std": 0.0085160172, "cv_rank": 2, "base_rank": 2.0, "public": 0.81014, "rank": 103.0, "teams": 1746.0, "top_pct": 5.9, "seconds": 7486.4, "s_per_1k": 248.8995278941, "env": "Kaggle T4"}, {"comp": "spaceship-titanic", "model": "tabpfn_v2", "label": "tabpfn_v2", "label_en": "tabpfn_v2", "base": "tabpfn_v2", "family": "TFM", "cv": 0.8135281261, "cv_std": 0.0072748265, "cv_rank": 3, "base_rank": 3.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 91.9, "s_per_1k": 3.0553893211, "env": "Kaggle T4"}, {"comp": "spaceship-titanic", "model": "mitra_ft", "label": "mitra_ft", "label_en": "mitra_ft", "base": "mitra_ft", "family": "TFM", "cv": 0.8129529506, "cv_std": 0.0019282022, "cv_rank": 4, "base_rank": 4.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 7586.8, "s_per_1k": 252.2375157923, "env": "Kaggle T4"}, {"comp": "spaceship-titanic", "model": "limix2m", "label": "limix2m", "label_en": "limix2m", "base": "limix2m", "family": "TFM", "cv": 0.8128379156, "cv_std": 0.0089804177, "cv_rank": 5, "base_rank": 5.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 79.8, "s_per_1k": 2.653101935, "env": "Kaggle T4"}, {"comp": "spaceship-titanic", "model": "catboost", "label": "catboost", "label_en": "catboost", "base": "catboost", "family": "GBDT", "cv": 0.8124928103, "cv_std": 0.0082244568, "cv_rank": 6, "base_rank": 6.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 66.3, "s_per_1k": 2.2042689009, "env": "Kaggle T4"}, {"comp": "spaceship-titanic", "model": "tabicl", "label": "tabicl", "label_en": "tabicl", "base": "tabicl", "family": "TFM", "cv": 0.8122627401, "cv_std": 0.0105909232, "cv_rank": 7, "base_rank": 7.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 57.8, "s_per_1k": 1.9216703238, "env": "Kaggle T4"}, {"comp": "spaceship-titanic", "model": "lgbm", "label": "lgbm", "label_en": "lgbm", "base": "lgbm", "family": "GBDT", "cv": 0.8101921086, "cv_std": 0.0056812238, "cv_rank": 8, "base_rank": 8.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 15.5, "s_per_1k": 0.5153268169, "env": "Kaggle T4"}, {"comp": "spaceship-titanic", "model": "xgb", "label": "xgb", "label_en": "xgb", "base": "xgb", "family": "GBDT", "cv": 0.8096169332, "cv_std": 0.0079461059, "cv_rank": 9, "base_rank": 9.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 9.0, "s_per_1k": 0.2992220227, "env": "Kaggle T4"}, {"comp": "spaceship-titanic", "model": "mitra", "label": "mitra", "label_en": "mitra", "base": "mitra", "family": "TFM", "cv": 0.8059358104, "cv_std": 0.0056528712, "cv_rank": 10, "base_rank": 10.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 264.9, "s_per_1k": 8.807101536, "env": "Kaggle T4"}, {"comp": "titanic", "model": "exaone", "label": "exaone", "label_en": "exaone", "base": "exaone", "family": "TFM", "cv": 0.8462401796, "cv_std": 0.0146253115, "cv_rank": 1, "base_rank": 1.0, "public": 0.77511, "rank": 4623.0, "teams": 11490.0, "top_pct": 40.2, "seconds": 30.4, "s_per_1k": 10.197920161, "env": "Kaggle T4"}, {"comp": "titanic", "model": "tabicl", "label": "tabicl", "label_en": "tabicl", "base": "tabicl", "family": "TFM", "cv": 0.8439955107, "cv_std": 0.0144458604, "cv_rank": 2, "base_rank": 2.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 8.8, "s_per_1k": 2.9520295203, "env": "Kaggle T4"}, {"comp": "titanic", "model": "limix2m", "label": "limix2m", "label_en": "limix2m", "base": "limix2m", "family": "TFM", "cv": 0.8439955107, "cv_std": 0.0158993186, "cv_rank": 2, "base_rank": 2.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 18.6, "s_per_1k": 6.2395169406, "env": "Kaggle T4"}, {"comp": "titanic", "model": "catboost", "label": "catboost", "label_en": "catboost", "base": "catboost", "family": "GBDT", "cv": 0.8417508418, "cv_std": 0.0190861573, "cv_rank": 4, "base_rank": 4.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 21.1, "s_per_1k": 7.0781616907, "env": "Kaggle T4"}, {"comp": "titanic", "model": "xgb", "label": "xgb", "label_en": "xgb", "base": "xgb", "family": "GBDT", "cv": 0.8383838384, "cv_std": 0.0159101942, "cv_rank": 5, "base_rank": 5.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 3.0, "s_per_1k": 1.0063737001, "env": "Kaggle T4"}, {"comp": "titanic", "model": "tabpfn_v2", "label": "tabpfn_v2", "label_en": "tabpfn_v2", "base": "tabpfn_v2", "family": "TFM", "cv": 0.835016835, "cv_std": 0.0180039495, "cv_rank": 6, "base_rank": 6.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 14.1, "s_per_1k": 4.7299563905, "env": "Kaggle T4"}, {"comp": "titanic", "model": "lgbm", "label": "lgbm", "label_en": "lgbm", "base": "lgbm", "family": "GBDT", "cv": 0.8338945006, "cv_std": 0.0163791788, "cv_rank": 7, "base_rank": 7.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 9.6, "s_per_1k": 3.2203958403, "env": "Kaggle T4"}, {"comp": "titanic", "model": "mitra_ft", "label": "mitra_ft", "label_en": "mitra_ft", "base": "mitra_ft", "family": "TFM", "cv": 0.8338945006, "cv_std": 0.0188017785, "cv_rank": 7, "base_rank": 7.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 709.1, "s_per_1k": 237.8731969138, "env": "Kaggle T4"}, {"comp": "titanic", "model": "kumo", "label": "kumo", "label_en": "kumo", "base": "kumo", "family": "TFM", "cv": 0.8327721661, "cv_std": 0.0181036288, "cv_rank": 9, "base_rank": 9.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 23.5, "s_per_1k": 7.8832606508, "env": "Kaggle T4"}, {"comp": "titanic", "model": "mitra", "label": "mitra", "label_en": "mitra", "base": "mitra", "family": "TFM", "cv": 0.8294051627, "cv_std": 0.0225061397, "cv_rank": 10, "base_rank": 10.0, "public": null, "rank": null, "teams": null, "top_pct": null, "seconds": 58.5, "s_per_1k": 19.624287152, "env": "Kaggle T4"}], "summary": [{"model": "kumo", "family": "TFM", "n": 12, "wins": 8, "pct": 0.1018518519, "lb": 0.0, "lb_other": false, "s1k": 0.8648964509, "s1k_all": 1.080679559, "ctx": 7}, {"model": "exaone", "family": "TFM", "n": 5, "wins": 1, "pct": 0.3111111111, "lb": 5.9, "lb_other": false, "s1k": null, "s1k_all": 23.3009708738, "ctx": 2}, {"model": "tabicl", "family": "TFM", "n": 12, "wins": 1, "pct": 0.3346560847, "lb": 26.7, "lb_other": true, "s1k": 0.9369430972, "s1k_all": 1.4421109911, "ctx": 6}, {"model": "catboost", "family": "GBDT", "n": 13, "wins": 1, "pct": 0.4698412698, "lb": 2.9, "lb_other": false, "s1k": 1.224675202, "s1k_all": 2.2042689009, "ctx": 0}, {"model": "lgbm", "family": "GBDT", "n": 13, "wins": 0, "pct": 0.5545787546, "lb": 6.9, "lb_other": false, "s1k": 0.2781699116, "s1k_all": 0.5153268169, "ctx": 0}, {"model": "xgb", "family": "GBDT", "n": 13, "wins": 1, "pct": 0.5851037851, "lb": 31.3, "lb_other": false, "s1k": 0.2222908456, "s1k_all": 0.3725575356, "ctx": 0}, {"model": "mitra_ft", "family": "TFM", "n": 4, "wins": 0, "pct": 0.6111111111, "lb": null, "lb_other": false, "s1k": null, "s1k_all": 245.055356353, "ctx": 0}, {"model": "tabpfn_v2", "family": "TFM", "n": 13, "wins": 1, "pct": 0.6334554335, "lb": 2.1, "lb_other": false, "s1k": 0.8289953532, "s1k_all": 3.4806367308, "ctx": 4}, {"model": "limix2m", "family": "TFM", "n": 6, "wins": 0, "pct": 0.6931216931, "lb": null, "lb_other": false, "s1k": null, "s1k_all": 3.0556912329, "ctx": 0}, {"model": "causilo", "family": "TFM", "n": 1, "wins": 0, "pct": 0.7777777778, "lb": null, "lb_other": false, "s1k": null, "s1k_all": 0.188774918, "ctx": 0}, {"model": "mitra", "family": "TFM", "n": 6, "wins": 0, "pct": 0.9074074074, "lb": null, "lb_other": false, "s1k": null, "s1k_all": 12.081022477, "ctx": 0}]}</script>
+<script>
+"use strict";
+const DATA = JSON.parse(document.getElementById("data").textContent);
+const COMPS = DATA.comps, RUNS = DATA.runs, SUMMARY = DATA.summary;
+const compById = Object.fromEntries(COMPS.map(c => [c.id, c]));
+const state = { family: "all", focus: null, comp: null, variants: true, speed: null, lang: "ko",
+                sumSort: { key: "pct", dir: 1 }, compSort: { key: "cv_rank", dir: 1 } };
+// 순차 팔레트 (blue 100→700). 라이트는 상위일수록 진하게, 다크는 상위일수록 밝게.
+const RAMP = ["#cde2fb","#b7d3f6","#9ec5f4","#86b6ef","#6da7ec","#5598e7","#3987e5","#2a78d6","#256abf","#1c5cab","#184f95","#104281","#0d366b"];
+const HEAT_COL = 68, HEAT_MODEL_COL = 120;  // 히트맵 열 너비 (px). 대회 열은 모두 같은 너비
+
+// ---- 한국어 / 영어 ----
+// notes 는 직접 쓴 HTML (데이터 아님). <span class="caps"> 자리에 상한 목록을 textContent 로 넣음
+const I18N = {
+  ko: {
+    pageTitle: "kaggle-master 리더보드 · TFM vs GBDT", title: "kaggle-master 리더보드",
+    sub: "Tabular Foundation Model(TFM) 과 GBDT 를 같은 5-fold CV·같은 피처, 튜닝 없는 기본 설정으로 비교.",
+    generated: d => `${d} 생성.`, howto: "표 읽는 법",
+    notes: [
+      "<b>평균 CV 순위</b> = 대회마다 (순위−1)/(모델 수−1) 의 평균. 0 = 항상 1위, 1 = 항상 꼴찌. 모델마다 실행한 대회가 달라 대략적인 비교.",
+      "종합·히트맵은 모델마다 대회별로 CV 가 가장 좋은 설정 하나만 셈 (컨텍스트 변형 <code>ctx 전체</code>·<code>ctx 20만</code>·<code>kNN 1000</code> 포함). 종합의 최고 LB 는 제출한 모든 설정 중 최고 (<b>*</b> = 최고 CV 설정이 아닌 설정의 제출).",
+      "<b>시간</b> = 5-fold 합계 (학습 + 검증·테스트 예측). <b>s/1K</b> = 시간 ÷ 예측 행 수 × 1000 (예측 행 = 학습 행 + 테스트 행 × 5). 작은 대회는 고정 비용 때문에 s/1K 가 부풀려짐.",
+      "환경이 다르면 시간 비교 불가: DBX H100 (TFM) · DBX CPU4 (GBDT, serverless 4코어) · DBX A10G · Kaggle T4. <b>s/1K (DBX)</b> = H100·CPU4 실행만의 중앙값.",
+      "<b>LB</b> = Kaggle public 점수 기준 위치. 종료 대회는 늦은 제출이라 실제 순위표에는 없음. — = 미제출.",
+      "TFM 컨텍스트 상한 <span class=\"caps\"></span> 은 무작위 샘플. 상한을 풀거나 늘려 다시 돌린 모델: <span class=\"rerun\"></span>. 다시 돌리지 않은 모델은 상한 그대로라 그 대회들의 순위 일부는 모델 차이가 아니라 컨텍스트 차이.",
+      "Otto·GiveMeSomeCredit·Amazon 등 공개 데이터는 TFM 사전학습에 들어갔을 수 있어 CV 가 부풀었을 수 있음 (LB 는 영향 없음).",
+    ],
+    family: "계열", all: "전체", auto: "자동", light: "라이트", dark: "다크", themeTitle: "테마",
+    summary: "종합", summaryHelp: "열 제목을 누르면 정렬, 모델 이름을 누르면 아래 차트에서 그 모델만 강조.",
+    heat: "대회 × 모델 CV 순위",
+    heatHelp: "칸 숫자 = 그 대회 CV 순위 (모델마다 최고 설정 하나씩 비교, 진할수록 상위). 열 제목이나 칸을 누르면 아래 대회별 상세로 이동. 대회는 학습 행 수 순.",
+    low: "하위", high: "상위", notRun: "· = 미실행",
+    speed: "속도 vs 성능",
+    speedHelp: "환경별 탭. 가로 = 그 환경에서 잰 s/1K 중앙값 (로그, 왼쪽이 빠름. 축 범위는 탭끼리 같음), 세로 = 평균 CV 순위 (전체 대회 기준, 위가 좋음). 그 환경에서 돌린 적 없는 모델은 빠짐.",
+    envNote: { "DBX": "2026-10-23 이후 Databricks. TFM 은 GPU 1×H100, GBDT 는 serverless CPU 4코어 (종합 표의 s/1K (DBX) 와 같은 값).",
+               "DBX A10G": "2026-10-22 Databricks GPU A10G. GBDT 도 같은 GPU 노드에서 돌림.",
+               "Kaggle T4": "Kaggle Notebook (GPU T4). GBDT 도 같은 노트북에서 돌림." },
+    envRuns: "이 환경 실행 수", noRuns: "이 환경에서 돌린 모델 없음", detail: "대회별", variants: "컨텍스트 변형 행도 보기", whisker: "가로 막대 = ± fold std",
+    madeBy: "로 생성", data: "데이터",
+    col: { model: "모델", family: "계열", n: "대회 수", wins: "CV 1위", pct: "평균 CV 순위", lb: "최고 LB (상위 %)",
+           s1k: "s/1K (DBX)", s1k_all: "s/1K (전체)", ctx: "컨텍스트 변형", lbRank: "LB 순위", time: "시간", env: "환경" },
+    modelRank: "모델 순위", cfgRank: "설정별 CV 순위", bestLb: "최고 LB",
+    rows: n => `${n}행`, trainTest: (a, b) => `학습 ${a}행 · 테스트 ${b}행`, cap: n => `TFM 컨텍스트 상한 ${n}행`, none: "없음",
+    better: h => h ? "오른쪽이 좋음 →" : "← 왼쪽이 좋음", logAxis: "s/1K (로그) →", fast: "← 빠름",
+    focus: b => `강조: ${b} (다시 누르면 해제)`, focusTitle: "이 모델 강조",
+    scatterAria: "속도 대 평균 CV 순위 산점도", dotsAria: t => `${t} CV 점수`, env: {},
+  },
+  en: {
+    pageTitle: "kaggle-master leaderboard · TFM vs GBDT", title: "kaggle-master leaderboard",
+    sub: "Tabular Foundation Models (TFM) vs GBDT on the same 5-fold CV and features, all with default settings and no tuning.",
+    generated: d => `Generated ${d}.`, howto: "How to read",
+    notes: [
+      "<b>Mean CV rank</b> = average over competitions of (rank−1)/(models−1). 0 = always first, 1 = always last. Models ran on different sets of competitions, so this is a rough comparison.",
+      "Summary and heatmap count only each model's best-CV configuration per competition (context variants <code>ctx full</code>·<code>ctx 200K</code>·<code>kNN 1000</code> included). Best LB in the summary is the best over every submitted configuration (<b>*</b> = from a configuration other than the best-CV one).",
+      "<b>Time</b> = total over 5 folds (fit + validation/test prediction). <b>s/1K</b> = time ÷ predicted rows × 1000 (predicted rows = train rows + test rows × 5). Fixed overhead inflates s/1K on small competitions.",
+      "Times are not comparable across environments: DBX H100 (TFM) · DBX CPU4 (GBDT, serverless 4 cores) · DBX A10G · Kaggle T4. <b>s/1K (DBX)</b> = median over H100·CPU4 runs only.",
+      "<b>LB</b> = position by Kaggle public score. Closed competitions only take late submissions, so these entries are not on the real leaderboard. — = not submitted.",
+      "The TFM context cap <span class=\"caps\"></span> uses a random sample. Models rerun with the cap lifted or raised: <span class=\"rerun\"></span>. Models not rerun keep the cap, so part of the ranking on those competitions reflects context size, not the model.",
+      "Public datasets such as Otto·GiveMeSomeCredit·Amazon may be in TFM pretraining data, which could inflate CV (LB is unaffected).",
+    ],
+    family: "Family", all: "All", auto: "Auto", light: "Light", dark: "Dark", themeTitle: "Theme",
+    summary: "Summary", summaryHelp: "Click a column header to sort; click a model name to highlight it in the charts below.",
+    heat: "CV rank by competition × model",
+    heatHelp: "Cell = CV rank in that competition (best configuration per model; darker is better). Click a header or cell to open that competition below. Competitions are ordered by training rows.",
+    low: "Worse", high: "Better", notRun: "· = not run",
+    speed: "Speed vs performance",
+    speedHelp: "One tab per environment. x = median s/1K measured there (log, left is faster; same axis range on every tab), y = mean CV rank (over all competitions, top is better). Models never run in that environment are omitted.",
+    envNote: { "DBX": "Databricks since 2026-10-23: TFMs on GPU 1×H100, GBDTs on serverless CPU with 4 cores (same values as s/1K (DBX) in the summary).",
+               "DBX A10G": "Databricks GPU A10G, 2026-10-22. GBDTs ran on the same GPU node.",
+               "Kaggle T4": "Kaggle Notebook (GPU T4). GBDTs ran in the same notebook." },
+    envRuns: "Runs in this env", noRuns: "No models ran in this environment", detail: "By competition", variants: "Show context-variant rows", whisker: "bar = ± fold std",
+    madeBy: "generates this page", data: "Data:",
+    col: { model: "Model", family: "Family", n: "Comps", wins: "CV wins", pct: "Mean CV rank", lb: "Best LB (top %)",
+           s1k: "s/1K (DBX)", s1k_all: "s/1K (all)", ctx: "Context variants", lbRank: "LB rank", time: "Time", env: "Env" },
+    modelRank: "Model rank", cfgRank: "CV rank (per config)", bestLb: "Best LB",
+    rows: n => `${n} rows`, trainTest: (a, b) => `train ${a} rows · test ${b} rows`, cap: n => `TFM context cap ${n} rows`, none: "none",
+    better: h => h ? "higher is better →" : "← lower is better", logAxis: "s/1K (log) →", fast: "← faster",
+    focus: b => `Highlighting ${b} (click again to clear)`, focusTitle: "Highlight this model",
+    scatterAria: "Scatter of speed vs mean CV rank", dotsAria: t => `${t} CV scores`, env: { "로컬": "Local" },
+  },
+};
+const T = () => I18N[state.lang];
+const lbl = r => state.lang === "en" ? r.label_en : r.label;
+const envName = e => T().env[e] || e;
+const fmtInt = n => n.toLocaleString("en-US");
+
+// ---- 공통 ----
+const $ = id => document.getElementById(id);
+const SVG = "http://www.w3.org/2000/svg";
+function el(tag, attrs = {}, parent, text) {
+  const n = tag.startsWith("svg:") ? document.createElementNS(SVG, tag.slice(4)) : document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) if (v != null) n.setAttribute(k, v);
+  if (text != null) n.textContent = text;
+  if (parent) parent.appendChild(n);
+  return n;
+}
+const isDark = () => document.documentElement.dataset.theme === "dark" ||
+  (document.documentElement.dataset.theme !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const famColor = f => cssVar(f === "GBDT" ? "--gbdt" : "--tfm");
+const famOk = f => state.family === "all" || state.family === f;
+const num = (v, ref = v) => v == null ? "—" : Math.abs(ref) > 1000 ?  // std 는 ref=CV 로 자릿수 결정 (md 와 같게)
+  v.toLocaleString("en-US", { maximumFractionDigits: 1, minimumFractionDigits: 1 }) : v.toFixed(4);
+const pct = p => p == null ? "—" : p < 0.1 ? "<0.1%" : p.toFixed(1) + "%";
+const fix2 = v => v == null ? "—" : v.toFixed(2);
+const int = v => v == null ? "—" : fmtInt(Math.round(v));
+const lbRank = r => r.rank == null ? "—" : `${int(r.rank)} / ${int(r.teams)} (${pct(r.top_pct)})`;
+const pub = v => v == null ? "—" : Math.abs(v) > 1000 ? v.toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 }) : String(+v.toPrecision(5));
+
+// ---- 툴팁 (값을 먼저, 이름은 뒤에. 텍스트는 모두 textContent) ----
+const tip = $("tip");
+function showTip(evt, title, rows) {
+  tip.replaceChildren();
+  el("div", { class: "v" }, tip, title);
+  for (const [k, v] of rows) { const r = el("div", { class: "row" }, tip); el("span", { class: "k" }, r, k); el("b", {}, r, v); }
+  tip.style.display = "block";
+  let x, y;
+  if (evt.clientX != null && evt.type !== "focus") { x = evt.clientX; y = evt.clientY; }
+  else { const b = evt.target.getBoundingClientRect(); x = b.right; y = b.top; }
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  tip.style.left = Math.min(x + 14, innerWidth - w - 8) + "px";
+  tip.style.top = (y + h + 20 > innerHeight ? y - h - 10 : y + 14) + "px";
+}
+const hideTip = () => { tip.style.display = "none"; };
+function hover(node, fn) {
+  node.addEventListener("pointermove", e => fn(e));
+  node.addEventListener("focus", e => fn(e));
+  node.addEventListener("pointerleave", hideTip);
+  node.addEventListener("blur", hideTip);
+}
+const runTip = (r, c) => [
+  [`CV ${c.metric}`, `${num(r.cv)} ± ${num(r.cv_std, r.cv)}`], [T().cfgRank, `${r.cv_rank}`],
+  ["LB public", pub(r.public)], [T().col.lbRank, lbRank(r)],
+  [T().col.time, `${int(r.seconds)}s`], ["s/1K", fix2(r.s_per_1k)], [T().col.env, envName(r.env)]];
+
+// ---- 정렬 가능한 표 ----
+function sortTable(table, cols, rows, sort, onSort, rowAttrs) {
+  table.replaceChildren();
+  const tr = el("tr", {}, el("thead", {}, table));
+  for (const c of cols) {
+    const th = el("th", { class: (c.sort === false ? "" : "sortable ") + (c.left ? "left" : ""), scope: "col" }, tr, c.name);
+    if (c.sort !== false) {
+      el("span", { class: "arrow" }, th, sort.key === c.key ? (sort.dir > 0 ? " ▲" : " ▼") : "");
+      th.tabIndex = 0;
+      const go = () => onSort(sort.key === c.key ? { key: c.key, dir: -sort.dir } : { key: c.key, dir: c.desc ? -1 : 1 });
+      th.addEventListener("click", go);
+      th.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
+    }
+  }
+  const val = (r, k) => { const c = cols.find(c => c.key === k); return c.value ? c.value(r) : r[k]; };
+  rows = [...rows].sort((a, b) => {
+    const x = val(a, sort.key), y = val(b, sort.key);
+    if (x == null && y == null) return 0; if (x == null) return 1; if (y == null) return -1;
+    return (typeof x === "string" ? x.localeCompare(y) : x - y) * sort.dir;
+  });
+  const tbody = el("tbody", {}, table);
+  for (const r of rows) {
+    const row = el("tr", rowAttrs ? rowAttrs(r) : {}, tbody);
+    for (const c of cols) {
+      const td = el("td", { class: c.left ? "left" : "" }, row);
+      c.cell ? c.cell(td, r) : (td.textContent = c.fmt ? c.fmt(r[c.key], r) : r[c.key]);
+    }
+  }
+}
+function modelCell(td, name, base, family, bold) {
+  el("i", { class: "fam " + family }, td);
+  const s = el(bold ? "b" : "span", { class: "model", tabindex: 0, title: T().focusTitle }, td, name);
+  const go = () => setFocus(state.focus === base ? null : base);
+  s.addEventListener("click", go);
+  s.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
+}
+function focusAttrs(base) {
+  return state.focus == null ? {} : { class: state.focus === base ? "focus" : "dim" };
+}
+
+// ---- 종합 ----
+function renderSummary() {
+  const C = T().col;
+  const cols = [
+    { key: "model", name: C.model, left: true, cell: (td, r) => modelCell(td, r.model, r.model, r.family) },
+    { key: "family", name: C.family, left: true },
+    { key: "n", name: C.n, desc: true },
+    { key: "wins", name: C.wins, desc: true },
+    { key: "pct", name: C.pct, fmt: fix2 },
+    { key: "lb", name: C.lb, fmt: (v, r) => v == null ? "—" : pct(v) + (r.lb_other ? "*" : "") },
+    { key: "s1k", name: C.s1k, fmt: fix2 },
+    { key: "s1k_all", name: C.s1k_all, fmt: fix2 },
+    { key: "ctx", name: C.ctx, desc: true, fmt: v => v || "" },
+  ];
+  sortTable($("summary"), cols, SUMMARY.filter(r => famOk(r.family)), state.sumSort,
+            s => { state.sumSort = s; renderSummary(); }, r => focusAttrs(r.model));
+}
+
+// ---- 히트맵 ----
+function renderHeat() {
+  const t = $("heat"); t.replaceChildren();
+  t.style.width = HEAT_MODEL_COL + COMPS.length * HEAT_COL + "px";  // table-layout: fixed 라 너비를 정해 둬야 열이 고정됨
+  const dark = isDark();
+  const best = RUNS.filter(r => r.base_rank != null);
+  const n = {}; for (const r of best) n[r.comp] = (n[r.comp] || 0) + 1;
+  const cell = {}; for (const r of best) cell[r.comp + "|" + r.base] = r;
+  const cg = el("colgroup", {}, t);
+  el("col", { style: `width:${HEAT_MODEL_COL}px` }, cg);
+  for (const _ of COMPS) el("col", { style: `width:${HEAT_COL}px` }, cg);
+  const hr = el("tr", {}, el("thead", {}, t));
+  el("th", { class: "left" }, hr, T().col.model);
+  for (const c of COMPS) {
+    // 긴 대회 이름은 CamelCase 사이 (GiveMe·Some·Credit) 나 영어 하이픈 (Bio-response) 으로 줄바꿈
+    const th = el("th", { class: "col" + (state.comp === c.id ? " on" : ""), scope: "col", tabindex: 0, title: c.title, lang: "en" }, hr,
+                  c.title.replace(/([a-z])([A-Z])/g, "$1​$2"));
+    el("small", {}, th, c.train ? T().rows(c.train >= 10000 ? Math.round(c.train / 1000) + "K" : fmtInt(c.train)) : "");
+    th.addEventListener("click", () => selectComp(c.id, true));
+    th.addEventListener("keydown", e => { if (e.key === "Enter") selectComp(c.id, true); });
+  }
+  const tb = el("tbody", {}, t);
+  for (const s of SUMMARY.filter(r => famOk(r.family))) {
+    const row = el("tr", focusAttrs(s.model), tb);
+    modelCell(el("td", { class: "left" }, row), s.model, s.model, s.family);
+    for (const c of COMPS) {
+      const r = cell[c.id + "|" + s.model];
+      if (!r) { el("td", { class: "cell empty" }, row, "·"); continue; }
+      const q = n[c.id] > 1 ? (r.base_rank - 1) / (n[c.id] - 1) : 0;  // 0 = 1위
+      const i = dark ? 1 + Math.round(q * 11) : 12 - Math.round(q * 12);
+      const td = el("td", { class: "cell", tabindex: 0, style: `background:${RAMP[i]};color:${(dark ? i <= 5 : i >= 7) ? (dark ? "#0b0b0b" : "#ffffff") : (dark ? "#f0efec" : "#0b0b0b")}` }, row);
+      el("span", {}, td, r.base_rank);
+      hover(td, e => showTip(e, `${lbl(r)} · ${c.title}`, [[T().modelRank, `${r.base_rank} / ${n[c.id]}`], ...runTip(r, c)]));
+      td.addEventListener("click", () => selectComp(c.id, true));
+    }
+  }
+  const ramp = $("ramp"); ramp.replaceChildren();
+  for (let k = 0; k <= 6; k++) el("i", { style: `background:${RAMP[dark ? 12 - k * 11 / 6 | 0 : k * 2]}` }, ramp);
+}
+
+// ---- 산점도: 속도 vs 성능 (환경별 탭) ----
+// 종합과 같이 모델마다 대회별 최고 설정 행만 보고, 환경마다 s/1K 중앙값. 로그 축이라 0 이하는 뺌
+// DBX H100 (TFM) 과 DBX CPU4 (GBDT) 는 한 탭: 같은 시기 Databricks 실행이고 모델마다 둘 중 하나에서만 돌림
+const ENV_TAB = { "DBX H100": "DBX", "DBX CPU4": "DBX" };
+const ENV_LABEL = { DBX: "DBX (H100 · CPU4)" };
+const ENV_ORDER = ["DBX", "DBX A10G", "Kaggle T4"];
+const BEST = RUNS.filter(r => r.base_rank != null && r.s_per_1k > 0).map(r => ({ ...r, tab: ENV_TAB[r.env] || r.env }));
+const tabName = e => ENV_LABEL[e] || envName(e);
+const ENVS = [...new Set(BEST.map(r => r.tab))].sort((a, b) => (ENV_ORDER.indexOf(a) + 1 || 99) - (ENV_ORDER.indexOf(b) + 1 || 99));
+const median = a => { const s = [...a].sort((x, y) => x - y), k = s.length >> 1; return s.length % 2 ? s[k] : (s[k - 1] + s[k]) / 2; };
+const SPEED = Object.fromEntries(ENVS.map(e => [e, Object.fromEntries(SUMMARY.flatMap(s => {
+  const v = BEST.filter(r => r.tab === e && r.base === s.model).map(r => r.s_per_1k);
+  return v.length ? [[s.model, { s1k: median(v), n: v.length }]] : [];
+}))]));
+const SPEED_LOG = Object.values(SPEED).flatMap(o => Object.values(o).map(x => Math.log10(x.s1k)));
+const SX0 = Math.floor(Math.min(...SPEED_LOG)), SX1 = Math.ceil(Math.max(...SPEED_LOG));  // 탭끼리 같은 축
+function renderScatter() {
+  const box = $("scatter"); box.replaceChildren();
+  $("envNote").textContent = T().envNote[state.speed] || "";
+  const sp = SPEED[state.speed] || {};
+  const pts = SUMMARY.filter(r => famOk(r.family) && sp[r.model]);
+  const W = Math.max(box.clientWidth, 320), H = 320, m = { l: 44, r: 16, t: 12, b: 36 };
+  const svg = el("svg:svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": T().scatterAria }, box);
+  if (!ENVS.length) return;
+  const x0 = SX0, x1 = SX1;
+  const X = v => m.l + (Math.log10(v) - x0) / (x1 - x0 || 1) * (W - m.l - m.r);
+  const Y = v => m.t + v * (H - m.t - m.b);
+  for (let e = x0; e <= x1; e++) {
+    el("svg:line", { class: "gridline", x1: X(10 ** e), x2: X(10 ** e), y1: m.t, y2: H - m.b }, svg);
+    el("svg:text", { x: X(10 ** e), y: H - m.b + 16, "text-anchor": "middle" }, svg, String(+(10 ** e).toPrecision(3)));
+  }
+  for (const v of [0, 0.25, 0.5, 0.75, 1]) {
+    el("svg:line", { class: "gridline", x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v) }, svg);
+    el("svg:text", { x: m.l - 8, y: Y(v) + 4, "text-anchor": "end" }, svg, v.toFixed(2));
+  }
+  el("svg:text", { x: W - m.r, y: H - 4, "text-anchor": "end" }, svg, T().logAxis);
+  el("svg:text", { x: m.l, y: H - 4 }, svg, T().fast);
+  if (!pts.length) el("svg:text", { class: "lbl", x: W / 2, y: H / 2, "text-anchor": "middle" }, svg, T().noRuns);
+  const C = T().col;
+  // 이름표 자리: 점과 이미 놓은 이름표를 피해 오른쪽 → 왼쪽 → 위 → 아래 → 대각선 순으로, 다 막히면 가장 덜 겹치는 자리
+  const placed = pts.map(p => ({ x: X(sp[p.model].s1k) - 7, y: Y(p.pct) - 7, w: 14, h: 14 }));
+  const overlap = (a, b) => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+  for (const p of [...pts].sort((a, b) => sp[a.model].s1k - sp[b.model].s1k)) {
+    const g = el("svg:g", { class: state.focus && state.focus !== p.model ? "dimmed" : "" }, svg);
+    const cx = X(sp[p.model].s1k), cy = Y(p.pct);
+    el("svg:circle", { cx, cy, r: 6, fill: famColor(p.family), stroke: cssVar("--surface"), "stroke-width": 2 }, g);
+    const t = el("svg:text", { class: "lbl", y: cy + 4 }, g, p.model);
+    const w = t.getComputedTextLength() + 2, h = 14;
+    const spots = [[cx + 10, cy - 7], [cx - 10 - w, cy - 7], [cx - w / 2, cy - 23], [cx - w / 2, cy + 9],
+                   [cx + 6, cy - 21], [cx + 6, cy + 7], [cx - 6 - w, cy - 21], [cx - 6 - w, cy + 7]]
+      .filter(([x, y]) => x >= m.l && x + w <= W - m.r && y >= 0 && y + h <= H - m.b)
+      .map(([x, y]) => ({ x, y, w, h }));
+    const cost = c => placed.reduce((sum, b) => sum + overlap(c, b), 0);
+    const best = spots.find(c => cost(c) === 0) || spots.sort((a, b) => cost(a) - cost(b))[0] || { x: cx + 10, y: cy - 7, w, h };
+    t.setAttribute("x", best.x); t.setAttribute("y", best.y + 11);
+    placed.push(best);
+    const hit = el("svg:circle", { class: "hit", cx, cy, r: 14, tabindex: 0 }, g);
+    hover(hit, e => showTip(e, p.model, [[`s/1K (${tabName(state.speed)})`, fix2(sp[p.model].s1k)], [T().envRuns, String(sp[p.model].n)],
+                                        [C.pct, fix2(p.pct)], [C.n, String(p.n)], [C.wins, String(p.wins)], [T().bestLb, pct(p.lb)]]));
+    hit.addEventListener("click", () => setFocus(state.focus === p.model ? null : p.model));
+  }
+}
+
+// ---- 대회별 ----
+function renderPills() {
+  const box = $("pills"); box.replaceChildren();
+  for (const c of COMPS) {
+    const b = el("button", { "aria-pressed": state.comp === c.id }, box, c.title);
+    b.addEventListener("click", () => selectComp(c.id));
+  }
+}
+function compRuns() {
+  return RUNS.filter(r => r.comp === state.comp && famOk(r.family) && (state.variants || !r.model.includes("@")));
+}
+function renderDots() {
+  const box = $("dots"); box.replaceChildren();
+  const c = compById[state.comp], rows = compRuns().sort((a, b) => a.cv_rank - b.cv_rank);
+  if (!rows.length) return;
+  const rowH = 26, labelW = 150, m = { t: 8, r: 24, b: 40 };
+  const W = Math.max(box.clientWidth, 360), H = m.t + rows.length * rowH + m.b;
+  const svg = el("svg:svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": T().dotsAria(c.title) }, box);
+  let lo = Math.min(...rows.map(r => r.cv - r.cv_std)), hi = Math.max(...rows.map(r => r.cv + r.cv_std));
+  const pad = (hi - lo) * 0.06 || Math.abs(hi) * 0.01 || 1; lo -= pad; hi += pad;
+  const X = v => labelW + (v - lo) / (hi - lo) * (W - labelW - m.r);
+  const step = niceStep((hi - lo) / Math.max(3, Math.floor((W - labelW) / 110)));
+  for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) {
+    el("svg:line", { class: "gridline", x1: X(v), x2: X(v), y1: m.t, y2: H - m.b }, svg);
+    el("svg:text", { x: X(v), y: H - m.b + 16, "text-anchor": "middle" }, svg, tick(v, step));
+  }
+  el("svg:text", { x: W - m.r, y: H - 2, "text-anchor": "end" }, svg, `CV ${c.metric} · ${T().better(c.higher)}`);
+  rows.forEach((r, i) => {
+    const y = m.t + i * rowH + rowH / 2;
+    const g = el("svg:g", { class: state.focus && state.focus !== r.base ? "dimmed" : "" }, svg);
+    el("svg:text", { class: "lbl" + (r.cv_rank === 1 ? " best" : ""), x: labelW - 10, y: y + 4, "text-anchor": "end" }, g, `${r.cv_rank}. ${lbl(r)}`);
+    const col = famColor(r.family);
+    el("svg:line", { x1: X(r.cv - r.cv_std), x2: X(r.cv + r.cv_std), y1: y, y2: y, stroke: col, "stroke-width": 2, "stroke-linecap": "round", opacity: 0.55 }, g);
+    el("svg:circle", { cx: X(r.cv), cy: y, r: 5, fill: col, stroke: cssVar("--surface"), "stroke-width": 2 }, g);
+    const hit = el("svg:rect", { class: "hit", x: 0, y: y - rowH / 2, width: W, height: rowH, tabindex: 0 }, g);
+    hover(hit, e => showTip(e, lbl(r), runTip(r, c)));
+    hit.addEventListener("click", () => setFocus(state.focus === r.base ? null : r.base));
+  });
+}
+function niceStep(raw) {
+  const p = 10 ** Math.floor(Math.log10(raw)), f = raw / p;
+  return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * p;
+}
+function tick(v, step) {
+  const d = Math.max(0, -Math.floor(Math.log10(step)));
+  return Math.abs(v) >= 1000 ? fmtInt(Math.round(v)) : v.toFixed(d);
+}
+function renderCompTable() {
+  const c = compById[state.comp], L = T(), C = L.col;
+  const lines = [];
+  if (c.train) lines.push(L.trainTest(fmtInt(c.train), fmtInt(c.test)));
+  lines.push(`${c.metric} ${c.higher ? "↑" : "↓"}`);
+  if (c.cap) lines.push(L.cap(fmtInt(c.cap)));
+  $("compMeta").textContent = lines.join(" · ");
+  const rows = compRuns();
+  const top = Math.min(...rows.map(r => r.cv_rank));
+  const cols = [
+    { key: "cv_rank", name: "#" },
+    { key: "label", name: C.model, left: true, value: lbl, cell: (td, r) => modelCell(td, lbl(r), r.base, r.family, r.cv_rank === top) },
+    { key: "cv", name: `CV ${c.metric}`, fmt: v => num(v), value: r => c.higher ? -r.cv : r.cv },
+    { key: "cv_std", name: "± std", fmt: (v, r) => num(v, r.cv) },
+    { key: "public", name: "LB public", fmt: pub, value: r => r.public == null ? null : c.higher ? -r.public : r.public },
+    { key: "rank", name: C.lbRank, cell: (td, r) => { td.textContent = lbRank(r); } },
+    { key: "seconds", name: C.time, fmt: v => int(v) + "s" },
+    { key: "s_per_1k", name: "s/1K", fmt: fix2 },
+    { key: "env", name: C.env, left: true, fmt: envName },
+  ];
+  sortTable($("comp"), cols, rows, state.compSort, s => { state.compSort = s; renderCompTable(); }, r => focusAttrs(r.base));
+}
+function selectComp(id, scroll) {
+  state.comp = id;
+  syncUrl();
+  renderPills(); renderHeat(); renderDots(); renderCompTable();
+  if (scroll) $("detail").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+function setFocus(base) {
+  state.focus = base;
+  renderAll();
+}
+// URL: ?lang=en#<대회 slug> (공유 링크가 언어·대회를 유지)
+function syncUrl() {
+  const u = new URL(location.href);
+  u.searchParams.set("lang", state.lang);
+  u.hash = encodeURIComponent(state.comp);
+  try { history.replaceState(null, "", u); } catch (e) { /* file:// 등 */ }
+}
+
+// ---- 고정 문구 ----
+function renderText() {
+  const L = T();
+  document.documentElement.lang = state.lang;
+  document.title = L.pageTitle;
+  for (const n of document.querySelectorAll("[data-t]")) n.textContent = L[n.dataset.t];
+  $("theme").title = L.themeTitle;
+  $("date").textContent = L.generated(DATA.date);
+  const caps = {}; for (const c of COMPS) if (c.cap) (caps[c.cap] = caps[c.cap] || []).push(c.title);
+  const capText = "(" + (Object.entries(caps).map(([n, cs]) => `${L.rows(fmtInt(+n))}: ${cs.join(", ")}`).join("; ") || L.none) + ")";
+  const ul = $("notes"); ul.replaceChildren();
+  for (const h of L.notes) {
+    const li = el("li", {}, ul);
+    li.innerHTML = h;  // 직접 쓴 문구만 (데이터는 아래 textContent 로)
+    for (const s of li.querySelectorAll(".caps")) s.textContent = capText;
+    for (const s of li.querySelectorAll(".rerun")) s.textContent = DATA.rerun === "없음" ? L.none : DATA.rerun;
+  }
+  for (const b of $("lang").children) b.setAttribute("aria-pressed", b.dataset.v === state.lang);
+  for (const b of $("speedEnv").children) b.textContent = tabName(b.dataset.v);
+}
+
+// ---- 컨트롤 ----
+function seg(id, onPick) {
+  const box = $(id);
+  box.addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    for (const x of box.children) x.setAttribute("aria-pressed", x === b);
+    onPick(b.dataset.v);
+  });
+}
+seg("family", v => { state.family = v; renderAll(); });
+for (const e of ENVS) el("button", { "data-v": e, "aria-pressed": false }, $("speedEnv"), tabName(e));
+state.speed = ENVS[0];
+$("speedEnv").firstChild?.setAttribute("aria-pressed", true);
+seg("speedEnv", v => { state.speed = v; renderScatter(); });
+function setTheme(v) {
+  if (v === "auto") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = v;
+  for (const b of $("theme").children) b.setAttribute("aria-pressed", b.dataset.v === v);
+  renderAll();
+}
+seg("theme", setTheme);
+function setLang(v) {
+  state.lang = v;
+  syncUrl();
+  renderAll();
+}
+seg("lang", setLang);
+// 블로그 등에 iframe 으로 넣을 때: 부모가 {kmTheme: "auto"|"light"|"dark"} 나 {kmLang: "ko"|"en"} 를 보내면 따르고, 내용 높이를 {kmHeight} 로 알려 줌
+addEventListener("message", e => {
+  const d = e.data || {};
+  if (["auto", "light", "dark"].includes(d.kmTheme)) setTheme(d.kmTheme);
+  if (I18N[d.kmLang] && d.kmLang !== state.lang) setLang(d.kmLang);
+});
+if (parent !== window) new ResizeObserver(() => parent.postMessage({ kmHeight: document.documentElement.scrollHeight }, "*")).observe(document.body);
+$("variants").addEventListener("change", e => { state.variants = e.target.checked; renderDots(); renderCompTable(); });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => renderAll());
+let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { renderScatter(); renderDots(); }, 100); });
+
+function renderAll() {
+  renderText();
+  $("focusNote").textContent = state.focus ? T().focus(state.focus) : "";
+  renderSummary(); renderHeat(); renderScatter(); renderPills(); renderDots(); renderCompTable();
+}
+
+// 언어: ?lang= → 브라우저 언어 (ko 가 아니면 en)
+const qLang = new URLSearchParams(location.search).get("lang");
+state.lang = I18N[qLang] ? qLang : (navigator.language || "").toLowerCase().startsWith("ko") ? "ko" : "en";
+let fromHash = ""; try { fromHash = decodeURIComponent(location.hash.slice(1)); } catch (e) { /* 깨진 해시는 무시 */ }
+state.comp = compById[fromHash] ? fromHash : COMPS[COMPS.length - 1].id;
+renderAll();
+</script>
+</body>
+</html>

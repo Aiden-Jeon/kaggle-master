@@ -1,7 +1,7 @@
-"""results.csv · leaderboard.csv → 모델별 성능·실행 시간 리더보드 (docs/leaderboard.md)
+"""results.csv · leaderboard.csv → 모델별 성능·실행 시간 리더보드 (docs/leaderboard.md, docs/leaderboard.html)
 
-예: uv run km board            # docs/leaderboard.md 다시 생성
-    uv run km board -o -       # 파일 대신 화면에 출력
+예: uv run km board            # docs/leaderboard.md 와 정렬·필터·차트가 있는 docs/leaderboard.html 다시 생성
+    uv run km board -o -       # 파일 대신 화면에 출력 (md 만)
 
 `km run`/`km databricks` 로 결과가 늘거나 `km lb` 로 순위가 바뀌면 다시 생성.
 s/1K 계산에 대회별 학습·테스트 행 수가 필요 → 로컬 데이터(`km download`)나 저장된 예측(oof/test.npy)에서 읽음.
@@ -11,6 +11,7 @@ s/1K 계산에 대회별 학습·테스트 행 수가 필요 → 로컬 데이�
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -24,6 +25,7 @@ from km.core.results import RESULTS, made_test
 from km.models import REGISTRY
 
 OUT = ROOT / "docs" / "leaderboard.md"
+TEMPLATE = Path(__file__).with_name("board.html")  # script#data 의 `__DATA__` 에 JSON 을 넣음
 GBDT = {name for name, (module, _) in REGISTRY.items() if module == "km.models.gbdt"}
 TITLES = {  # 표 제목용 짧은 이름 (없으면 대회 이름 그대로)
     "restaurant-revenue-prediction": "Restaurant", "titanic": "Titanic",
@@ -60,15 +62,16 @@ def env(r) -> str:
     return {"kaggle": "Kaggle T4", "colab": "Colab T4", "local": "로컬"}.get(where, where)
 
 
-def label(model: str) -> str:
-    """`kumo@full` → `kumo (ctx 전체)`, `kumo@rand200000` → `kumo (ctx 20만)`, `exaone@knn1000_g8_imp` → `exaone (kNN 1000)`."""
+def label(model: str, en: bool = False) -> str:
+    """`kumo@full` → `kumo (ctx 전체)`, `kumo@rand200000` → `kumo (ctx 20만)`, `exaone@knn1000_g8_imp` → `exaone (kNN 1000)`.
+    en=True 면 `kumo (ctx full)`, `kumo (ctx 200K)` (HTML 영어 화면용)."""
     base, _, spec = model.partition("@")
     if not spec:
         return base
     mode, k = re.match(r"(full|rand|knn|part)(\d*)", spec).groups()
     if mode == "full":
-        return f"{base} (ctx 전체)"
-    size = f"{int(k) // 10000}만" if int(k) % 10000 == 0 else k
+        return f"{base} (ctx {'full' if en else '전체'})"
+    size = (f"{int(k) // 1000}K" if en else f"{int(k) // 10000}만") if int(k) % 10000 == 0 else k
     return f"{base} ({ {'rand': 'ctx', 'knn': 'kNN', 'part': 'part'}[mode] } {size})"
 
 
@@ -120,14 +123,19 @@ def fmt_num(v: float) -> str:
     return f"{v:,.2f}" if abs(v) > 1000 else f"{v:.5g}"
 
 
-def summary(d: pd.DataFrame) -> list[str]:
-    """모델별 종합. 컨텍스트 변형은 기본 모델로 합치고 대회마다 CV 가 가장 좋은 설정 한 행만 (점수·시간은 그 행).
-    최고 LB 는 제출한 모든 설정 중 최고 (최고 CV 설정이 미제출이면 그 행만으로는 LB 가 비거나 나빠 보임)."""
+def best_per_base(d: pd.DataFrame) -> pd.DataFrame:
+    """컨텍스트 변형은 기본 모델로 합치고 대회마다 CV 가 가장 좋은 설정 한 행만. cv_rank 는 그 안에서 다시 매김."""
     b = d.sort_values("better", ascending=False).drop_duplicates(["comp", "base"]).copy()
     b["cv_rank"] = b.groupby("comp").better.rank(ascending=False, method="min").astype(int)
     b["n_models"] = b.groupby("comp").model.transform("size")
+    return b
+
+
+def summary_rows(d: pd.DataFrame) -> pd.DataFrame:
+    """모델별 종합, 평균 CV 순위 순. 점수·시간은 대회별 최고 CV 설정 행 기준.
+    최고 LB 는 제출한 모든 설정 중 최고 (최고 CV 설정이 미제출이면 그 행만으로는 LB 가 비거나 나빠 보임)."""
     rows = []
-    for m, g in b.groupby("base"):
+    for m, g in best_per_base(d).groupby("base"):
         best_lb = d.loc[d.base == m, "top_pct"].min()  # 제출한 모든 설정 중
         rows.append(dict(model=m, family=g.family.iloc[0], n=len(g), wins=int((g.cv_rank == 1).sum()),
                          pct=((g.cv_rank - 1) / (g.n_models - 1).clip(lower=1)).mean(), lb=best_lb,
@@ -135,9 +143,13 @@ def summary(d: pd.DataFrame) -> list[str]:
                          lb_other=pd.notna(best_lb) and not g.top_pct.min() <= best_lb,
                          s1k=g[g.env.isin(["DBX H100", "DBX CPU4"])].s_per_1k.median(), s1k_all=g.s_per_1k.median(),
                          ctx=int(g.model.str.contains("@").sum())))
+    return pd.DataFrame(rows).sort_values("pct")
+
+
+def summary(d: pd.DataFrame) -> list[str]:
     out = ["| 모델 | 계열 | 대회 수 | CV 1위 | 평균 CV 순위 | 최고 LB (상위 %) | s/1K (DBX) | s/1K (전체) | 컨텍스트 변형 |",
            "|---|---|---|---|---|---|---|---|---|"]
-    for r in pd.DataFrame(rows).sort_values("pct").itertuples():
+    for r in summary_rows(d).itertuples():
         lb = fmt_pct(r.lb) + ("*" if r.lb_other else "") if pd.notna(r.lb) else "—"
         cells = [r.model, r.family, r.n, r.wins, f"{r.pct:.2f}", lb,
                  f"{r.s1k:.2f}" if pd.notna(r.s1k) else "—", f"{r.s1k_all:.2f}" if pd.notna(r.s1k_all) else "—",
@@ -226,15 +238,43 @@ def render(d: pd.DataFrame, sizes: dict) -> str:
     return "\n".join([head, *summary(d), "", "## 대회별\n", *per_comp(d, sizes)])
 
 
+def records(df: pd.DataFrame) -> list[dict]:
+    return json.loads(df.to_json(orient="records", force_ascii=False))  # NaN → null
+
+
+def render_html(d: pd.DataFrame, sizes: dict) -> str:
+    """docs/leaderboard.html: md 와 같은 표를 JSON 으로 넣고 정렬·필터·차트는 템플릿의 JS 가 그림 (외부 의존성 없음)."""
+    comps = sorted(d.comp.unique(), key=lambda c: (sizes[c] or (0, 0))[0])
+    # base_rank = 종합·히트맵용 순위 (기본 모델끼리, 대회별 최고 설정 행에만). cv_rank 는 설정별 순위
+    best = best_per_base(d)[["comp", "model", "cv_rank"]].rename(columns={"cv_rank": "base_rank"})
+    runs = d.merge(best, on=["comp", "model"], how="left").assign(label_en=lambda x: x.model.map(lambda m: label(m, en=True)))
+    runs = runs[["comp", "model", "label", "label_en", "base", "family", "cv", "cv_std", "cv_rank", "base_rank", "public", "rank",
+                 "teams", "top_pct", "seconds", "s_per_1k", "env"]]
+    caps = {c: n for c in comps if (n := load_competition(c).tfm_max_rows)}
+    data = dict(
+        date=pd.Timestamp.now().strftime("%Y-%m-%d"),
+        comps=[dict(id=c, title=TITLES.get(c, c), metric=(m := d[d.comp == c].metric.iloc[0]), higher=METRICS[m][1],
+                    train=sizes[c] and sizes[c][0], test=sizes[c] and sizes[c][1], cap=caps.get(c)) for c in comps],
+        rerun=rerun_status(d, caps),  # md 해석 주의와 같은 문구 (예: `kumo 6/6, tabicl 3/6 (...)`)
+        runs=records(runs.sort_values(["comp", "cv_rank"])),
+        summary=records(summary_rows(d)),
+    )
+    payload = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")  # <script> 안에 넣으므로 </script> 방지
+    return TEMPLATE.read_text(encoding="utf-8").replace("__DATA__", payload, 1)
+
+
 def main(argv: list[str] | None = None):
     ap = argparse.ArgumentParser(prog="km board")
-    ap.add_argument("-o", "--out", default=str(OUT), help="출력 경로 (- 면 화면에 출력). 기본: docs/leaderboard.md")
+    ap.add_argument("-o", "--out", default=str(OUT), help="md 출력 경로 (- 면 화면에 출력). 기본: docs/leaderboard.md")
+    ap.add_argument("--html", help="HTML 출력 경로 (- 면 생략). 기본: md 와 같은 위치·이름의 .html (-o - 면 생략)")
     args = ap.parse_args(argv)
-    text = render(*load())
+    html = args.html or ("-" if args.out == "-" else str(Path(args.out).with_suffix(".html")))
+    d, sizes = load()
+    text = render(d, sizes)
+    outs = ([] if args.out == "-" else [(Path(args.out), text)]) + ([] if html == "-" else [(Path(html), render_html(d, sizes))])
+    for out, body in outs:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(body, encoding="utf-8")
+        print(f"저장: {out}", file=sys.stderr if args.out == "-" else sys.stdout)
     if args.out == "-":
         print(text)
-        return
-    out = Path(args.out)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(text)
-    print(f"저장: {out}")
