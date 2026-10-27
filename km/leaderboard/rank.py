@@ -52,7 +52,7 @@ def kaggle_api():
         api = KaggleApi()
         api.authenticate()
         return api
-    except Exception as e:
+    except (Exception, SystemExit) as e:  # 인증 정보가 없으면 authenticate() 가 exit(1)
         raise RuntimeError(f"Kaggle 인증 실패: {e!r}") from e
 
 
@@ -68,11 +68,12 @@ def sdk():
     """kagglesdk 대회 API 클라이언트. km lb 한 번에 세션 하나 (세션은 프로세스가 끝날 때까지 씀)."""
     try:
         client = kaggle_api().build_kaggle_client().__enter__()
+        # kagglesdk 는 요청에 타임아웃을 안 줌 → 응답이 멈추면 km lb 전체가 멈추지 않도록 (예전 CLI 호출은 600초).
+        # 비공개 속성이라 kagglesdk 가 바뀌면 여기서 깨짐 → 이 try 안에서 RuntimeError 로
+        session = client.http_client()._session
+        session.send = functools.partial(session.send, timeout=300)
     except Exception as e:
         raise RuntimeError(f"kagglesdk 준비 실패: {e!r}") from e
-    # kagglesdk 는 요청에 타임아웃을 안 줌 → 응답이 멈추면 km lb 전체가 멈추지 않도록 (예전 CLI 호출은 600초)
-    session = client.http_client()._session
-    session.send = functools.partial(session.send, timeout=300)
     return client.competitions.competition_api_client
 
 
@@ -91,6 +92,26 @@ def sdk_call(what: str, fn, req):
             raise RuntimeError(f"{what} 실패: {e}") from e
 
 
+def pages(what: str, fn, req_cls, comp: str):
+    """페이지 끝까지 응답을 하나씩 (200개씩). 제출 기록·리더보드 조회 응답은 둘 다 submissions + next_page_token.
+    같은 토큰이 다시 오거나 빈 페이지에 토큰이 붙어 오면 RuntimeError (같은 페이지를 끝없이 다시 받지 않도록)."""
+    seen, token = set(), None
+    while True:
+        req = req_cls()
+        req.competition_name = comp
+        req.page_size = 200
+        if token:
+            req.page_token = token
+        resp = sdk_call(what, fn, req)
+        yield resp
+        token = resp.next_page_token
+        if not token:
+            return
+        if token in seen or not resp.submissions:
+            raise RuntimeError(f"{what} 실패: 페이지가 끝나지 않음")
+        seen.add(token)
+
+
 def submissions(comp: str) -> list[dict]:
     """제출 기록 전부 (페이지 끝까지). 읽지 못하면 빈 목록 대신 예외 → `--submit` 이 이미 낸 모델을 다시 내지 않도록.
     키는 예전 `kaggle competitions submissions --format json` 과 같음 + teamName. date 는 UTC naive isoformat.
@@ -99,20 +120,15 @@ def submissions(comp: str) -> list[dict]:
     """
     from kagglesdk.competitions.types.competition_api_service import ApiListSubmissionsRequest
 
-    out, token = [], None
-    while True:
-        req = ApiListSubmissionsRequest()
-        req.competition_name = comp
-        req.page_size = 200
-        if token:
-            req.page_token = token
-        resp = sdk_call("제출 기록 조회", sdk().list_submissions, req)
-        out += [dict(ref=s.ref, fileName=s.file_name, date=s.date.isoformat(), description=s.description,
-                     status=s.status.name, publicScore=s.public_score, privateScore=s.private_score, teamName=s.team_name)
-                for s in resp.submissions or []]
-        token = resp.next_page_token
-        if not token:
-            return out
+    out = []
+    for resp in pages("제출 기록 조회", sdk().list_submissions, ApiListSubmissionsRequest, comp):
+        for s in resp.submissions or []:
+            if s.date is None:
+                raise RuntimeError(f"제출 {s.ref} 의 시각이 없음")
+            out.append(dict(ref=s.ref, fileName=s.file_name, date=s.date.isoformat(), description=s.description,
+                            status=s.status.name, publicScore=s.public_score, privateScore=s.private_score,
+                            teamName=s.team_name))
+    return out
 
 
 def public_leaderboard(comp: str) -> pd.DataFrame:
@@ -122,12 +138,15 @@ def public_leaderboard(comp: str) -> pd.DataFrame:
     req = ApiDownloadLeaderboardRequest()
     req.competition_name = comp
     data = sdk_call("리더보드 다운로드", lambda r: sdk().download_leaderboard(r).content, req)
-    try:
+    try:  # pandas 의 빈 파일·파싱·인코딩 오류는 모두 ValueError
         with zipfile.ZipFile(io.BytesIO(data)) as z:
             with z.open(next(n for n in z.namelist() if n.endswith(".csv"))) as f:
-                return pd.read_csv(f, encoding="utf-8-sig")
-    except (zipfile.BadZipFile, StopIteration) as e:
+                lb = pd.read_csv(f, encoding="utf-8-sig")
+    except (zipfile.BadZipFile, StopIteration, ValueError) as e:
         raise RuntimeError(f"리더보드 파일을 읽지 못함: {e!r}") from e
+    if missing := {"Score", "TeamMemberUserNames"} - set(lb.columns):
+        raise RuntimeError(f"리더보드 파일에 열이 없음: {sorted(missing)}")
+    return lb
 
 
 def deadline(comp: str) -> datetime:
@@ -146,21 +165,12 @@ def private_leaderboard(comp: str) -> pd.DataFrame:
     """리더보드 조회 API 의 기본 응답 전 페이지 (TeamId, TeamName, Score). private 이 공개됐으면 private, 아니면 public. 종료 대회에만 부름."""
     from kagglesdk.competitions.types.competition_api_service import ApiGetLeaderboardRequest
 
-    rows, token = [], None
-    while True:
-        req = ApiGetLeaderboardRequest()
-        req.competition_name = comp
-        req.page_size = 200
-        if token:
-            req.page_token = token
-        resp = sdk_call("리더보드 조회", sdk().get_leaderboard, req)
+    rows = []
+    for resp in pages("리더보드 조회", sdk().get_leaderboard, ApiGetLeaderboardRequest, comp):
         try:
             rows += [(s.team_id, s.team_name, float(s.score)) for s in resp.submissions or [] if s.score not in (None, "")]
         except ValueError as e:
             raise RuntimeError(f"리더보드 점수를 읽지 못함: {e}") from e
-        token = resp.next_page_token
-        if not token:
-            break
     return pd.DataFrame(rows, columns=["TeamId", "TeamName", "Score"])
 
 
