@@ -192,7 +192,7 @@ const I18N = {
       "종합·히트맵은 모델마다 대회별로 CV 가 가장 좋은 설정 하나만 셈 (컨텍스트 변형 <code>ctx 전체</code>·<code>ctx 20만</code>·<code>kNN 1000</code> 포함). 종합의 최고 LB 는 제출한 모든 설정 중 최고 (<b>*</b> = 최고 CV 설정이 아닌 설정의 제출).",
       "<b>시간</b> = 5-fold 합계 (학습 + 검증·테스트 예측). <b>s/1K</b> = 시간 ÷ 예측 행 수 × 1000 (예측 행 = 학습 행 + 테스트 행 × 5). 작은 대회는 고정 비용 때문에 s/1K 가 부풀려짐.",
       "환경이 다르면 시간 비교 불가: DBX H100 (TFM) · DBX CPU4 (GBDT, serverless 4코어) · DBX A10G · Kaggle T4. <b>s/1K (DBX)</b> = H100·CPU4 실행만의 중앙값.",
-      "<b>LB</b> = Kaggle public 점수 기준 위치. 종료 대회는 늦은 제출이라 실제 순위표에는 없음. — = 미제출.",
+      "<b>LB</b> = Kaggle 리더보드 위치. 진행 중 대회는 public 점수, 종료 대회는 private 점수 기준 (대회별 상세의 <code>LB 기준</code>). 종료 대회는 늦은 제출이라 실제 순위표에는 없음. — = 미제출.",
       "TFM 컨텍스트 상한 <span class=\"caps\"></span> 은 무작위 샘플. 상한을 풀거나 늘려 다시 돌린 모델: <span class=\"rerun\"></span>. 다시 돌리지 않은 모델은 상한 그대로라 그 대회들의 순위 일부는 모델 차이가 아니라 컨텍스트 차이.",
       "Otto·GiveMeSomeCredit·Amazon 등 공개 데이터는 TFM 사전학습에 들어갔을 수 있어 CV 가 부풀었을 수 있음 (LB 는 영향 없음).",
     ],
@@ -211,6 +211,7 @@ const I18N = {
     col: { model: "모델", family: "계열", n: "대회 수", wins: "CV 1위", pct: "평균 CV 순위", lb: "최고 LB (상위 %)",
            s1k: "s/1K (DBX)", s1k_all: "s/1K (전체)", ctx: "컨텍스트 변형", lbRank: "LB 순위", time: "시간", env: "환경" },
     modelRank: "모델 순위", cfgRank: "설정별 CV 순위", bestLb: "최고 LB",
+    basis: { public: "LB 기준 public (진행 중)", private: "LB 기준 private (종료)" }, lbScore: "LB 점수",
     rows: n => `${n}행`, trainTest: (a, b) => `학습 ${a}행 · 테스트 ${b}행`, cap: n => `TFM 컨텍스트 상한 ${n}행`, none: "없음",
     better: h => h ? "오른쪽이 좋음 →" : "← 왼쪽이 좋음", logAxis: "s/1K (로그) →", fast: "← 빠름",
     focus: b => `강조: ${b} (다시 누르면 해제)`, focusTitle: "이 모델 강조",
@@ -225,7 +226,7 @@ const I18N = {
       "Summary and heatmap count only each model's best-CV configuration per competition (context variants <code>ctx full</code>·<code>ctx 200K</code>·<code>kNN 1000</code> included). Best LB in the summary is the best over every submitted configuration (<b>*</b> = from a configuration other than the best-CV one).",
       "<b>Time</b> = total over 5 folds (fit + validation/test prediction). <b>s/1K</b> = time ÷ predicted rows × 1000 (predicted rows = train rows + test rows × 5). Fixed overhead inflates s/1K on small competitions.",
       "Times are not comparable across environments: DBX H100 (TFM) · DBX CPU4 (GBDT, serverless 4 cores) · DBX A10G · Kaggle T4. <b>s/1K (DBX)</b> = median over H100·CPU4 runs only.",
-      "<b>LB</b> = position by Kaggle public score. Closed competitions only take late submissions, so these entries are not on the real leaderboard. — = not submitted.",
+      "<b>LB</b> = position on the Kaggle leaderboard: by public score for ongoing competitions, by private score for closed ones (<code>LB basis</code> in the per-competition detail). Closed competitions only take late submissions, so these entries are not on the real leaderboard. — = not submitted.",
       "The TFM context cap <span class=\"caps\"></span> uses a random sample. Models rerun with the cap lifted or raised: <span class=\"rerun\"></span>. Models not rerun keep the cap, so part of the ranking on those competitions reflects context size, not the model.",
       "Public datasets such as Otto·GiveMeSomeCredit·Amazon may be in TFM pretraining data, which could inflate CV (LB is unaffected).",
     ],
@@ -244,6 +245,7 @@ const I18N = {
     col: { model: "Model", family: "Family", n: "Comps", wins: "CV wins", pct: "Mean CV rank", lb: "Best LB (top %)",
            s1k: "s/1K (DBX)", s1k_all: "s/1K (all)", ctx: "Context variants", lbRank: "LB rank", time: "Time", env: "Env" },
     modelRank: "Model rank", cfgRank: "CV rank (per config)", bestLb: "Best LB",
+    basis: { public: "LB basis: public (ongoing)", private: "LB basis: private (closed)" }, lbScore: "LB score",
     rows: n => `${n} rows`, trainTest: (a, b) => `train ${a} rows · test ${b} rows`, cap: n => `TFM context cap ${n} rows`, none: "none",
     better: h => h ? "higher is better →" : "← lower is better", logAxis: "s/1K (log) →", fast: "← faster",
     focus: b => `Highlighting ${b} (click again to clear)`, focusTitle: "Highlight this model",
@@ -301,7 +303,7 @@ function hover(node, fn) {
 }
 const runTip = (r, c) => [
   [`CV ${c.metric}`, `${num(r.cv)} ± ${num(r.cv_std, r.cv)}`], [T().cfgRank, `${r.cv_rank}`],
-  ["LB public", pub(r.public)], [T().col.lbRank, lbRank(r)],
+  [T().lbScore, pub(r.lb_score)], [T().col.lbRank, lbRank(r)],
   [T().col.time, `${int(r.seconds)}s`], ["s/1K", fix2(r.s_per_1k)], [T().col.env, envName(r.env)]];
 
 // ---- 정렬 가능한 표 ----
@@ -518,6 +520,7 @@ function renderCompTable() {
   if (c.train) lines.push(L.trainTest(fmtInt(c.train), fmtInt(c.test)));
   lines.push(`${c.metric} ${c.higher ? "↑" : "↓"}`);
   if (c.cap) lines.push(L.cap(fmtInt(c.cap)));
+  if (c.basis) lines.push(L.basis[c.basis] || c.basis);
   $("compMeta").textContent = lines.join(" · ");
   const rows = compRuns();
   const top = Math.min(...rows.map(r => r.cv_rank));
@@ -526,7 +529,7 @@ function renderCompTable() {
     { key: "label", name: C.model, left: true, value: lbl, cell: (td, r) => modelCell(td, lbl(r), r.base, r.family, r.cv_rank === top) },
     { key: "cv", name: `CV ${c.metric}`, fmt: v => num(v), value: r => c.higher ? -r.cv : r.cv },
     { key: "cv_std", name: "± std", fmt: (v, r) => num(v, r.cv) },
-    { key: "public", name: "LB public", fmt: pub, value: r => r.public == null ? null : c.higher ? -r.public : r.public },
+    { key: "lb_score", name: L.lbScore, fmt: pub, value: r => r.lb_score == null ? null : c.higher ? -r.lb_score : r.lb_score },
     { key: "rank", name: C.lbRank, cell: (td, r) => { td.textContent = lbRank(r); } },
     { key: "seconds", name: C.time, fmt: v => int(v) + "s" },
     { key: "s_per_1k", name: "s/1K", fmt: fix2 },

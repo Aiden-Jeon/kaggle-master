@@ -251,14 +251,16 @@ def render_html(d: pd.DataFrame, sizes: dict) -> str:
     comps = sorted(d.comp.unique(), key=lambda c: (sizes[c] or (0, 0))[0])
     # base_rank = 종합·히트맵용 순위 (기본 모델끼리, 대회별 최고 설정 행에만). cv_rank 는 설정별 순위
     best = best_per_base(d)[["comp", "model", "cv_rank"]].rename(columns={"cv_rank": "base_rank"})
-    runs = d.merge(best, on=["comp", "model"], how="left").assign(label_en=lambda x: x.model.map(lambda m: label(m, en=True)))
-    runs = runs[["comp", "model", "label", "label_en", "base", "family", "cv", "cv_std", "cv_rank", "base_rank", "public", "rank",
+    runs = d.merge(best, on=["comp", "model"], how="left").assign(label_en=lambda x: x.model.map(lambda m: label(m, en=True)),
+                                                                   lb_score=d.private.where(d.basis == "private", d.public))  # md 와 같은 기준 점수
+    basis = {c: b.iloc[-1] for c, b in d.dropna(subset=["basis"]).groupby("comp").basis}
+    runs = runs[["comp", "model", "label", "label_en", "base", "family", "cv", "cv_std", "cv_rank", "base_rank", "lb_score", "rank",
                  "teams", "top_pct", "seconds", "s_per_1k", "env"]]
     caps = {c: n for c in comps if (n := load_competition(c).tfm_max_rows)}
     data = dict(
         date=pd.Timestamp.now().strftime("%Y-%m-%d"),
         comps=[dict(id=c, title=TITLES.get(c, c), metric=(m := d[d.comp == c].metric.iloc[0]), higher=METRICS[m][1],
-                    train=sizes[c] and sizes[c][0], test=sizes[c] and sizes[c][1], cap=caps.get(c)) for c in comps],
+                    train=sizes[c] and sizes[c][0], test=sizes[c] and sizes[c][1], cap=caps.get(c), basis=basis.get(c)) for c in comps],
         rerun=rerun_status(d, caps),  # md 해석 주의와 같은 문구 (예: `kumo 6/6, tabicl 3/6 (...)`)
         runs=records(runs.sort_values(["comp", "cv_rank"])),
         summary=records(summary_rows(d)),
