@@ -197,8 +197,7 @@ const I18N = {
     low: "하위", high: "상위", notRun: "· = 미실행",
     speed: "속도 vs 성능",
     speedHelp: "환경별 탭. 가로 = 그 환경에서 잰 s/1K 중앙값 (로그, 왼쪽이 빠름. 축 범위는 탭끼리 같음), 세로 = 평균 CV 순위 (전체 대회 기준, 위가 좋음). 그 환경에서 돌린 적 없는 모델은 빠짐.",
-    envNote: { "DBX H100": "2026-10-23 이후 Databricks GPU 1×H100. TFM 만 여기서 돌림.",
-               "DBX CPU4": "2026-10-23 이후 Databricks serverless CPU 4코어. GBDT 만 여기서 돌림.",
+    envNote: { "DBX": "2026-10-23 이후 Databricks. TFM 은 GPU 1×H100, GBDT 는 serverless CPU 4코어 (종합 표의 s/1K (DBX) 와 같은 값).",
                "DBX A10G": "2026-10-22 Databricks GPU A10G. GBDT 도 같은 GPU 노드에서 돌림.",
                "Kaggle T4": "Kaggle Notebook (GPU T4). GBDT 도 같은 노트북에서 돌림." },
     envRuns: "이 환경 실행 수", noRuns: "이 환경에서 돌린 모델 없음", detail: "대회별", variants: "컨텍스트 변형 행도 보기", whisker: "가로 막대 = ± fold std",
@@ -231,8 +230,7 @@ const I18N = {
     low: "Worse", high: "Better", notRun: "· = not run",
     speed: "Speed vs performance",
     speedHelp: "One tab per environment. x = median s/1K measured there (log, left is faster; same axis range on every tab), y = mean CV rank (over all competitions, top is better). Models never run in that environment are omitted.",
-    envNote: { "DBX H100": "Databricks GPU 1×H100, since 2026-10-23. Only TFMs ran here.",
-               "DBX CPU4": "Databricks serverless CPU, 4 cores, since 2026-10-23. Only GBDTs ran here.",
+    envNote: { "DBX": "Databricks since 2026-10-23: TFMs on GPU 1×H100, GBDTs on serverless CPU with 4 cores (same values as s/1K (DBX) in the summary).",
                "DBX A10G": "Databricks GPU A10G, 2026-10-22. GBDTs ran on the same GPU node.",
                "Kaggle T4": "Kaggle Notebook (GPU T4). GBDTs ran in the same notebook." },
     envRuns: "Runs in this env", noRuns: "No models ran in this environment", detail: "By competition", variants: "Show context-variant rows", whisker: "bar = ± fold std",
@@ -400,12 +398,16 @@ function renderHeat() {
 
 // ---- 산점도: 속도 vs 성능 (환경별 탭) ----
 // 종합과 같이 모델마다 대회별 최고 설정 행만 보고, 환경마다 s/1K 중앙값. 로그 축이라 0 이하는 뺌
-const ENV_ORDER = ["DBX H100", "DBX CPU4", "DBX A10G", "Kaggle T4"];
-const BEST = RUNS.filter(r => r.base_rank != null && r.s_per_1k > 0);
-const ENVS = [...new Set(BEST.map(r => r.env))].sort((a, b) => (ENV_ORDER.indexOf(a) + 1 || 99) - (ENV_ORDER.indexOf(b) + 1 || 99));
+// DBX H100 (TFM) 과 DBX CPU4 (GBDT) 는 한 탭: 같은 시기 Databricks 실행이고 모델마다 둘 중 하나에서만 돌림
+const ENV_TAB = { "DBX H100": "DBX", "DBX CPU4": "DBX" };
+const ENV_LABEL = { DBX: "DBX (H100 · CPU4)" };
+const ENV_ORDER = ["DBX", "DBX A10G", "Kaggle T4"];
+const BEST = RUNS.filter(r => r.base_rank != null && r.s_per_1k > 0).map(r => ({ ...r, tab: ENV_TAB[r.env] || r.env }));
+const tabName = e => ENV_LABEL[e] || envName(e);
+const ENVS = [...new Set(BEST.map(r => r.tab))].sort((a, b) => (ENV_ORDER.indexOf(a) + 1 || 99) - (ENV_ORDER.indexOf(b) + 1 || 99));
 const median = a => { const s = [...a].sort((x, y) => x - y), k = s.length >> 1; return s.length % 2 ? s[k] : (s[k - 1] + s[k]) / 2; };
 const SPEED = Object.fromEntries(ENVS.map(e => [e, Object.fromEntries(SUMMARY.flatMap(s => {
-  const v = BEST.filter(r => r.env === e && r.base === s.model).map(r => r.s_per_1k);
+  const v = BEST.filter(r => r.tab === e && r.base === s.model).map(r => r.s_per_1k);
   return v.length ? [[s.model, { s1k: median(v), n: v.length }]] : [];
 }))]));
 const SPEED_LOG = Object.values(SPEED).flatMap(o => Object.values(o).map(x => Math.log10(x.s1k)));
@@ -451,7 +453,7 @@ function renderScatter() {
     t.setAttribute("x", best.x); t.setAttribute("y", best.y + 11);
     placed.push(best);
     const hit = el("svg:circle", { class: "hit", cx, cy, r: 14, tabindex: 0 }, g);
-    hover(hit, e => showTip(e, p.model, [[`s/1K (${envName(state.speed)})`, fix2(sp[p.model].s1k)], [T().envRuns, String(sp[p.model].n)],
+    hover(hit, e => showTip(e, p.model, [[`s/1K (${tabName(state.speed)})`, fix2(sp[p.model].s1k)], [T().envRuns, String(sp[p.model].n)],
                                         [C.pct, fix2(p.pct)], [C.n, String(p.n)], [C.wins, String(p.wins)], [T().bestLb, pct(p.lb)]]));
     hit.addEventListener("click", () => setFocus(state.focus === p.model ? null : p.model));
   }
@@ -561,7 +563,7 @@ function renderText() {
     for (const s of li.querySelectorAll(".caps")) s.textContent = capText;
   }
   for (const b of $("lang").children) b.setAttribute("aria-pressed", b.dataset.v === state.lang);
-  for (const b of $("speedEnv").children) b.textContent = envName(b.dataset.v);
+  for (const b of $("speedEnv").children) b.textContent = tabName(b.dataset.v);
 }
 
 // ---- 컨트롤 ----
@@ -574,7 +576,7 @@ function seg(id, onPick) {
   });
 }
 seg("family", v => { state.family = v; renderAll(); });
-for (const e of ENVS) el("button", { "data-v": e, "aria-pressed": false }, $("speedEnv"), envName(e));
+for (const e of ENVS) el("button", { "data-v": e, "aria-pressed": false }, $("speedEnv"), tabName(e));
 state.speed = ENVS[0];
 $("speedEnv").firstChild?.setAttribute("aria-pressed", true);
 seg("speedEnv", v => { state.speed = v; renderScatter(); });
