@@ -3,6 +3,7 @@
 예: uv run km databricks spaceship-titanic lgbm catboost tabpfn_v2 tabicl
     uv run km databricks playground-series-s6e10 tabpfn_v2 --no-wait
     uv run km databricks playground-series-s6e10 --fetch <run_id>
+    uv run km databricks allstate-claims-severity mitra_ft --split-folds   # fold 마다 GPU 작업 하나씩 동시에
 
 준비: databricks CLI 로그인 + databricks.local.yaml (환경별 설정이라 git 에서 제외)
     profile: <~/.databrickscfg 프로필>
@@ -20,6 +21,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import re
 import shutil
@@ -32,7 +34,7 @@ from pathlib import Path
 
 import yaml
 
-from km.core.competition import ROOT, load_competition
+from km.core.competition import ROOT, load_competition, load_data
 from km.core.download import download
 from km.core.results import RESULTS, merge_results
 from km.models import GATED, base_name
@@ -363,7 +365,8 @@ def fetch(profile: str, run_id: str):
     run = runs[run_id]
     if run.get("code"):  # CPU 작업 코드 (Workspace). 끝난 작업에만 fetch 하므로 더는 필요 없음
         databricks(profile, "workspace", "delete", "--recursive", run["code"], capture=True, check=False)
-    if res.returncode != 0 or not (dl / "results" / "results.csv").exists():
+    # --fold 실행은 results.csv 없이 <대회>/<모델>/folds/ 만 옴
+    if res.returncode != 0 or not any(p.name in ("results.csv", "meta.json") for p in (dl / "results").rglob("*")):
         logs = (f"{run['url']} 또는 databricks jobs get-run {run_id} -p {profile}" if run.get("kind") == "cpu"
                 else f"databricks air logs {run_id} -p {profile}")
         print(f"results 없음. 로그 확인: {logs}\n{res.stderr.strip()}")
@@ -396,7 +399,12 @@ def main(argv: list[str] | None = None):
     ap.add_argument("--tag", default="", help="실행 이름 태그 (MLflow run 이름·결과 폴더에 붙음)")
     ap.add_argument("--profile", help=f"databricks 프로필 ({LOCAL_CONFIG.name} 값을 덮어씀)")
     ap.add_argument("--volume", help=f"UC Volume 경로 ({LOCAL_CONFIG.name} 값을 덮어씀)")
+    ap.add_argument("--split-folds", action="store_true",
+                    help="GPU 모델을 fold 마다 작업 하나로 나눠 동시에 제출 (GPU 작업이 fold 수만큼). 다 끝나면 fold 를 합쳐 "
+                         "results.csv 에 기록. 벽시계 시간은 줄지만 GPU 시간은 작업마다 준비 시간만큼 늘어남")
     args = ap.parse_args(argv)
+    if args.split_folds and (args.fold is not None or args.max_folds):
+        ap.error("--split-folds 는 --fold·--max-folds 와 같이 쓸 수 없음")
 
     cfg = settings(args)
     comp = load_competition(args.comp)  # 설정 존재 확인
@@ -409,7 +417,13 @@ def main(argv: list[str] | None = None):
     gpu = [m for m in args.models if m not in cpu]
     data = ensure_data(comp, cfg["profile"], cfg["volume"])
     runs = []  # (run_id, CPU 작업 여부)
-    if gpu:
+    if gpu and args.split_folds:
+        for k in range(comp.cv["n_splits"]):  # 같은 초에 제출해도 실행 이름이 겹치지 않게 태그에 fold 번호
+            fold_args = copy.copy(args)
+            fold_args.fold = k
+            runs.append((submit(cfg, comp.name, data, run_argv(fold_args, gpu), gpu, cfg["accelerator"], args.timeout,
+                                f"{args.tag + '-' if args.tag else ''}fold{k}"), False))
+    elif gpu:
         runs.append((submit(cfg, comp.name, data, run_argv(args, gpu), gpu, cfg["accelerator"], args.timeout,
                             args.tag), False))
     if cpu:
@@ -431,5 +445,15 @@ def main(argv: list[str] | None = None):
         print("\n중단. 작업은 계속 실행 중 → 끝난 뒤 수집:")
         for rid, _ in runs:
             print(f"  km databricks {comp.name} --fetch {rid}")
+        if args.split_folds:
+            print(f"  km run {comp.name} {' '.join(gpu)} --merge-folds --where databricks")
         raise SystemExit(130)
+    if args.split_folds:
+        from km.runner.run import merge_folds, target
+
+        y, _ = target(comp, load_data(comp)[0])
+        failed = [name for name in gpu if not merge_folds(comp, name, y, where="databricks")]
+        if failed:
+            print(f"합치지 못한 모델: {', '.join(failed)} → 빠진 fold 를 다시 돌린 뒤 "
+                  f"km run {comp.name} {' '.join(failed)} --merge-folds --where databricks")
 

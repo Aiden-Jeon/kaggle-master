@@ -1,6 +1,7 @@
 """고정 CV fold 로 모델을 돌려 OOF/테스트 예측과 점수를 저장.
 
 예: uv run km run spaceship-titanic lgbm catboost tabpfn_v2 tabicl
+fold 나눠 실행: 같은 명령에 --fold 0 … --fold 4 (따로따로 실행) → --merge-folds 로 합쳐 results.csv 에 한 줄
 """
 
 from __future__ import annotations
@@ -9,6 +10,7 @@ import argparse
 import json
 import os
 import queue
+import shutil
 import subprocess
 import sys
 import threading
@@ -89,9 +91,9 @@ def run_parallel(args: argparse.Namespace, n_gpus: int) -> list[str]:
     return failed
 
 
-def run_model(name, comp, X, y, X_test, cat_cols, folds, max_folds=None, no_test=False, classes=None):
+def run_model(name, comp, X, y, X_test, cat_cols, folds, max_folds=None, no_test=False, classes=None, fold=None):
     n_splits = folds.max() + 1
-    run_folds = range(n_splits if max_folds is None else max_folds)
+    run_folds = [fold] if fold is not None else range(n_splits if max_folds is None else max_folds)
     n_out = () if comp.task == "regression" else (len(np.unique(y)),)
     oof = np.full((len(y), *n_out), np.nan)
     test_pred = np.zeros((len(X_test), *n_out))
@@ -123,25 +125,107 @@ def run_model(name, comp, X, y, X_test, cat_cols, folds, max_folds=None, no_test
     return oof, test_pred, scores, fold_scores, time.time() - t0
 
 
+def target(comp, train):
+    """학습 타깃 (분류는 0..n-1 인코딩 + 원래 클래스, 회귀는 target_transform 적용)."""
+    y_raw = train[comp.target]
+    if comp.is_classification:
+        enc = LabelEncoder().fit(y_raw)
+        return enc.transform(y_raw), enc.classes_.tolist()
+    y = y_raw.to_numpy(dtype=float)
+    return (TRANSFORMS[comp.target_transform][0](y) if comp.target_transform else y), None
+
+
+def utc_now() -> str:
+    # UTC (Kaggle 제출 시각과 비교하므로). 2026-10-22 로컬 실행 4행은 KST 였다가 UTC 로 고침
+    return datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
+
+
+def save_run(comp, name, oof, test_pred, scores, fold_scores, secs, classes, note, no_test, where=None):
+    """전체 실행 결과: results/<대회>/<모델>/{oof,test}.npy·meta.json·test.json + results.csv 한 줄."""
+    out = RESULTS / comp.name / name
+    out.mkdir(parents=True, exist_ok=True)
+    np.save(out / "oof.npy", oof)
+    meta = dict(comp=comp.name, model=name, metric=comp.metric, scores=scores, fold_scores=fold_scores,
+                seconds=round(secs, 1), classes=classes, n_folds=len(fold_scores), note=note, timestamp=utc_now())
+    (out / "meta.json").write_text(json.dumps(meta, indent=2, default=str))
+    if not no_test:  # 예측과 그 출처(km submit 이 제출 설명에 적음)는 함께만 씀
+        clear_test_info(out)
+        np.save(out / "test.npy", test_pred)
+        write_test_info(out, meta["timestamp"], scores[comp.metric], len(fold_scores), classes)
+
+    row = dict(timestamp=meta["timestamp"], comp=comp.name, model=name, metric=comp.metric,
+               cv=scores[comp.metric], cv_std=float(np.std(fold_scores)), n_folds=len(fold_scores),
+               seconds=meta["seconds"], **{f"cv_{k}": v for k, v in scores.items() if k != comp.metric},
+               note=note, test=not no_test, **({"where": where} if where else {}))
+    append_rows(pd.DataFrame([row]))
+    print(f"=> {name}: {comp.metric}={scores[comp.metric]:.5f} ± {row['cv_std']:.5f}  ({secs:.0f}s)\n")
+
+
+def save_fold(comp, name, fold, oof, test_pred, fold_score, secs, classes, note, no_test):
+    """--fold 실행 결과: results/<대회>/<모델>/folds/<k>/ (results.csv 에는 merge_folds 가 합친 뒤 씀)."""
+    out = RESULTS / comp.name / name / "folds" / str(fold)
+    out.mkdir(parents=True, exist_ok=True)
+    np.save(out / "oof.npy", oof)
+    if not no_test:
+        np.save(out / "test.npy", test_pred)
+    meta = dict(fold=fold, fold_score=fold_score, seconds=round(secs, 1), classes=classes, note=note,
+                no_test=no_test, timestamp=utc_now())
+    (out / "meta.json").write_text(json.dumps(meta, indent=2, default=str))
+    print(f"=> {name}: fold {fold} {comp.metric}={fold_score:.5f}  ({secs:.0f}s) → {out}\n")
+
+
+def merge_folds(comp, name, y, where=None) -> bool:
+    """folds/<k>/ 가 전부 있으면 합쳐 save_run (OOF 는 fold 별로 채우고 test 는 평균 = 한 번에 돌린 것과 같음).
+    seconds 는 fold 시간 합. 모델 로드가 fold 마다 들어가 한 번에 돌린 것보다 길 수 있어 note 에 `(fold 분할)` 표시.
+    합친 뒤 folds/ 는 지움. 빠진 fold 가 있으면 False."""
+    d = RESULTS / comp.name / name / "folds"
+    n = comp.cv["n_splits"]
+    metas = {k: json.loads((d / str(k) / "meta.json").read_text())
+             for k in range(n) if (d / str(k) / "meta.json").exists()}
+    if missing := [k for k in range(n) if k not in metas]:
+        print(f"{name}: fold {missing} 없음 → 합치지 않음 (--fold k 로 채운 뒤 --merge-folds)")
+        return False
+    for key in ("no_test", "classes", "note"):
+        if len({json.dumps(m[key]) for m in metas.values()}) > 1:
+            print(f"{name}: fold 마다 {key} 가 다름 → 합치지 않음 ({d})")
+            return False
+    first = metas[0]
+    oof = np.load(d / "0" / "oof.npy")
+    for k in range(1, n):
+        o = np.load(d / str(k) / "oof.npy")
+        rows = ~np.isnan(o).reshape(len(o), -1).any(1)
+        oof[rows] = o[rows]
+    test_pred = None if first["no_test"] else np.mean([np.load(d / str(k) / "test.npy") for k in range(n)], axis=0)
+    scores = {m: score(m, y, oof) for m in dict.fromkeys([comp.metric, *EXTRA[comp.task]])}
+    save_run(comp, name, oof, test_pred, scores, [metas[k]["fold_score"] for k in range(n)],
+             sum(m["seconds"] for m in metas.values()), first["classes"], f"{first['note']} (fold 분할)".strip(),
+             first["no_test"], where)
+    shutil.rmtree(d)
+    return True
+
+
 def main(argv: list[str] | None = None):
     ap = argparse.ArgumentParser(prog="km run")
     add_run_args(ap)
     ap.add_argument("--gpus", type=int, default=None, help="동시에 쓸 GPU 수 (기본: 감지된 전부)")
+    ap.add_argument("--merge-folds", action="store_true",
+                    help="실행하지 않고 --fold 로 저장한 fold 들을 합쳐 results.csv 에 기록")
+    ap.add_argument("--where", help="--merge-folds 로 쓰는 행의 실행 위치 (예: databricks)")
     args = ap.parse_args(argv)
+    if args.fold is not None and args.max_folds:
+        ap.error("--fold 와 --max-folds 는 같이 쓸 수 없음")
 
     comp = load_competition(args.comp)
     train, test = load_data(comp)
+    y, classes = target(comp, train)
+    if args.merge_folds:
+        failed = [name for name in args.models if not merge_folds(comp, name, y, args.where)]
+        if failed:
+            sys.exit(f"합치지 못한 모델: {', '.join(failed)}")
+        return
+    if args.fold is not None and not 0 <= args.fold < comp.cv["n_splits"]:
+        ap.error(f"--fold 는 0 ~ {comp.cv['n_splits'] - 1}")
     X, X_test, cat_cols = load_features(comp).build(train, test)
-
-    y_raw = train[comp.target]
-    classes = None
-    if comp.is_classification:
-        enc = LabelEncoder().fit(y_raw)
-        y, classes = enc.transform(y_raw), enc.classes_.tolist()
-    else:
-        y = y_raw.to_numpy(dtype=float)
-        if comp.target_transform:
-            y = TRANSFORMS[comp.target_transform][0](y)
     folds = get_folds(comp, y)  # 병렬 실행 전에 만들어 두어 모든 작업자가 같은 fold 사용
     print(f"{comp.name}: train {X.shape}, test {X_test.shape}, cats={cat_cols}")
 
@@ -158,31 +242,16 @@ def main(argv: list[str] | None = None):
     for name in args.models:
         try:
             oof, test_pred, scores, fold_scores, secs = run_model(name, comp, X, y, X_test, cat_cols, folds,
-                                                                  args.max_folds, args.no_test, classes)
+                                                                  args.max_folds, args.no_test, classes, args.fold)
         except Exception:  # 한 모델이 실패해도 나머지는 계속 실행
             traceback.print_exc()
             failed.append(name)
             print(f"=> {name}: 실패\n")
             continue
-        out = RESULTS / comp.name / name
-        out.mkdir(parents=True, exist_ok=True)
-        np.save(out / "oof.npy", oof)
-        meta = dict(comp=comp.name, model=name, metric=comp.metric, scores=scores, fold_scores=fold_scores,
-                    seconds=round(secs, 1), classes=classes, n_folds=len(fold_scores), note=args.note,
-                    # UTC (Kaggle 제출 시각과 비교하므로). 2026-10-22 로컬 실행 4행은 KST 였다가 UTC 로 고침
-                    timestamp=datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds"))
-        (out / "meta.json").write_text(json.dumps(meta, indent=2, default=str))
-        if not args.no_test:  # 예측과 그 출처(km submit 이 제출 설명에 적음)는 함께만 씀
-            clear_test_info(out)
-            np.save(out / "test.npy", test_pred)
-            write_test_info(out, meta["timestamp"], scores[comp.metric], len(fold_scores), classes)
-
-        row = dict(timestamp=meta["timestamp"], comp=comp.name, model=name, metric=comp.metric,
-                   cv=scores[comp.metric], cv_std=float(np.std(fold_scores)), n_folds=len(fold_scores),
-                   seconds=meta["seconds"], **{f"cv_{k}": v for k, v in scores.items() if k != comp.metric},
-                   note=args.note, test=not args.no_test)
-        append_rows(pd.DataFrame([row]))
-        print(f"=> {name}: {comp.metric}={scores[comp.metric]:.5f} ± {row['cv_std']:.5f}  ({secs:.0f}s)\n")
+        if args.fold is not None:
+            save_fold(comp, name, args.fold, oof, test_pred, fold_scores[0], secs, classes, args.note, args.no_test)
+        else:
+            save_run(comp, name, oof, test_pred, scores, fold_scores, secs, classes, args.note, args.no_test)
 
     if failed:
         print(f"실패한 모델: {', '.join(failed)}")

@@ -106,6 +106,8 @@ uv run km colab collect output.txt
 # GPU 1장이어도 모델마다 새 프로세스로 실행, GPU 여러 장이면 모델을 GPU별로 나눠 동시 실행
 # GBDT(lgbm·xgb·catboost)는 GPU 작업에 넣지 않고 CPU serverless 작업으로 따로 제출 (GPU 노드에선 CPU 경합으로 느림)
 uv run km databricks spaceship-titanic lgbm catboost tabpfn_v2
+# 오래 걸리는 5-fold: GPU 모델을 fold 마다 작업 하나로 동시에 제출 → 다 끝나면 fold 를 합쳐 results.csv 에 한 줄
+uv run km databricks allstate-claims-severity exaone mitra_ft --split-folds
 
 # 제출 (여러 모델이면 테스트 예측 평균)
 uv run km submit spaceship-titanic catboost tabicl --push -m "cb+tabicl"
@@ -118,7 +120,8 @@ uv run km lb bioresponse --submit 2
 uv run km migrate test-info
 ```
 
-공통 실행 인자: `--max-folds N` (앞 N개 fold 만), `--no-test` (테스트 예측 생략), `--note` (results.csv 에 남길 메모).
+공통 실행 인자: `--max-folds N` (앞 N개 fold 만), `--no-test` (테스트 예측 생략), `--note` (results.csv 에 남길 메모),
+`--fold k` (fold 하나만 → `results/<대회>/<모델>/folds/<k>/`, 다 모이면 `km run <대회> <모델> --merge-folds` 로 합침).
 
 ## 모델
 

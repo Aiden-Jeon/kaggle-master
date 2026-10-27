@@ -20,6 +20,8 @@ def add_run_args(ap: argparse.ArgumentParser, models_nargs: str = "+"):
     ap.add_argument("--max-folds", type=int, default=None, help="빠른 확인용: 앞쪽 n개 fold만 실행")
     ap.add_argument("--note", default="", help="results.csv 에 남길 메모")
     ap.add_argument("--no-test", action="store_true", help="실험용: 테스트 예측 생략 (test.npy 저장 안 함)")
+    ap.add_argument("--fold", type=int, default=None,
+                    help="fold 하나만 실행 → results/<대회>/<모델>/folds/<k>/ 에 저장 (results.csv 는 전체 fold 를 모아 합칠 때)")
 
 
 def run_argv(args: argparse.Namespace, models: list[str] | None = None) -> list[str]:
@@ -29,6 +31,8 @@ def run_argv(args: argparse.Namespace, models: list[str] | None = None) -> list[
         out += ["--max-folds", str(args.max_folds)]
     if args.no_test:
         out.append("--no-test")
+    if args.fold is not None:
+        out += ["--fold", str(args.fold)]
     return out
 
 
