@@ -1,0 +1,461 @@
+<!doctype html>
+<!-- km board 템플릿. `__DATA__` 자리에 board.py 가 JSON 을 넣어 docs/leaderboard.html 생성. -->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kaggle-master 리더보드 · TFM vs GBDT</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10); --wash: rgba(11,11,11,0.04);
+  --tfm: #2a78d6; --gbdt: #eb6834; --accent: #2a78d6;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.05);
+    --tfm: #3987e5; --gbdt: #d95926; --accent: #3987e5;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.05);
+  --tfm: #3987e5; --gbdt: #d95926; --accent: #3987e5;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1080px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+h2 { font-size: 17px; margin: 0 0 4px; }
+p { margin: 4px 0; }
+a { color: var(--accent); }
+.sub { color: var(--ink-2); }
+.muted { color: var(--muted); font-size: 12px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-top: 16px; }
+.controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 16px; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; background: transparent; color: var(--ink-2); padding: 4px 10px; font: inherit; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--border); }
+.seg button[aria-pressed="true"] { background: var(--wash); color: var(--ink); font-weight: 600; }
+label.check { display: inline-flex; gap: 6px; align-items: center; color: var(--ink-2); cursor: pointer; }
+details summary { cursor: pointer; color: var(--ink-2); }
+details ul { margin: 8px 0 0; padding-left: 20px; color: var(--ink-2); }
+details li { margin: 2px 0; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { padding: 6px 8px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--grid); }
+th { color: var(--ink-2); font-weight: 600; font-size: 12px; }
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--ink); }
+th .arrow { color: var(--muted); }
+th:first-child, td:first-child, th.left, td.left { text-align: left; }
+tbody tr:hover { background: var(--wash); }
+tr.focus td { background: var(--wash); }
+tr.dim td { opacity: 0.45; }
+.model { cursor: pointer; }
+.model:hover { text-decoration: underline; }
+.fam { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.fam.TFM { background: var(--tfm); }
+.fam.GBDT { background: var(--gbdt); }
+.legend { display: flex; gap: 16px; color: var(--ink-2); font-size: 12px; margin: 8px 0; }
+.heat td.cell { text-align: center; min-width: 46px; padding: 0; border: 2px solid var(--surface); border-radius: 4px; cursor: pointer; }
+.heat td.cell span { display: block; padding: 6px 4px; }
+.heat td.cell:hover, .heat td.cell:focus { outline: 2px solid var(--ink); outline-offset: -2px; }
+.heat td.empty { color: var(--muted); cursor: default; }
+.heat th.col { cursor: pointer; text-align: center; font-weight: 500; }
+.heat th.col.on { color: var(--ink); font-weight: 700; }
+.heat th.col small { display: block; color: var(--muted); font-weight: 400; }
+.heat tbody tr:hover { background: transparent; }
+.ramp { display: inline-flex; vertical-align: middle; margin: 0 6px; }
+.ramp i { width: 14px; height: 10px; }
+.pills { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
+.pills button { border: 1px solid var(--border); background: transparent; color: var(--ink-2); border-radius: 999px; padding: 3px 10px; font: inherit; font-size: 13px; cursor: pointer; }
+.pills button[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+svg text { fill: var(--muted); font-size: 11px; font-family: inherit; }
+svg text.lbl { fill: var(--ink-2); font-size: 12px; }
+svg text.lbl.best { fill: var(--ink); font-weight: 700; }
+svg .gridline { stroke: var(--grid); stroke-width: 1; }
+svg .axis { stroke: var(--axis); stroke-width: 1; }
+svg .hit { fill: transparent; cursor: pointer; }
+svg .hit:hover, svg .hit:focus { fill: var(--wash); outline: none; }
+svg .dimmed { opacity: 0.25; }
+#tip { position: fixed; pointer-events: none; z-index: 10; background: var(--surface); color: var(--ink); border: 1px solid var(--border);
+  border-radius: 6px; padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); display: none; max-width: 300px; }
+#tip .v { font-size: 14px; font-weight: 700; }
+#tip .k { color: var(--ink-2); }
+#tip .row { display: flex; gap: 8px; justify-content: space-between; }
+footer { margin-top: 24px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>kaggle-master 리더보드</h1>
+  <p class="sub">Tabular Foundation Model(TFM) 과 GBDT 를 같은 5-fold CV·같은 피처, 튜닝 없는 기본 설정으로 비교. <span id="date"></span></p>
+  <details>
+    <summary>표 읽는 법</summary>
+    <ul>
+      <li><b>평균 CV 순위</b> = 대회마다 (순위−1)/(모델 수−1) 의 평균. 0 = 항상 1위, 1 = 항상 꼴찌. 모델마다 실행한 대회가 달라 대략적인 비교.</li>
+      <li>종합·히트맵은 모델마다 대회별로 CV 가 가장 좋은 설정 하나만 셈 (컨텍스트 변형 <code>ctx 전체</code>·<code>ctx 20만</code>·<code>kNN 1000</code> 포함).</li>
+      <li><b>시간</b> = 5-fold 합계 (학습 + 검증·테스트 예측). <b>s/1K</b> = 시간 ÷ 예측 행 수 × 1000 (예측 행 = 학습 행 + 테스트 행 × 5). 작은 대회는 고정 비용 때문에 s/1K 가 부풀려짐.</li>
+      <li>환경이 다르면 시간 비교 불가: DBX H100 (TFM) · DBX CPU4 (GBDT, serverless 4코어) · DBX A10G · Kaggle T4. <b>s/1K (DBX)</b> = H100·CPU4 실행만의 중앙값.</li>
+      <li><b>LB</b> = Kaggle public 점수 기준 위치. 종료 대회는 늦은 제출이라 실제 순위표에는 없음. — = 미제출.</li>
+      <li>TFM 컨텍스트 상한 <span id="caps"></span> 은 무작위 샘플. 상한을 푼 실행은 일부 모델(kumo)만 있어 그 대회들의 순위 일부는 모델 차이가 아니라 컨텍스트 차이.</li>
+      <li>Otto·GiveMeSomeCredit·Amazon 등 공개 데이터는 TFM 사전학습에 들어갔을 수 있어 CV 가 부풀었을 수 있음 (LB 는 영향 없음).</li>
+    </ul>
+  </details>
+
+  <div class="controls">
+    <span class="muted">계열</span>
+    <div class="seg" id="family">
+      <button data-v="all" aria-pressed="true">전체</button><button data-v="TFM" aria-pressed="false">TFM</button><button data-v="GBDT" aria-pressed="false">GBDT</button>
+    </div>
+    <span class="muted" id="focusNote"></span>
+    <span style="flex:1"></span>
+    <div class="seg" id="theme" title="테마">
+      <button data-v="auto" aria-pressed="true">자동</button><button data-v="light" aria-pressed="false">라이트</button><button data-v="dark" aria-pressed="false">다크</button>
+    </div>
+  </div>
+
+  <section class="card">
+    <h2>종합</h2>
+    <p class="muted">열 제목을 누르면 정렬, 모델 이름을 누르면 아래 차트에서 그 모델만 강조.</p>
+    <div class="scroll"><table id="summary"></table></div>
+  </section>
+
+  <section class="card">
+    <h2>대회 × 모델 CV 순위</h2>
+    <p class="muted">칸 숫자 = 그 대회 CV 순위 (모델마다 최고 설정 하나씩 비교, 진할수록 상위). 열 제목이나 칸을 누르면 아래 대회별 상세로 이동. 대회는 학습 행 수 순.</p>
+    <div class="legend"><span>하위<span class="ramp" id="ramp"></span>상위</span><span>· = 미실행</span></div>
+    <div class="scroll"><table class="heat" id="heat"></table></div>
+  </section>
+
+  <section class="card">
+    <h2>속도 vs 성능</h2>
+    <p class="muted">가로 = s/1K 중앙값 (로그, 왼쪽이 빠름), 세로 = 평균 CV 순위 (위가 좋음). 시간이 없는 모델은 빠짐.</p>
+    <div class="controls" style="margin-top:8px">
+      <div class="seg" id="speedEnv"><button data-v="s1k" aria-pressed="true">DBX (H100 · CPU4)</button><button data-v="s1k_all" aria-pressed="false">전체 환경</button></div>
+      <span class="legend" style="margin:0"><span><i class="fam TFM"></i>TFM</span><span><i class="fam GBDT"></i>GBDT</span></span>
+    </div>
+    <div id="scatter"></div>
+  </section>
+
+  <section class="card" id="detail">
+    <h2>대회별</h2>
+    <div class="pills" id="pills"></div>
+    <p id="compMeta" class="sub"></p>
+    <div class="controls" style="margin-top:4px">
+      <label class="check"><input type="checkbox" id="variants" checked> 컨텍스트 변형 행도 보기</label>
+      <span class="legend" style="margin:0"><span><i class="fam TFM"></i>TFM</span><span><i class="fam GBDT"></i>GBDT</span><span>가로 막대 = ± fold std</span></span>
+    </div>
+    <div id="dots"></div>
+    <div class="scroll"><table id="comp"></table></div>
+  </section>
+
+  <footer class="muted">
+    <code>uv run km board</code> 로 생성 · 데이터 <a href="https://github.com/Aiden-Jeon/kaggle-master/blob/main/results/results.csv">results.csv</a>,
+    <a href="https://github.com/Aiden-Jeon/kaggle-master/blob/main/results/leaderboard.csv">leaderboard.csv</a> ·
+    <a href="https://github.com/Aiden-Jeon/kaggle-master">github.com/Aiden-Jeon/kaggle-master</a>
+  </footer>
+</main>
+<div id="tip" role="tooltip"></div>
+
+<script id="data" type="application/json">__DATA__</script>
+<script>
+"use strict";
+const DATA = JSON.parse(document.getElementById("data").textContent);
+const COMPS = DATA.comps, RUNS = DATA.runs, SUMMARY = DATA.summary;
+const compById = Object.fromEntries(COMPS.map(c => [c.id, c]));
+const state = { family: "all", focus: null, comp: null, variants: true, speed: "s1k",
+                sumSort: { key: "pct", dir: 1 }, compSort: { key: "cv_rank", dir: 1 } };
+// 순차 팔레트 (blue 100→700). 라이트는 상위일수록 진하게, 다크는 상위일수록 밝게.
+const RAMP = ["#cde2fb","#b7d3f6","#9ec5f4","#86b6ef","#6da7ec","#5598e7","#3987e5","#2a78d6","#256abf","#1c5cab","#184f95","#104281","#0d366b"];
+
+// ---- 공통 ----
+const $ = id => document.getElementById(id);
+const SVG = "http://www.w3.org/2000/svg";
+function el(tag, attrs = {}, parent, text) {
+  const n = tag.startsWith("svg:") ? document.createElementNS(SVG, tag.slice(4)) : document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) if (v != null) n.setAttribute(k, v);
+  if (text != null) n.textContent = text;
+  if (parent) parent.appendChild(n);
+  return n;
+}
+const isDark = () => document.documentElement.dataset.theme === "dark" ||
+  (document.documentElement.dataset.theme !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const famColor = f => cssVar(f === "GBDT" ? "--gbdt" : "--tfm");
+const famOk = f => state.family === "all" || state.family === f;
+const num = v => v == null ? "—" : Math.abs(v) > 1000 ? v.toLocaleString("en-US", { maximumFractionDigits: 1, minimumFractionDigits: 1 }) : v.toFixed(4);
+const pct = p => p == null ? "—" : p < 0.1 ? "<0.1%" : p.toFixed(1) + "%";
+const fix2 = v => v == null ? "—" : v.toFixed(2);
+const int = v => v == null ? "—" : Math.round(v).toLocaleString("en-US");
+const lbRank = r => r.rank == null ? "—" : `${int(r.rank)} / ${int(r.teams)} (${pct(r.top_pct)})`;
+const pub = v => v == null ? "—" : Math.abs(v) > 1000 ? v.toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 }) : String(+v.toPrecision(5));
+
+// ---- 툴팁 (값을 먼저, 이름은 뒤에. 텍스트는 모두 textContent) ----
+const tip = $("tip");
+function showTip(evt, title, rows) {
+  tip.replaceChildren();
+  el("div", { class: "v" }, tip, title);
+  for (const [k, v] of rows) { const r = el("div", { class: "row" }, tip); el("span", { class: "k" }, r, k); el("b", {}, r, v); }
+  tip.style.display = "block";
+  let x, y;
+  if (evt.clientX != null && evt.type !== "focus") { x = evt.clientX; y = evt.clientY; }
+  else { const b = evt.target.getBoundingClientRect(); x = b.right; y = b.top; }
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  tip.style.left = Math.min(x + 14, innerWidth - w - 8) + "px";
+  tip.style.top = (y + h + 20 > innerHeight ? y - h - 10 : y + 14) + "px";
+}
+const hideTip = () => { tip.style.display = "none"; };
+function hover(node, fn) {
+  node.addEventListener("pointermove", e => fn(e));
+  node.addEventListener("focus", e => fn(e));
+  node.addEventListener("pointerleave", hideTip);
+  node.addEventListener("blur", hideTip);
+}
+const runTip = (r, c) => [
+  [`CV ${c.metric}`, `${num(r.cv)} ± ${num(r.cv_std)}`], ["설정별 CV 순위", `${r.cv_rank}`],
+  ["LB public", pub(r.public)], ["LB 순위", lbRank(r)],
+  ["시간", `${int(r.seconds)}s`], ["s/1K", fix2(r.s_per_1k)], ["환경", r.env]];
+
+// ---- 정렬 가능한 표 ----
+function sortTable(table, cols, rows, sort, onSort, rowAttrs) {
+  table.replaceChildren();
+  const tr = el("tr", {}, el("thead", {}, table));
+  for (const c of cols) {
+    const th = el("th", { class: (c.sort === false ? "" : "sortable ") + (c.left ? "left" : ""), scope: "col" }, tr, c.name);
+    if (c.sort !== false) {
+      el("span", { class: "arrow" }, th, sort.key === c.key ? (sort.dir > 0 ? " ▲" : " ▼") : "");
+      th.tabIndex = 0;
+      const go = () => onSort(sort.key === c.key ? { key: c.key, dir: -sort.dir } : { key: c.key, dir: c.desc ? -1 : 1 });
+      th.addEventListener("click", go);
+      th.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
+    }
+  }
+  const val = (r, k) => { const c = cols.find(c => c.key === k); return c.value ? c.value(r) : r[k]; };
+  rows = [...rows].sort((a, b) => {
+    const x = val(a, sort.key), y = val(b, sort.key);
+    if (x == null && y == null) return 0; if (x == null) return 1; if (y == null) return -1;
+    return (typeof x === "string" ? x.localeCompare(y) : x - y) * sort.dir;
+  });
+  const tbody = el("tbody", {}, table);
+  for (const r of rows) {
+    const row = el("tr", rowAttrs ? rowAttrs(r) : {}, tbody);
+    for (const c of cols) {
+      const td = el("td", { class: c.left ? "left" : "" }, row);
+      c.cell ? c.cell(td, r) : (td.textContent = c.fmt ? c.fmt(r[c.key], r) : r[c.key]);
+    }
+  }
+}
+function modelCell(td, name, family, bold) {
+  el("i", { class: "fam " + family }, td);
+  const s = el(bold ? "b" : "span", { class: "model", tabindex: 0, title: "이 모델 강조" }, td, name);
+  const go = () => setFocus(state.focus === baseOf(name) ? null : baseOf(name));
+  s.addEventListener("click", go);
+  s.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
+}
+const baseOf = label => label.split(" (")[0];
+function focusAttrs(base) {
+  return state.focus == null ? {} : { class: state.focus === base ? "focus" : "dim" };
+}
+
+// ---- 종합 ----
+function renderSummary() {
+  const cols = [
+    { key: "model", name: "모델", left: true, cell: (td, r) => modelCell(td, r.model, r.family) },
+    { key: "family", name: "계열", left: true },
+    { key: "n", name: "대회 수", desc: true },
+    { key: "wins", name: "CV 1위", desc: true },
+    { key: "pct", name: "평균 CV 순위", fmt: fix2 },
+    { key: "lb", name: "최고 LB (상위 %)", fmt: pct },
+    { key: "s1k", name: "s/1K (DBX)", fmt: fix2 },
+    { key: "s1k_all", name: "s/1K (전체)", fmt: fix2 },
+    { key: "ctx", name: "컨텍스트 변형", desc: true, fmt: v => v || "" },
+  ];
+  sortTable($("summary"), cols, SUMMARY.filter(r => famOk(r.family)), state.sumSort,
+            s => { state.sumSort = s; renderSummary(); }, r => focusAttrs(r.model));
+}
+
+// ---- 히트맵 ----
+function renderHeat() {
+  const t = $("heat"); t.replaceChildren();
+  const dark = isDark();
+  const best = RUNS.filter(r => r.base_rank != null);
+  const n = {}; for (const r of best) n[r.comp] = (n[r.comp] || 0) + 1;
+  const cell = {}; for (const r of best) cell[r.comp + "|" + r.base] = r;
+  const hr = el("tr", {}, el("thead", {}, t));
+  el("th", { class: "left" }, hr, "모델");
+  for (const c of COMPS) {
+    const th = el("th", { class: "col" + (state.comp === c.id ? " on" : ""), scope: "col", tabindex: 0 }, hr, c.title);
+    el("small", {}, th, c.train ? (c.train >= 10000 ? Math.round(c.train / 1000) + "K" : c.train.toLocaleString("en-US")) + "행" : "");
+    th.addEventListener("click", () => selectComp(c.id, true));
+    th.addEventListener("keydown", e => { if (e.key === "Enter") selectComp(c.id, true); });
+  }
+  const tb = el("tbody", {}, t);
+  for (const s of SUMMARY.filter(r => famOk(r.family))) {
+    const row = el("tr", focusAttrs(s.model), tb);
+    modelCell(el("td", { class: "left" }, row), s.model, s.family);
+    for (const c of COMPS) {
+      const r = cell[c.id + "|" + s.model];
+      if (!r) { el("td", { class: "cell empty" }, row, "·"); continue; }
+      const q = n[c.id] > 1 ? (r.base_rank - 1) / (n[c.id] - 1) : 0;  // 0 = 1위
+      const i = dark ? 1 + Math.round(q * 11) : 12 - Math.round(q * 12);
+      const td = el("td", { class: "cell", tabindex: 0, style: `background:${RAMP[i]};color:${(dark ? i <= 5 : i >= 7) ? (dark ? "#0b0b0b" : "#ffffff") : (dark ? "#f0efec" : "#0b0b0b")}` }, row);
+      el("span", {}, td, r.base_rank);
+      hover(td, e => showTip(e, `${r.label} · ${c.title}`, [["모델 순위", `${r.base_rank} / ${n[c.id]}`], ...runTip(r, c)]));
+      td.addEventListener("click", () => selectComp(c.id, true));
+    }
+  }
+  const ramp = $("ramp"); ramp.replaceChildren();
+  for (let k = 0; k <= 6; k++) el("i", { style: `background:${RAMP[dark ? 12 - k * 11 / 6 | 0 : k * 2]}` }, ramp);
+}
+
+// ---- 산점도: 속도 vs 성능 ----
+function renderScatter() {
+  const box = $("scatter"); box.replaceChildren();
+  const pts = SUMMARY.filter(r => famOk(r.family) && r[state.speed] != null);
+  const W = Math.max(box.clientWidth, 320), H = 320, m = { l: 44, r: 16, t: 12, b: 36 };
+  const svg = el("svg:svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "속도 대 평균 CV 순위 산점도" }, box);
+  if (!pts.length) return;
+  const xs = pts.map(p => Math.log10(p[state.speed]));
+  const x0 = Math.floor(Math.min(...xs)), x1 = Math.ceil(Math.max(...xs));
+  const X = v => m.l + (Math.log10(v) - x0) / (x1 - x0 || 1) * (W - m.l - m.r);
+  const Y = v => m.t + v * (H - m.t - m.b);
+  for (let e = x0; e <= x1; e++) {
+    el("svg:line", { class: "gridline", x1: X(10 ** e), x2: X(10 ** e), y1: m.t, y2: H - m.b }, svg);
+    el("svg:text", { x: X(10 ** e), y: H - m.b + 16, "text-anchor": "middle" }, svg, String(+(10 ** e).toPrecision(3)));
+  }
+  for (const v of [0, 0.25, 0.5, 0.75, 1]) {
+    el("svg:line", { class: "gridline", x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v) }, svg);
+    el("svg:text", { x: m.l - 8, y: Y(v) + 4, "text-anchor": "end" }, svg, v.toFixed(2));
+  }
+  el("svg:text", { x: W - m.r, y: H - 4, "text-anchor": "end" }, svg, "s/1K (로그) →");
+  el("svg:text", { x: m.l, y: H - 4 }, svg, "← 빠름");
+  for (const p of pts) {
+    const g = el("svg:g", { class: state.focus && state.focus !== p.model ? "dimmed" : "" }, svg);
+    const cx = X(p[state.speed]), cy = Y(p.pct);
+    el("svg:circle", { cx, cy, r: 6, fill: famColor(p.family), stroke: cssVar("--surface"), "stroke-width": 2 }, g);
+    const right = cx < W - 90;
+    el("svg:text", { class: "lbl", x: cx + (right ? 10 : -10), y: cy + 4, "text-anchor": right ? "start" : "end" }, g, p.model);
+    const hit = el("svg:circle", { class: "hit", cx, cy, r: 14, tabindex: 0 }, g);
+    hover(hit, e => showTip(e, p.model, [["평균 CV 순위", fix2(p.pct)], ["s/1K (DBX)", fix2(p.s1k)], ["s/1K (전체)", fix2(p.s1k_all)],
+                                        ["대회 수", String(p.n)], ["CV 1위", String(p.wins)], ["최고 LB", pct(p.lb)]]));
+    hit.addEventListener("click", () => setFocus(state.focus === p.model ? null : p.model));
+  }
+}
+
+// ---- 대회별 ----
+function renderPills() {
+  const box = $("pills"); box.replaceChildren();
+  for (const c of COMPS) {
+    const b = el("button", { "aria-pressed": state.comp === c.id }, box, c.title);
+    b.addEventListener("click", () => selectComp(c.id));
+  }
+}
+function compRuns() {
+  return RUNS.filter(r => r.comp === state.comp && famOk(r.family) && (state.variants || !r.model.includes("@")));
+}
+function renderDots() {
+  const box = $("dots"); box.replaceChildren();
+  const c = compById[state.comp], rows = compRuns().sort((a, b) => a.cv_rank - b.cv_rank);
+  if (!rows.length) return;
+  const rowH = 26, labelW = 150, m = { t: 8, r: 24, b: 40 };
+  const W = Math.max(box.clientWidth, 360), H = m.t + rows.length * rowH + m.b;
+  const svg = el("svg:svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `${c.title} CV 점수` }, box);
+  let lo = Math.min(...rows.map(r => r.cv - r.cv_std)), hi = Math.max(...rows.map(r => r.cv + r.cv_std));
+  const pad = (hi - lo) * 0.06 || Math.abs(hi) * 0.01 || 1; lo -= pad; hi += pad;
+  const X = v => labelW + (v - lo) / (hi - lo) * (W - labelW - m.r);
+  const step = niceStep((hi - lo) / Math.max(3, Math.floor((W - labelW) / 110)));
+  for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) {
+    el("svg:line", { class: "gridline", x1: X(v), x2: X(v), y1: m.t, y2: H - m.b }, svg);
+    el("svg:text", { x: X(v), y: H - m.b + 16, "text-anchor": "middle" }, svg, tick(v, step));
+  }
+  el("svg:text", { x: W - m.r, y: H - 2, "text-anchor": "end" }, svg, `CV ${c.metric} · ${c.higher ? "오른쪽이 좋음 →" : "← 왼쪽이 좋음"}`);
+  rows.forEach((r, i) => {
+    const y = m.t + i * rowH + rowH / 2;
+    const g = el("svg:g", { class: state.focus && state.focus !== r.base ? "dimmed" : "" }, svg);
+    el("svg:text", { class: "lbl" + (r.cv_rank === 1 ? " best" : ""), x: labelW - 10, y: y + 4, "text-anchor": "end" }, g, `${r.cv_rank}. ${r.label}`);
+    const col = famColor(r.family);
+    el("svg:line", { x1: X(r.cv - r.cv_std), x2: X(r.cv + r.cv_std), y1: y, y2: y, stroke: col, "stroke-width": 2, "stroke-linecap": "round", opacity: 0.55 }, g);
+    el("svg:circle", { cx: X(r.cv), cy: y, r: 5, fill: col, stroke: cssVar("--surface"), "stroke-width": 2 }, g);
+    const hit = el("svg:rect", { class: "hit", x: 0, y: y - rowH / 2, width: W, height: rowH, tabindex: 0 }, g);
+    hover(hit, e => showTip(e, r.label, runTip(r, c)));
+    hit.addEventListener("click", () => setFocus(state.focus === r.base ? null : r.base));
+  });
+}
+function niceStep(raw) {
+  const p = 10 ** Math.floor(Math.log10(raw)), f = raw / p;
+  return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * p;
+}
+function tick(v, step) {
+  const d = Math.max(0, -Math.floor(Math.log10(step)));
+  return Math.abs(v) >= 1000 ? Math.round(v).toLocaleString("en-US") : v.toFixed(d);
+}
+function renderCompTable() {
+  const c = compById[state.comp];
+  const lines = [];
+  if (c.train) lines.push(`학습 ${c.train.toLocaleString("en-US")}행 · 테스트 ${c.test.toLocaleString("en-US")}행`);
+  lines.push(`${c.metric} ${c.higher ? "↑" : "↓"}`);
+  if (c.cap) lines.push(`TFM 컨텍스트 상한 ${c.cap.toLocaleString("en-US")}행`);
+  $("compMeta").textContent = lines.join(" · ");
+  const rows = compRuns();
+  const top = Math.min(...rows.map(r => r.cv_rank));
+  const cols = [
+    { key: "cv_rank", name: "#" },
+    { key: "label", name: "모델", left: true, cell: (td, r) => modelCell(td, r.label, r.family, r.cv_rank === top) },
+    { key: "cv", name: `CV ${c.metric}`, fmt: num, value: r => c.higher ? -r.cv : r.cv },
+    { key: "cv_std", name: "± std", fmt: num },
+    { key: "public", name: "LB public", fmt: pub, value: r => r.public == null ? null : c.higher ? -r.public : r.public },
+    { key: "rank", name: "LB 순위", cell: (td, r) => { td.textContent = lbRank(r); } },
+    { key: "seconds", name: "시간", fmt: v => int(v) + "s" },
+    { key: "s_per_1k", name: "s/1K", fmt: fix2 },
+    { key: "env", name: "환경", left: true },
+  ];
+  sortTable($("comp"), cols, rows, state.compSort, s => { state.compSort = s; renderCompTable(); }, r => focusAttrs(r.base));
+}
+function selectComp(id, scroll) {
+  state.comp = id;
+  history.replaceState(null, "", "#" + encodeURIComponent(id));
+  renderPills(); renderHeat(); renderDots(); renderCompTable();
+  if (scroll) $("detail").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+function setFocus(base) {
+  state.focus = base;
+  $("focusNote").textContent = base ? `강조: ${base} (다시 누르면 해제)` : "";
+  renderAll();
+}
+
+// ---- 컨트롤 ----
+function seg(id, onPick) {
+  const box = $(id);
+  box.addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    for (const x of box.children) x.setAttribute("aria-pressed", x === b);
+    onPick(b.dataset.v);
+  });
+}
+seg("family", v => { state.family = v; renderAll(); });
+seg("speedEnv", v => { state.speed = v; renderScatter(); });
+seg("theme", v => {
+  if (v === "auto") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = v;
+  renderAll();
+});
+$("variants").addEventListener("change", e => { state.variants = e.target.checked; renderDots(); renderCompTable(); });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => renderAll());
+let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { renderScatter(); renderDots(); }, 100); });
+
+function renderAll() { renderSummary(); renderHeat(); renderScatter(); renderPills(); renderDots(); renderCompTable(); }
+
+$("date").textContent = `${DATA.date} 생성.`;
+const caps = {}; for (const c of COMPS) if (c.cap) (caps[c.cap] = caps[c.cap] || []).push(c.title);
+$("caps").textContent = "(" + (Object.entries(caps).map(([n, cs]) => `${(+n).toLocaleString("en-US")}행: ${cs.join(", ")}`).join("; ") || "없음") + ")";
+const fromHash = decodeURIComponent(location.hash.slice(1));
+state.comp = compById[fromHash] ? fromHash : COMPS[COMPS.length - 1].id;
+renderAll();
+</script>
+</body>
+</html>

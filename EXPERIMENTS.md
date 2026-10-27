@@ -2,7 +2,7 @@
 
 Tabular Foundation Model(TFM) vs GBDT 비교. 원본 수치는 `results/results.csv`, 리더보드 제출 기록은 `results/leaderboard.csv`,
 모델별 OOF/테스트 예측은 `results/<comp>/<model>/`. 모델 이름은 [README 의 모델 목록](README.md#모델) 참고.
-시간·s/1K·LB 를 한 표로 모은 리더보드는 [docs/leaderboard.md](docs/leaderboard.md) (`km board` 로 생성).
+시간·s/1K·LB 를 한 표로 모은 리더보드는 [docs/leaderboard.md](docs/leaderboard.md) (`km board` 로 생성, 인터랙티브 판은 [GitHub Pages](https://aiden-jeon.github.io/kaggle-master/)).
 
 **공통 조건**: 대회별 고정 fold(`folds.csv`, seed 42), 튜닝 없는 기본 설정. 대회별 결과는 5-fold,
 주제별 실험 중 일부(S6E10 컨텍스트 탐색, 추론 속도, 실행 준비 시간, Bioresponse)는 fold 0 만 — 표마다 표시.

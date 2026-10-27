@@ -10,7 +10,8 @@ Tabular Foundation Model(TabPFN, TabICL, Kumo 등)을 GBDT 베이스라인(Light
 
 ## 결과 요약
 
-13개 대회 (12개는 5-fold CV, Bioresponse 는 TFM fold 0 만). 대회별 표·분석은 [EXPERIMENTS.md](EXPERIMENTS.md).
+13개 대회 (12개는 5-fold CV, Bioresponse 는 TFM fold 0 만). 대회별 표·분석은 [EXPERIMENTS.md](EXPERIMENTS.md),
+정렬·필터·차트로 보는 리더보드는 https://aiden-jeon.github.io/kaggle-master/ (`docs/leaderboard.html`, GitHub Pages).
 `(ctx 전체)` · `(ctx 20만)` = TFM 컨텍스트 상한(`tfm_max_rows: 10000`)을 풀고 다시 돌린 kumo.
 
 | 대회 | 학습 행 | 지표 | CV 1위 | 최고 LB 순위 (public) |
@@ -54,7 +55,7 @@ km/
   leaderboard/                    # 제출과 순위
     submit.py                     # km submit: 제출 파일 생성(+ --push 로 제출), 여러 모델이면 평균
     rank.py                       # km lb: Kaggle 제출 기록을 모아 리더보드 순위 계산
-    board.py                      # km board: 모델별 성능·실행 시간 리더보드 (docs/leaderboard.md)
+    board.py, board.html          # km board: 모델별 성능·실행 시간 리더보드 (docs/leaderboard.md, 정렬·차트가 있는 docs/leaderboard.html)
 docker/air/                       # Databricks 실행 이미지 (패키지 미리 설치)
 results/
   results.csv                     # 실행마다 한 줄 (CV 점수, fold std, 시간, 실행 위치)
