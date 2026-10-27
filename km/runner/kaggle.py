@@ -19,7 +19,7 @@ from pathlib import Path
 
 from km.core.competition import load_competition
 from km.core.results import merge_results
-from km.runner.common import add_run_args, remote_script
+from km.runner.common import add_run_args, check_fold_args, remote_script
 
 RUNNER = '''\
 import base64, io, os, subprocess, sys, tarfile
@@ -114,8 +114,9 @@ def main(argv: list[str] | None = None):
     ap.add_argument("--accelerator", help="GPU 종류 (NvidiaTeslaT4: 2장 / NvidiaTeslaP100: 1장), 기본은 Kaggle 기본값")
     ap.add_argument("--tag", default="", help="kernel 이름 태그 (km-<tag>-<comp>). 같은 대회를 동시에 돌릴 때 충돌 방지")
     args = ap.parse_args(argv)
+    check_fold_args(ap, args)
 
-    load_competition(args.comp)  # 설정 존재 확인
+    comp = load_competition(args.comp)  # 설정 존재 확인
     kernel = kernel_id(args.comp, username(), args.tag)
     if not args.fetch:
         push(kernel, args.comp, remote_script(args, RUNNER), args.accelerator)
@@ -125,4 +126,8 @@ def main(argv: list[str] | None = None):
         time.sleep(10)
         print(f"최종 상태: {wait(kernel)}")
     fetch(kernel)
+    if args.fold is not None:  # --fold 는 kernel 하나에 fold 하나 → 다른 fold kernel 결과까지 다 모이면 합쳐짐
+        from km.runner.run import merge_ready
+
+        merge_ready(comp, "kaggle")
 

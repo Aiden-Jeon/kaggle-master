@@ -87,5 +87,7 @@ def main(argv: list[str] | None = None):
 
     if args.cmd == "collect":
         return collect(args.output.read_text())
+    if args.fold is not None:  # collect 는 results.csv 행만 받아 옴 → fold 예측(npy)을 가져올 방법이 없음
+        ap.error("--fold 는 colab 에서 지원 안 함 (km databricks --split-folds 사용)")
     make(args)
 

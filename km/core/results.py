@@ -104,6 +104,8 @@ def merge_results(remote: Path, where: str):
                 if (m / "test.npy").exists() and not (m / TEST_INFO).exists():
                     clear_test_info(RESULTS / d.name / m.name)
             shutil.copytree(d, RESULTS / d.name, dirs_exist_ok=True)
+    if not (remote / "results.csv").exists():  # --fold 실행은 results.csv 를 안 씀 (합칠 때 씀)
+        return
     rows = pd.read_csv(remote / "results.csv").assign(where=where)
     append_rows(rows)
     print(rows.to_string(index=False))
