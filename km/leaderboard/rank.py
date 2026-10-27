@@ -20,6 +20,10 @@ Kaggle 호출: 제출 기록·리더보드·마감일·username 은 kagglesdk (s
 실행: 제출을 만든 실행의 CV 와 시각(run 열 = results.csv timestamp)을 같이 기록 → km board 가 실행 단위로 LB 를 붙임.
      설명의 `run <시각>` (km submit 기본) → `<n>-fold CV <점수>` → 제출 시각 전 마지막 실행 순으로 찾음.
      못 찾으면 이전 leaderboard.csv 에서 찾은 값을 제출 ref 로 유지. --submit 도 이미 제출한 '실행' 은 다시 내지 않음.
+시각을 못 읽으면: 집계는 그 제출만 실행 연결 없이 (이전 leaderboard.csv 값이 있으면 유지) 두고 나머지는 집계.
+     단 종료 대회에서 그 때문에 마감 전 제출이 있는지 모르면 (우리 팀을 뺄지 모름) 그 대회를 건너뜀.
+     --submit 은 제출 date·설명의 run·이전 leaderboard.csv 의 run 중 하나라도 못 읽으면 그 대회 제출·집계를 건너뜀
+     (출처를 모른 채 내면 이미 낸 실행을 다시 낼 수 있음).
 """
 
 from __future__ import annotations
@@ -277,6 +281,14 @@ def submission_run(comp, sub: dict, runs: pd.DataFrame) -> tuple[float | None, s
     return (float(before.cv.iloc[-1]), before.timestamp.iloc[-1]) if len(before) else (None, None)
 
 
+def sent_at(sub: dict) -> datetime | None:
+    """제출 시각 (UTC naive), 못 읽으면 None. rank_rows 용 (경고는 submission_run 실패 쪽에서 한 번). submit_pending 은 parse_utc 를 바로 써서 대회를 건너뜀."""
+    try:
+        return parse_utc(sub["date"])
+    except RuntimeError:
+        return None
+
+
 def rank_rows(comp_name: str, user: str, known: dict | None, subs: list[dict], results: pd.DataFrame) -> list[dict]:
     """known: 제출 ref → (cv, run), 이전 leaderboard.csv 에서 찾은 값. 이번에 실행을 못 찾으면 그 값을 유지.
     subs: 이 대회의 제출 목록 (submissions 결과), results: results.csv 전체 (read_results)."""
@@ -296,7 +308,11 @@ def rank_rows(comp_name: str, user: str, known: dict | None, subs: list[dict], r
         # 마감 뒤 제출 (late submission) 은 리더보드에 안 올라감 (2026-10-27 확인) → 마감 전 제출이 있을 때만 우리 팀을 찾아 뺌.
         # 조회 API 에는 멤버가 없어 팀 이름으로 찾음. 못 찾거나 같은 이름이 여럿이면 순위가 하나 틀리니 건너뜀
         mine = pd.Series(False, index=priv.index)
-        if any(parse_utc(s["date"]) <= closed_at for s in subs):
+        sent = [sent_at(s) for s in subs]
+        early = any(t is not None and t <= closed_at for t in sent)
+        if not early and None in sent:  # 시각을 못 읽은 제출이 마감 전일 수 있음 → 우리 팀을 뺄지 모름, 순위가 하나 틀릴 수 있어 건너뜀
+            raise RuntimeError("시각을 못 읽은 제출이 있어 마감 전 제출이 있는지 모름")
+        if early:
             team = {s["teamName"] for s in subs}
             mine = priv.TeamName.isin(team)
             if mine.sum() != 1:
@@ -315,7 +331,11 @@ def rank_rows(comp_name: str, user: str, known: dict | None, subs: list[dict], r
         model = model_of(s)
         if is_retired(model):
             continue
-        cv, run = submission_run(comp, s, runs[runs.model == model])
+        try:
+            cv, run = submission_run(comp, s, runs[runs.model == model])
+        except RuntimeError as e:  # 제출 date·설명의 run 을 못 읽음 → 이 제출만 실행 연결 없이 (submit_pending 은 대회를 건너뜀)
+            print(f"{comp_name}: 제출 {s['ref']} 을 실행에 연결하지 못함 ({e})")
+            cv, run = None, None
         if run is None and str(s["ref"]) in (known or {}):
             cv, run = known[str(s["ref"])]
         rows.append(dict(comp=comp_name, model=model, metric=comp.metric, basis=basis, cv=cv,

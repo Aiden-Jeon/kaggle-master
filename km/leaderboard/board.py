@@ -14,6 +14,7 @@ import argparse
 import json
 import re
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -21,7 +22,7 @@ import pandas as pd
 
 from km.core.competition import COMP_DIR, ROOT, load_competition
 from km.core.metrics import METRICS
-from km.core.results import RESULTS, is_exploration, made_test
+from km.core.results import RESULTS, is_exploration, made_test, parse_utc
 from km.models import REGISTRY
 
 OUT = ROOT / "docs" / "leaderboard.md"
@@ -35,8 +36,8 @@ TITLES = {  # 표 제목용 짧은 이름 (없으면 대회 이름 그대로)
     "otto-group-product-classification-challenge": "Otto", "GiveMeSomeCredit": "GiveMeSomeCredit",
     "allstate-claims-severity": "Allstate", "playground-series-s6e1": "S6E1", "playground-series-s6e10": "S6E10",
 }
-# results.csv 의 where 가 databricks 인 실행 중 이 날짜 전은 A10G 노드 (GBDT 도 같은 노드), 이후는 H100 (GBDT 는 databricks-cpu)
-H100_SINCE = "2026-10-23"
+# results.csv 의 where 가 databricks 인 실행 중 이 시각 (UTC) 전은 A10G 노드 (GBDT 도 같은 노드), 이후는 H100 (GBDT 는 databricks-cpu)
+H100_SINCE = datetime(2026, 10, 23)
 BASIS_LABEL = {"public": "public (진행 중)", "private": "private (종료)"}  # leaderboard.csv 의 basis 열 (km lb 참고)
 
 
@@ -59,7 +60,11 @@ def env(r) -> str:
     if where == "databricks-cpu":
         return "DBX CPU4"
     if where == "databricks":
-        return "DBX A10G" if r["timestamp"] < H100_SINCE else "DBX H100"
+        try:  # 문자열 비교는 타임존·형식이 다르면 틀림 → parse_utc 로 datetime 끼리
+            return "DBX A10G" if parse_utc(r["timestamp"]) < H100_SINCE else "DBX H100"
+        except RuntimeError as e:  # 노드를 모름 → s/1K 중앙값 (H100·CPU4 만) 에서도 빠짐
+            print(f"{r['comp']} {r['model']}: 실행 시각을 읽지 못해 환경을 DBX ? 로 표시 ({e})", file=sys.stderr)
+            return "DBX ?"  # "DBX" 는 HTML 의 10-23 이후 탭 이름이라 피함
     return {"kaggle": "Kaggle T4", "colab": "Colab T4", "local": "로컬"}.get(where, where)
 
 
