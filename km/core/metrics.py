@@ -17,6 +17,7 @@ def _auc(y, p):
 METRICS = {
     # name: (fn, higher_is_better)
     "accuracy": (_accuracy, True),
+    "balanced_accuracy": (lambda y, p: skm.balanced_accuracy_score(y, p.argmax(1)), True),
     "auc": (_auc, True),
     "logloss": (lambda y, p: skm.log_loss(y, p, labels=np.arange(p.shape[1])), False),
     "rmse": (lambda y, p: skm.root_mean_squared_error(y, p), False),

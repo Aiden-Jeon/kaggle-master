@@ -1,0 +1,10 @@
+name: name-that-llm
+task: multiclass
+target: model             # 글을 쓴 LLM 18개 (클래스마다 150행, claude-fable-5 만 149)
+id_col: id
+metric: balanced_accuracy
+cv:
+  n_splits: 5
+  seed: 42
+  stratify: true
+  group: prompt_id        # prompt 하나에 18개 모델이 한 번씩 답함 → 같은 prompt 는 같은 fold (주제 누수 방지)

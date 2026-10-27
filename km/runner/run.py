@@ -23,7 +23,7 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 
-from km.core.competition import TRANSFORMS, get_folds, load_competition, load_data, load_features
+from km.core.competition import TRANSFORMS, fold_groups, get_folds, load_competition, load_data, load_features
 from km.core.download import download
 from km.core.metrics import EXTRA, score
 from km.core.results import RESULTS, append_rows, clear_test_info, write_test_info
@@ -179,7 +179,7 @@ def save_fold(comp, name, fold, oof, test_pred, fold_score, secs, classes, note,
     print(f"=> {name}: fold {fold} {comp.metric}={fold_score:.5f}  ({secs:.0f}s) → {out}\n")
 
 
-def merge_folds(comp, name, y, where=None) -> bool:
+def merge_folds(comp, name, y, where=None, groups=None) -> bool:
     """folds/<k>/ 가 전부 있으면 합쳐 save_run (OOF 는 fold 별로 채우고 test 는 평균 = 한 번에 돌린 것과 같음).
     seconds 는 fold 시간 합. 모델 로드가 fold 마다 들어가 한 번에 돌린 것보다 길 수 있어 note 에 `(fold 분할)` 표시.
     합친 뒤 folds/ 는 지움. 빠진 fold 가 있거나 fold 끼리 조건(묶음·no_test·classes·note)이 다르면 False."""
@@ -196,7 +196,7 @@ def merge_folds(comp, name, y, where=None) -> bool:
             print(f"{name}: fold 마다 {key} 가 다름 → 합치지 않음. 남길 fold 만 두고 나머지는 지운 뒤 다시 실행 ({d})")
             return False
     first = metas[0]
-    folds = get_folds(comp, y)
+    folds = get_folds(comp, y, groups)
     oof = np.full(np.load(d / "0" / "oof.npy").shape, np.nan)
     for k in range(n):  # fold k 파일에서는 fold k 행만 씀 → 다른 folds.csv 로 만든 파일이면 아래에서 빈 행으로 걸림
         oof[folds == k] = np.load(d / str(k) / "oof.npy")[folds == k]
@@ -220,11 +220,12 @@ def merge_ready(comp, where=None, models=None) -> list[str]:
         return []
     if not (comp.data_dir / comp.train_file).exists():  # 타깃이 필요 (원격 실행만 했으면 로컬에 데이터가 없을 수 있음)
         download(comp)
-    y, _ = target(comp, load_data(comp)[0])
+    train = load_data(comp)[0]
+    y, _ = target(comp, train)
     failed = []
     for name in names:
         try:
-            ok = merge_folds(comp, name, y, where)
+            ok = merge_folds(comp, name, y, where, fold_groups(comp, train))
         except Exception:
             traceback.print_exc()
             ok = False
@@ -250,12 +251,13 @@ def main(argv: list[str] | None = None):
     train, test = load_data(comp)
     y, classes = target(comp, train)
     if args.merge_folds:
-        failed = [name for name in args.models if not merge_folds(comp, name, y, args.where)]
+        failed = [name for name in args.models
+                  if not merge_folds(comp, name, y, args.where, fold_groups(comp, train))]
         if failed:
             sys.exit(f"합치지 못한 모델: {', '.join(failed)}")
         return
     X, X_test, cat_cols = load_features(comp).build(train, test)
-    folds = get_folds(comp, y)  # 병렬 실행 전에 만들어 두어 모든 작업자가 같은 fold 사용
+    folds = get_folds(comp, y, fold_groups(comp, train))  # 병렬 실행 전에 만들어 두어 모든 작업자가 같은 fold 사용
     print(f"{comp.name}: train {X.shape}, test {X_test.shape}, cats={cat_cols}")
 
     n_gpus = gpu_count() if args.gpus is None else args.gpus

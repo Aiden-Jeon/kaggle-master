@@ -105,6 +105,50 @@ class _TabPFN(BaseEstimator):
         return self.model_.predict_proba(X)
 
 
+class _ManyClass(BaseEstimator):
+    """클래스 수가 모델 상한(max_classes)을 넘으면 코드표(codebook) 여러 장으로 나눠 학습 (ECOC).
+
+    코드표마다 클래스를 max_classes 개 코드에 고르게 섞어 묶고(한 코드에 클래스 1~2개), 코드를 맞히는 모델을 따로 학습.
+    예측은 클래스 c 의 점수 = Σ_k log(P_k[코드_k(c)] / 그 코드의 클래스 수) → softmax.
+    어떤 두 클래스도 두 장 이상에서 같은 코드에 묶이지 않도록 뽑음. 상한 안이면 모델 하나로 그대로.
+    """
+
+    def __init__(self, make, max_classes, n_books=4, seed=0):
+        self.make, self.max_classes, self.n_books, self.seed = make, max_classes, n_books, seed
+
+    def _books(self, n):
+        rng = np.random.default_rng(self.seed)
+        for _ in range(1000):
+            books = np.stack([rng.permutation(n) % self.max_classes for _ in range(self.n_books)])
+            same = (books[:, :, None] == books[:, None, :]).sum(0)  # 클래스 쌍마다 같은 코드인 장 수
+            if (same[~np.eye(n, dtype=bool)] <= 1).all():
+                return books
+        raise ValueError(f"클래스 {n}개를 코드 {self.max_classes}개 × {self.n_books}장으로 구분하지 못함")
+
+    def fit(self, X, y):
+        y = np.asarray(y)
+        n = int(y.max()) + 1
+        if n <= self.max_classes:
+            self.books_, self.models_ = None, [self.make().fit(X, y)]
+            return self
+        self.books_ = self._books(n)  # (n_books, n): 장마다 클래스 → 코드
+        self.models_ = [self.make().fit(X, book[y]) for book in self.books_]
+        return self
+
+    def predict_proba(self, X):
+        if self.books_ is None:
+            return self.models_[0].predict_proba(X)
+        logit = 0.0
+        for book, model in zip(self.books_, self.models_):
+            size = np.bincount(book, minlength=self.max_classes)
+            logit = logit + np.log(np.clip(model.predict_proba(X)[:, book], 1e-12, None) / size[book])
+        p = np.exp(logit - logit.max(1, keepdims=True))
+        return p / p.sum(1, keepdims=True)
+
+    def predict(self, X):
+        return self.predict_proba(X).argmax(1)
+
+
 def _tabpfn(task, cat_cols, seed, version=None, n_estimators="auto"):
     from tabpfn import TabPFNClassifier, TabPFNRegressor
 
@@ -123,7 +167,9 @@ def _tabpfn(task, cat_cols, seed, version=None, n_estimators="auto"):
 
             return cls.create_default_for_version(ModelVersion(version), **kwargs, **extra)
 
-        return _TabPFN(make, n_estimators)
+        if task == "regression" or version != "v2":  # v2 는 클래스 10개 상한 (넘으면 오류). 다른 버전 상한은 미확인
+            return _TabPFN(make, n_estimators)
+        return _ManyClass(lambda: _TabPFN(make, n_estimators), max_classes=10, seed=seed)
 
     return _TFM(build, cat_cols)
 

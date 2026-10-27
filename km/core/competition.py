@@ -10,7 +10,7 @@ from types import ModuleType
 import numpy as np
 import pandas as pd
 import yaml
-from sklearn.model_selection import KFold, StratifiedKFold
+from sklearn.model_selection import GroupKFold, KFold, StratifiedGroupKFold, StratifiedKFold
 
 ROOT = Path(__file__).resolve().parents[2]
 COMP_DIR = ROOT / "competitions"
@@ -78,8 +78,15 @@ def load_features(comp: Competition) -> ModuleType:
     return module
 
 
-def get_folds(comp: Competition, y: np.ndarray) -> np.ndarray:
-    """fold 번호 배열. 모든 모델이 같은 fold를 쓰도록 folds.csv 로 고정 저장."""
+def fold_groups(comp: Competition, train: pd.DataFrame) -> np.ndarray | None:
+    """cv.group 열 값 (get_folds 의 groups). 설정이 없으면 None."""
+    return train[comp.cv["group"]].to_numpy() if comp.cv.get("group") else None
+
+
+def get_folds(comp: Competition, y: np.ndarray, groups: np.ndarray | None = None) -> np.ndarray:
+    """fold 번호 배열. 모든 모델이 같은 fold를 쓰도록 folds.csv 로 고정 저장.
+
+    cv.group 을 설정하면 같은 그룹(예: name-that-llm 의 prompt_id)은 같은 fold 에 둠 → 처음 만들 때 groups 필요."""
     path = comp.dir / "folds.csv"
     if path.exists():
         folds = pd.read_csv(path)["fold"].to_numpy()
@@ -88,10 +95,16 @@ def get_folds(comp: Competition, y: np.ndarray) -> np.ndarray:
         raise ValueError(f"{path} 의 길이({len(folds)})가 train({len(y)})과 다름")
 
     cv = comp.cv
-    splitter_cls = StratifiedKFold if cv.get("stratify") and comp.is_classification else KFold
+    stratify = cv.get("stratify") and comp.is_classification
+    if cv.get("group"):
+        if groups is None:
+            raise ValueError(f"{comp.name}: cv.group={cv['group']} 인데 그룹 값 없이 fold 를 만들려 함")
+        splitter_cls = StratifiedGroupKFold if stratify else GroupKFold
+    else:
+        splitter_cls = StratifiedKFold if stratify else KFold
     splitter = splitter_cls(n_splits=cv["n_splits"], shuffle=True, random_state=cv["seed"])
     folds = np.empty(len(y), dtype=int)
-    for i, (_, va) in enumerate(splitter.split(np.zeros(len(y)), y)):
+    for i, (_, va) in enumerate(splitter.split(np.zeros(len(y)), y, groups)):
         folds[va] = i
     pd.DataFrame({"fold": folds}).to_csv(path, index=False)
     return folds
