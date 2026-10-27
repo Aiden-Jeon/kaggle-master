@@ -30,7 +30,9 @@ def make_submission(comp_name: str, models: list[str]) -> Path:
     ids = test[comp.id_col] if comp.id_col else np.arange(1, len(test) + 1)
     id_name, target_name = comp.submit_columns or [comp.id_col, comp.target]
     if comp.is_classification:
-        classes = json.loads((RESULTS / comp.name / models[0] / "meta.json").read_text())["classes"]
+        # 예측 열 순서: test.json (예측과 함께 저장) → 없으면 meta.json (--no-test 재실행이 덮어썼을 수 있음)
+        classes = (test_info(comp.name, models[0]) or {}).get("classes") or \
+            json.loads((RESULTS / comp.name / models[0] / "meta.json").read_text())["classes"]
     if comp.task == "multiclass" and comp.submit_proba:  # 클래스마다 확률 열 하나 (열 이름 = 클래스 값)
         sub = pd.concat([pd.DataFrame({id_name: ids}), pd.DataFrame(pred, columns=classes)], axis=1)
     else:

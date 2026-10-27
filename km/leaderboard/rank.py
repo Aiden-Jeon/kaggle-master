@@ -189,8 +189,8 @@ def main(argv: list[str] | None = None):
     ap.add_argument("--submit", type=int, default=0, metavar="N",
                     help="대회마다 미제출 모델을 CV 순으로 N 개 제출 (대회별 하루 제출 한도 주의)")
     args = ap.parse_args(argv)
-    comps = args.comps or sorted(p.name for p in COMP_DIR.iterdir()
-                                 if (p / "config.yaml").exists() and not p.name.startswith("_"))
+    all_comps = sorted(p.name for p in COMP_DIR.iterdir() if (p / "config.yaml").exists() and not p.name.startswith("_"))
+    comps = args.comps or all_comps
     user = me()
     path = RESULTS / "leaderboard.csv"
     prev = pd.read_csv(path, dtype={"ref": str}) if path.exists() else pd.DataFrame()
@@ -209,8 +209,8 @@ def main(argv: list[str] | None = None):
     if not rows:
         return
     df = pd.DataFrame(rows).sort_values(["comp", "rank", "date"])
-    if len(prev):  # 이번에 집계하지 않은 대회(지정 안 함·Kaggle 오류로 건너뜀)는 이전 행 유지
-        old = prev[~prev.comp.isin(tallied) & ~prev.model.astype(str).map(is_retired)]
+    if len(prev):  # 이번에 집계하지 않은 대회(지정 안 함·Kaggle 오류로 건너뜀)는 이전 행 유지, 없어진 대회는 버림
+        old = prev[prev.comp.isin(all_comps) & ~prev.comp.isin(tallied) & ~prev.model.astype(str).map(is_retired)]
         df = pd.concat([old, df]).sort_values(["comp", "rank", "date"])
     df.to_csv(path, index=False)
     print(df.drop(columns=["description", "ref"]).to_string(index=False))

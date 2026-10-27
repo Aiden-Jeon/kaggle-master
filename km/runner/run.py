@@ -23,7 +23,7 @@ from sklearn.preprocessing import LabelEncoder
 
 from km.core.competition import TRANSFORMS, get_folds, load_competition, load_data, load_features
 from km.core.metrics import EXTRA, score
-from km.core.results import RESULTS, append_rows, write_test_info
+from km.core.results import RESULTS, append_rows, clear_test_info, write_test_info
 from km.models import make_model
 from km.runner.common import add_run_args, run_argv
 
@@ -173,8 +173,9 @@ def main(argv: list[str] | None = None):
                     timestamp=datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds"))
         (out / "meta.json").write_text(json.dumps(meta, indent=2, default=str))
         if not args.no_test:  # 예측과 그 출처(km submit 이 제출 설명에 적음)는 함께만 씀
+            clear_test_info(out)
             np.save(out / "test.npy", test_pred)
-            write_test_info(out, meta["timestamp"], scores[comp.metric], len(fold_scores))
+            write_test_info(out, meta["timestamp"], scores[comp.metric], len(fold_scores), classes)
 
         row = dict(timestamp=meta["timestamp"], comp=comp.name, model=name, metric=comp.metric,
                    cv=scores[comp.metric], cv_std=float(np.std(fold_scores)), n_folds=len(fold_scores),

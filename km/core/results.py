@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fcntl
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -41,21 +42,39 @@ def made_test(runs: pd.DataFrame) -> pd.Series:
     return test.fillna(~runs.note.fillna("").str.startswith("ctx ")).astype(bool)
 
 
-def write_test_info(out: Path, run: str, cv: float, n_folds: int):
-    """test.npy 를 저장할 때만 같이 씀 → --no-test 재실행·원격 결과 병합(copytree)에도 예측과 출처가 함께 다님."""
-    (out / TEST_INFO).write_text(json.dumps(dict(run=run, cv=cv, n_folds=n_folds), indent=2))
+def clear_test_info(out: Path):
+    """test.npy 를 새로 쓰기 전에 호출 → 저장 도중 멈추거나 test.json 을 안 쓰는 코드가 덮어써도 예전 출처가 남지 않음."""
+    (out / TEST_INFO).unlink(missing_ok=True)
+
+
+def write_test_info(out: Path, run: str, cv: float, n_folds: int, classes: list | None):
+    """test.npy 를 저장한 직후에만 씀 → --no-test 재실행·원격 결과 병합(copytree)에도 예측과 출처가 함께 다님.
+    classes: 예측 열 순서 (meta.json 은 --no-test 재실행이 덮어쓰므로 제출 파일은 이 값으로 만듦). 임시 파일 → 교체로 원자적."""
+    tmp = out / f".{TEST_INFO}.tmp"
+    tmp.write_text(json.dumps(dict(run=run, cv=cv, n_folds=n_folds, classes=classes), indent=2))
+    os.replace(tmp, out / TEST_INFO)
 
 
 def test_info(comp_name: str, model: str) -> dict | None:
-    """저장된 test.npy 를 만든 실행 {run, cv, n_folds}. test.json 이 없으면 None (추측하지 않음)."""
+    """저장된 test.npy 를 만든 실행 {run, cv, n_folds, classes}. test.json 이 없거나 깨졌으면 None (추측하지 않음)."""
     d = RESULTS / comp_name / model
-    return json.loads((d / TEST_INFO).read_text()) if (d / TEST_INFO).exists() and (d / "test.npy").exists() else None
+    if not ((d / TEST_INFO).exists() and (d / "test.npy").exists()):
+        return None
+    try:
+        info = json.loads((d / TEST_INFO).read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    return info if isinstance(info, dict) and {"run", "cv", "n_folds"} <= info.keys() else None
 
 
 def merge_results(remote: Path, where: str):
     """원격 실행의 results/ 를 로컬 results/ 에 병합 (results.csv 는 where 열을 붙여 행 추가)."""
     for d in remote.iterdir():
         if d.is_dir():
+            # test.json 없이 test.npy 만 온 모델 (test.json 을 안 쓰던 코드로 돌린 원격 실행) → 로컬의 예전 출처를 지움
+            for m in d.iterdir():
+                if (m / "test.npy").exists() and not (m / TEST_INFO).exists():
+                    clear_test_info(RESULTS / d.name / m.name)
             shutil.copytree(d, RESULTS / d.name, dirs_exist_ok=True)
     rows = pd.read_csv(remote / "results.csv").assign(where=where)
     append_rows(rows)
