@@ -85,11 +85,14 @@ def public_leaderboard(comp: str) -> pd.DataFrame:
 def sdk():
     """kagglesdk 클라이언트. km lb 한 번에 인증·세션 하나 (세션은 프로세스가 끝날 때까지 씀).
     CLI 에 없는 마감일·리더보드 조회용 (kaggle 패키지에 이미 들어 있음)."""
-    from kaggle.api.kaggle_api_extended import KaggleApi
+    try:
+        from kaggle.api.kaggle_api_extended import KaggleApi
 
-    api = KaggleApi()
-    api.authenticate()
-    return api.build_kaggle_client().__enter__()
+        api = KaggleApi()
+        api.authenticate()
+        return api.build_kaggle_client().__enter__()
+    except Exception as e:  # 설치·인증 문제 → RuntimeError 로 바꿔 main 이 이 대회만 건너뛰고 집계한 행은 저장
+        raise RuntimeError(f"kagglesdk 준비 실패: {e!r}") from e
 
 
 def sdk_call(what: str, fn, req):
@@ -108,7 +111,7 @@ def sdk_call(what: str, fn, req):
 
 
 def is_closed(comp: str) -> bool:
-    """마감이 지난 대회인지. deadline 은 kagglesdk 가 UTC 'Z' 를 떼고 준 naive datetime."""
+    """마감이 지난 대회인지. deadline 은 kagglesdk 가 UTC 'Z' 를 떼고 준 naive datetime (타임존이 붙어 와도 parse_utc 로 맞춤)."""
     from kagglesdk.competitions.types.competition_api_service import ApiGetCompetitionRequest
 
     req = ApiGetCompetitionRequest()
@@ -116,7 +119,7 @@ def is_closed(comp: str) -> bool:
     deadline = sdk_call("대회 정보 조회", sdk().competitions.competition_api_client.get_competition, req).deadline
     if deadline is None:
         raise RuntimeError("대회 마감일을 모름")
-    return deadline < datetime.now(timezone.utc).replace(tzinfo=None)
+    return parse_utc(deadline.isoformat()) < datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def private_leaderboard(comp: str) -> pd.DataFrame:
@@ -255,21 +258,21 @@ def rank_rows(comp_name: str, user: str, known: dict | None, subs: list[dict], r
     lb = public_leaderboard(comp_name)
     mine = lb.TeamMemberUserNames.fillna("").str.split(",").apply(lambda u: user in [x.strip() for x in u])
     # 종료 대회는 private 기준. 우리 제출에 private 점수가 없으면 (private 비공개) public 기준으로 둠
-    private_subs = [s for s in subs if s["privateScore"] not in (None, "")]
-    basis = "private" if private_subs and is_closed(comp_name) else "public"
+    has_private = any(s["privateScore"] not in (None, "") for s in subs)
+    basis = "private" if has_private and is_closed(comp_name) else "public"
     if basis == "private":
         priv = private_leaderboard(comp_name)
         if priv.empty:
             raise RuntimeError("리더보드 조회 결과가 비어 있음")
         others = priv.loc[~priv.TeamId.isin(set(lb.loc[mine, "TeamId"])), "Score"].to_numpy()
-        subs = private_subs
     else:
         others = lb.loc[~mine, "Score"].to_numpy()
     runs = prediction_runs(comp, results)
     rows = []
     for s in subs:
-        score = float(s["privateScore"] if basis == "private" else s["publicScore"])
-        rank = int(((others > score) if higher else (others < score)).sum()) + 1
+        score = s["privateScore"] if basis == "private" else s["publicScore"]
+        # 종료 대회인데 private 점수가 없는 제출 → 순위 없이 행만 남김 (실행 연결은 다음 km lb 의 known 으로 유지)
+        rank = None if score in (None, "") else int(((others > float(score)) if higher else (others < float(score))).sum()) + 1
         model = model_of(s)
         if is_retired(model):
             continue
@@ -279,7 +282,7 @@ def rank_rows(comp_name: str, user: str, known: dict | None, subs: list[dict], r
         rows.append(dict(comp=comp_name, model=model, metric=comp.metric, basis=basis, cv=cv,
                          public=float(s["publicScore"]),
                          private=float(s["privateScore"]) if s["privateScore"] not in (None, "") else None,
-                         rank=rank, teams=len(others) + 1, top_pct=round(100 * rank / (len(others) + 1), 1),
+                         rank=rank, teams=len(others) + 1, top_pct=None if rank is None else round(100 * rank / (len(others) + 1), 1),
                          date=s["date"][:10], description=s["description"], ref=s["ref"], run=run))
     return rows
 

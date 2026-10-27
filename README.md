@@ -14,23 +14,24 @@ Tabular Foundation Model(TabPFN, TabICL, Kumo 등)을 GBDT 베이스라인(Light
 정렬·필터·차트로 보는 리더보드는 https://aiden-jeon.github.io/kaggle-master/ (`docs/leaderboard.html`, GitHub Pages).
 `(ctx 전체)` · `(ctx 20만)` = TFM 컨텍스트 상한(`tfm_max_rows: 10000`)을 풀고 다시 돌린 kumo.
 
-| 대회 | 학습 행 | 지표 | CV 1위 | 최고 LB 순위 (public) |
+| 대회 | 학습 행 | 지표 | CV 1위 | 최고 LB 순위 |
 |---|---|---|---|---|
-| Restaurant Revenue | 137 | RMSE ↓ | kumo | 상위 15.3% (tabpfn_v2) |
-| Titanic | 891 | acc ↑ | exaone | 상위 40.2% (exaone) |
+| Restaurant Revenue | 137 | RMSE ↓ | kumo | 상위 51.0% (tabpfn_v2) |
+| Titanic | 891 | acc ↑ | exaone | 상위 40.3% (exaone) |
 | House Prices | 1,460 | RMSE ↓ | tabpfn_v2 | **상위 1.8%** (kumo) |
 | Bioresponse | 3,751 | logloss ↓ | 5-fold 미실행 | 미제출 |
-| Mercedes-Benz | 4,209 | R² ↑ | kumo | 상위 47.1% (kumo) |
-| Spaceship Titanic | 8,693 | acc ↑ | kumo | 상위 5.9% (exaone@knn1000) |
-| S4E2 | 20,758 | acc ↑ | tabicl | 상위 40.4% (kumo@knn1000 · exaone@knn1000) |
-| Amazon | 32,769 | AUC ↑ | catboost | 상위 3.8% (catboost) |
+| Mercedes-Benz | 4,209 | R² ↑ | kumo | **3위 · 상위 0.1%** (kumo) |
+| Spaceship Titanic | 8,693 | acc ↑ | kumo | 상위 6.3% (exaone@knn1000) |
+| S4E2 | 20,758 | acc ↑ | tabicl | 상위 7.2% (kumo@knn1000) |
+| Amazon | 32,769 | AUC ↑ | catboost | 상위 4.3% (catboost) |
 | Otto | 61,878 | logloss ↓ | kumo (ctx 전체) | **1위** (kumo (ctx 전체)) |
 | GiveMeSomeCredit | 150,000 | AUC ↑ | kumo (ctx 전체) | **1위** (kumo (ctx 전체)) |
 | Allstate | 188,318 | MAE ↓ | kumo (ctx 전체) | **1위** (kumo (ctx 전체)) |
-| S6E1 | 630,000 | RMSE ↓ | kumo (ctx 20만) | 상위 17.7% (kumo (ctx 20만)) |
-| S6E10 | 699,635 | AUC ↑ | kumo (ctx 20만) | 상위 65.4% (kumo (ctx 20만)) |
+| S6E1 | 630,000 | RMSE ↓ | kumo (ctx 20만) | 상위 17.0% (kumo (ctx 20만)) |
+| S6E10 | 699,635 | AUC ↑ | kumo (ctx 20만) | 상위 65.5% (kumo (ctx 20만)) |
 
-종료된 대회의 LB 순위는 늦은 제출 점수로 매긴 위치 (Otto·GiveMeSomeCredit·Allstate 1위 포함).
+LB 순위는 `km lb` 집계: 종료된 대회는 private 점수, 진행 중·상시 대회 (Titanic·House Prices·Spaceship·S6E10) 는 public 점수 기준.
+종료된 대회의 순위는 늦은 제출 점수로 매긴 위치 (Otto·GiveMeSomeCredit·Allstate 1위, Mercedes 3위 포함).
 
 - 작은 데이터에서는 TFM 이 GBDT 와 같거나 앞섬. 큰 데이터의 GBDT 우위는 대부분 TFM 컨텍스트 1만 행 상한 탓 — 상한을 푼 kumo 가 Otto·GiveMeSomeCredit·Allstate·S6E1 에서 GBDT 최고를 넘고 S6E10 은 동률.
 - TFM 중에서는 kumo 가 가장 꾸준함. 범주 ID 만 있는 데이터(Amazon)는 상한을 풀어도 catboost 가 앞섬 (원인은 추정).

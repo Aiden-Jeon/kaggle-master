@@ -79,6 +79,9 @@ def label(model: str, en: bool = False) -> str:
 def load() -> tuple[pd.DataFrame, dict]:
     res = pd.read_csv(RESULTS / "results.csv")
     lb = pd.read_csv(RESULTS / "leaderboard.csv")  # 제출마다 한 행, 대회·순위 순 정렬
+    for col in ("private", "basis"):  # 이 열이 생기기 전 km lb 가 쓴 파일 → public 기준으로 봄
+        if col not in lb:
+            lb[col] = "public" if col == "basis" else np.nan
     comps = sorted(p.name for p in COMP_DIR.iterdir() if (p / "config.yaml").exists() and not p.name.startswith("_"))
     d = res[res.comp.isin(comps) & (res.n_folds == 5) & res.cv.notna() & res.seconds.notna()]
     d = d[~d.model.str.contains(r"\+|llm|sap_rpt")]  # 앙상블, LLM 결정 모델, sap_rpt
