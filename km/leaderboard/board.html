@@ -4,7 +4,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>kaggle-master 리더보드 · TFM vs GBDT</title>
+<title>kaggle-master leaderboard · TFM vs GBDT</title>
 <style>
 :root {
   color-scheme: light;
@@ -62,11 +62,13 @@ tr.dim td { opacity: 0.45; }
 .fam.TFM { background: var(--tfm); }
 .fam.GBDT { background: var(--gbdt); }
 .legend { display: flex; gap: 16px; color: var(--ink-2); font-size: 12px; margin: 8px 0; }
-.heat td.cell { text-align: center; min-width: 46px; padding: 0; border: 2px solid var(--surface); border-radius: 4px; cursor: pointer; }
+.heat { table-layout: fixed; width: auto; }
+.heat td.left { overflow: hidden; text-overflow: ellipsis; }
+.heat td.cell { text-align: center; padding: 0; border: 2px solid var(--surface); border-radius: 4px; cursor: pointer; }
 .heat td.cell span { display: block; padding: 6px 4px; }
 .heat td.cell:hover, .heat td.cell:focus { outline: 2px solid var(--ink); outline-offset: -2px; }
 .heat td.empty { color: var(--muted); cursor: default; }
-.heat th.col { cursor: pointer; text-align: center; font-weight: 500; }
+.heat th.col { cursor: pointer; text-align: center; font-weight: 500; white-space: normal; hyphens: auto; overflow-wrap: anywhere; vertical-align: bottom; line-height: 1.25; padding: 6px 1px; font-size: 11px; letter-spacing: -0.2px; }
 .heat th.col.on { color: var(--ink); font-weight: 700; }
 .heat th.col small { display: block; color: var(--muted); font-weight: 400; }
 .heat tbody tr:hover { background: transparent; }
@@ -93,70 +95,66 @@ footer { margin-top: 24px; }
 </head>
 <body>
 <main>
-  <h1>kaggle-master 리더보드</h1>
-  <p class="sub">Tabular Foundation Model(TFM) 과 GBDT 를 같은 5-fold CV·같은 피처, 튜닝 없는 기본 설정으로 비교. <span id="date"></span></p>
+  <h1 data-t="title"></h1>
+  <p class="sub"><span data-t="sub"></span> <span id="date"></span></p>
   <details>
-    <summary>표 읽는 법</summary>
-    <ul>
-      <li><b>평균 CV 순위</b> = 대회마다 (순위−1)/(모델 수−1) 의 평균. 0 = 항상 1위, 1 = 항상 꼴찌. 모델마다 실행한 대회가 달라 대략적인 비교.</li>
-      <li>종합·히트맵은 모델마다 대회별로 CV 가 가장 좋은 설정 하나만 셈 (컨텍스트 변형 <code>ctx 전체</code>·<code>ctx 20만</code>·<code>kNN 1000</code> 포함).</li>
-      <li><b>시간</b> = 5-fold 합계 (학습 + 검증·테스트 예측). <b>s/1K</b> = 시간 ÷ 예측 행 수 × 1000 (예측 행 = 학습 행 + 테스트 행 × 5). 작은 대회는 고정 비용 때문에 s/1K 가 부풀려짐.</li>
-      <li>환경이 다르면 시간 비교 불가: DBX H100 (TFM) · DBX CPU4 (GBDT, serverless 4코어) · DBX A10G · Kaggle T4. <b>s/1K (DBX)</b> = H100·CPU4 실행만의 중앙값.</li>
-      <li><b>LB</b> = Kaggle public 점수 기준 위치. 종료 대회는 늦은 제출이라 실제 순위표에는 없음. — = 미제출.</li>
-      <li>TFM 컨텍스트 상한 <span id="caps"></span> 은 무작위 샘플. 상한을 푼 실행은 일부 모델(kumo)만 있어 그 대회들의 순위 일부는 모델 차이가 아니라 컨텍스트 차이.</li>
-      <li>Otto·GiveMeSomeCredit·Amazon 등 공개 데이터는 TFM 사전학습에 들어갔을 수 있어 CV 가 부풀었을 수 있음 (LB 는 영향 없음).</li>
-    </ul>
+    <summary data-t="howto"></summary>
+    <ul id="notes"></ul>
   </details>
 
   <div class="controls">
-    <span class="muted">계열</span>
+    <span class="muted" data-t="family"></span>
     <div class="seg" id="family">
-      <button data-v="all" aria-pressed="true">전체</button><button data-v="TFM" aria-pressed="false">TFM</button><button data-v="GBDT" aria-pressed="false">GBDT</button>
+      <button data-v="all" aria-pressed="true" data-t="all"></button><button data-v="TFM" aria-pressed="false">TFM</button><button data-v="GBDT" aria-pressed="false">GBDT</button>
     </div>
     <span class="muted" id="focusNote"></span>
     <span style="flex:1"></span>
-    <div class="seg" id="theme" title="테마">
-      <button data-v="auto" aria-pressed="true">자동</button><button data-v="light" aria-pressed="false">라이트</button><button data-v="dark" aria-pressed="false">다크</button>
+    <div class="seg" id="lang">
+      <button data-v="ko" aria-pressed="false" lang="ko">한국어</button><button data-v="en" aria-pressed="false" lang="en">English</button>
+    </div>
+    <div class="seg" id="theme">
+      <button data-v="auto" aria-pressed="true" data-t="auto"></button><button data-v="light" aria-pressed="false" data-t="light"></button><button data-v="dark" aria-pressed="false" data-t="dark"></button>
     </div>
   </div>
 
   <section class="card">
-    <h2>종합</h2>
-    <p class="muted">열 제목을 누르면 정렬, 모델 이름을 누르면 아래 차트에서 그 모델만 강조.</p>
+    <h2 data-t="summary"></h2>
+    <p class="muted" data-t="summaryHelp"></p>
     <div class="scroll"><table id="summary"></table></div>
   </section>
 
   <section class="card">
-    <h2>대회 × 모델 CV 순위</h2>
-    <p class="muted">칸 숫자 = 그 대회 CV 순위 (모델마다 최고 설정 하나씩 비교, 진할수록 상위). 열 제목이나 칸을 누르면 아래 대회별 상세로 이동. 대회는 학습 행 수 순.</p>
-    <div class="legend"><span>하위<span class="ramp" id="ramp"></span>상위</span><span>· = 미실행</span></div>
+    <h2 data-t="heat"></h2>
+    <p class="muted" data-t="heatHelp"></p>
+    <div class="legend"><span><span data-t="low"></span><span class="ramp" id="ramp"></span><span data-t="high"></span></span><span data-t="notRun"></span></div>
     <div class="scroll"><table class="heat" id="heat"></table></div>
   </section>
 
   <section class="card">
-    <h2>속도 vs 성능</h2>
-    <p class="muted">가로 = s/1K 중앙값 (로그, 왼쪽이 빠름), 세로 = 평균 CV 순위 (위가 좋음). 시간이 없는 모델은 빠짐.</p>
+    <h2 data-t="speed"></h2>
+    <p class="muted" data-t="speedHelp"></p>
     <div class="controls" style="margin-top:8px">
-      <div class="seg" id="speedEnv"><button data-v="s1k" aria-pressed="true">DBX (H100 · CPU4)</button><button data-v="s1k_all" aria-pressed="false">전체 환경</button></div>
+      <div class="seg" id="speedEnv"><button data-v="s1k" aria-pressed="true">DBX (H100 · CPU4)</button><button data-v="s1k_all" aria-pressed="false" data-t="allEnv"></button></div>
       <span class="legend" style="margin:0"><span><i class="fam TFM"></i>TFM</span><span><i class="fam GBDT"></i>GBDT</span></span>
     </div>
     <div id="scatter"></div>
   </section>
 
   <section class="card" id="detail">
-    <h2>대회별</h2>
+    <h2 data-t="detail"></h2>
     <div class="pills" id="pills"></div>
     <p id="compMeta" class="sub"></p>
     <div class="controls" style="margin-top:4px">
-      <label class="check"><input type="checkbox" id="variants" checked> 컨텍스트 변형 행도 보기</label>
-      <span class="legend" style="margin:0"><span><i class="fam TFM"></i>TFM</span><span><i class="fam GBDT"></i>GBDT</span><span>가로 막대 = ± fold std</span></span>
+      <label class="check"><input type="checkbox" id="variants" checked> <span data-t="variants"></span></label>
+      <span class="legend" style="margin:0"><span><i class="fam TFM"></i>TFM</span><span><i class="fam GBDT"></i>GBDT</span><span data-t="whisker"></span></span>
     </div>
     <div id="dots"></div>
     <div class="scroll"><table id="comp"></table></div>
   </section>
 
   <footer class="muted">
-    <code>uv run km board</code> 로 생성 · 데이터 <a href="https://github.com/Aiden-Jeon/kaggle-master/blob/main/results/results.csv">results.csv</a>,
+    <code>uv run km board</code> <span data-t="madeBy"></span> · <span data-t="data"></span>
+    <a href="https://github.com/Aiden-Jeon/kaggle-master/blob/main/results/results.csv">results.csv</a>,
     <a href="https://github.com/Aiden-Jeon/kaggle-master/blob/main/results/leaderboard.csv">leaderboard.csv</a> ·
     <a href="https://github.com/Aiden-Jeon/kaggle-master">github.com/Aiden-Jeon/kaggle-master</a>
   </footer>
@@ -169,10 +167,78 @@ footer { margin-top: 24px; }
 const DATA = JSON.parse(document.getElementById("data").textContent);
 const COMPS = DATA.comps, RUNS = DATA.runs, SUMMARY = DATA.summary;
 const compById = Object.fromEntries(COMPS.map(c => [c.id, c]));
-const state = { family: "all", focus: null, comp: null, variants: true, speed: "s1k",
+const state = { family: "all", focus: null, comp: null, variants: true, speed: "s1k", lang: "ko",
                 sumSort: { key: "pct", dir: 1 }, compSort: { key: "cv_rank", dir: 1 } };
 // 순차 팔레트 (blue 100→700). 라이트는 상위일수록 진하게, 다크는 상위일수록 밝게.
 const RAMP = ["#cde2fb","#b7d3f6","#9ec5f4","#86b6ef","#6da7ec","#5598e7","#3987e5","#2a78d6","#256abf","#1c5cab","#184f95","#104281","#0d366b"];
+const HEAT_COL = 68, HEAT_MODEL_COL = 120;  // 히트맵 열 너비 (px). 대회 열은 모두 같은 너비
+
+// ---- 한국어 / 영어 ----
+// notes 는 직접 쓴 HTML (데이터 아님). <span class="caps"> 자리에 상한 목록을 textContent 로 넣음
+const I18N = {
+  ko: {
+    pageTitle: "kaggle-master 리더보드 · TFM vs GBDT", title: "kaggle-master 리더보드",
+    sub: "Tabular Foundation Model(TFM) 과 GBDT 를 같은 5-fold CV·같은 피처, 튜닝 없는 기본 설정으로 비교.",
+    generated: d => `${d} 생성.`, howto: "표 읽는 법",
+    notes: [
+      "<b>평균 CV 순위</b> = 대회마다 (순위−1)/(모델 수−1) 의 평균. 0 = 항상 1위, 1 = 항상 꼴찌. 모델마다 실행한 대회가 달라 대략적인 비교.",
+      "종합·히트맵은 모델마다 대회별로 CV 가 가장 좋은 설정 하나만 셈 (컨텍스트 변형 <code>ctx 전체</code>·<code>ctx 20만</code>·<code>kNN 1000</code> 포함).",
+      "<b>시간</b> = 5-fold 합계 (학습 + 검증·테스트 예측). <b>s/1K</b> = 시간 ÷ 예측 행 수 × 1000 (예측 행 = 학습 행 + 테스트 행 × 5). 작은 대회는 고정 비용 때문에 s/1K 가 부풀려짐.",
+      "환경이 다르면 시간 비교 불가: DBX H100 (TFM) · DBX CPU4 (GBDT, serverless 4코어) · DBX A10G · Kaggle T4. <b>s/1K (DBX)</b> = H100·CPU4 실행만의 중앙값.",
+      "<b>LB</b> = Kaggle public 점수 기준 위치. 종료 대회는 늦은 제출이라 실제 순위표에는 없음. — = 미제출.",
+      "TFM 컨텍스트 상한 <span class=\"caps\"></span> 은 무작위 샘플. 상한을 푼 실행은 일부 모델(kumo)만 있어 그 대회들의 순위 일부는 모델 차이가 아니라 컨텍스트 차이.",
+      "Otto·GiveMeSomeCredit·Amazon 등 공개 데이터는 TFM 사전학습에 들어갔을 수 있어 CV 가 부풀었을 수 있음 (LB 는 영향 없음).",
+    ],
+    family: "계열", all: "전체", auto: "자동", light: "라이트", dark: "다크", themeTitle: "테마",
+    summary: "종합", summaryHelp: "열 제목을 누르면 정렬, 모델 이름을 누르면 아래 차트에서 그 모델만 강조.",
+    heat: "대회 × 모델 CV 순위",
+    heatHelp: "칸 숫자 = 그 대회 CV 순위 (모델마다 최고 설정 하나씩 비교, 진할수록 상위). 열 제목이나 칸을 누르면 아래 대회별 상세로 이동. 대회는 학습 행 수 순.",
+    low: "하위", high: "상위", notRun: "· = 미실행",
+    speed: "속도 vs 성능", speedHelp: "가로 = s/1K 중앙값 (로그, 왼쪽이 빠름), 세로 = 평균 CV 순위 (위가 좋음). 시간이 없는 모델은 빠짐.",
+    allEnv: "전체 환경", detail: "대회별", variants: "컨텍스트 변형 행도 보기", whisker: "가로 막대 = ± fold std",
+    madeBy: "로 생성", data: "데이터",
+    col: { model: "모델", family: "계열", n: "대회 수", wins: "CV 1위", pct: "평균 CV 순위", lb: "최고 LB (상위 %)",
+           s1k: "s/1K (DBX)", s1k_all: "s/1K (전체)", ctx: "컨텍스트 변형", lbRank: "LB 순위", time: "시간", env: "환경" },
+    modelRank: "모델 순위", cfgRank: "설정별 CV 순위", bestLb: "최고 LB",
+    rows: n => `${n}행`, trainTest: (a, b) => `학습 ${a}행 · 테스트 ${b}행`, cap: n => `TFM 컨텍스트 상한 ${n}행`, none: "없음",
+    better: h => h ? "오른쪽이 좋음 →" : "← 왼쪽이 좋음", logAxis: "s/1K (로그) →", fast: "← 빠름",
+    focus: b => `강조: ${b} (다시 누르면 해제)`, focusTitle: "이 모델 강조",
+    scatterAria: "속도 대 평균 CV 순위 산점도", dotsAria: t => `${t} CV 점수`, env: {},
+  },
+  en: {
+    pageTitle: "kaggle-master leaderboard · TFM vs GBDT", title: "kaggle-master leaderboard",
+    sub: "Tabular Foundation Models (TFM) vs GBDT on the same 5-fold CV and features, all with default settings and no tuning.",
+    generated: d => `Generated ${d}.`, howto: "How to read",
+    notes: [
+      "<b>Mean CV rank</b> = average over competitions of (rank−1)/(models−1). 0 = always first, 1 = always last. Models ran on different sets of competitions, so this is a rough comparison.",
+      "Summary and heatmap count only each model's best-CV configuration per competition (context variants <code>ctx full</code>·<code>ctx 200K</code>·<code>kNN 1000</code> included).",
+      "<b>Time</b> = total over 5 folds (fit + validation/test prediction). <b>s/1K</b> = time ÷ predicted rows × 1000 (predicted rows = train rows + test rows × 5). Fixed overhead inflates s/1K on small competitions.",
+      "Times are not comparable across environments: DBX H100 (TFM) · DBX CPU4 (GBDT, serverless 4 cores) · DBX A10G · Kaggle T4. <b>s/1K (DBX)</b> = median over H100·CPU4 runs only.",
+      "<b>LB</b> = position by Kaggle public score. Closed competitions only take late submissions, so these entries are not on the real leaderboard. — = not submitted.",
+      "The TFM context cap <span class=\"caps\"></span> uses a random sample. Only some models (kumo) were rerun without the cap, so part of the ranking on those competitions reflects context size, not the model.",
+      "Public datasets such as Otto·GiveMeSomeCredit·Amazon may be in TFM pretraining data, which could inflate CV (LB is unaffected).",
+    ],
+    family: "Family", all: "All", auto: "Auto", light: "Light", dark: "Dark", themeTitle: "Theme",
+    summary: "Summary", summaryHelp: "Click a column header to sort; click a model name to highlight it in the charts below.",
+    heat: "CV rank by competition × model",
+    heatHelp: "Cell = CV rank in that competition (best configuration per model; darker is better). Click a header or cell to open that competition below. Competitions are ordered by training rows.",
+    low: "Worse", high: "Better", notRun: "· = not run",
+    speed: "Speed vs performance", speedHelp: "x = median s/1K (log, left is faster), y = mean CV rank (top is better). Models without timings are omitted.",
+    allEnv: "All environments", detail: "By competition", variants: "Show context-variant rows", whisker: "bar = ± fold std",
+    madeBy: "generates this page", data: "Data:",
+    col: { model: "Model", family: "Family", n: "Comps", wins: "CV wins", pct: "Mean CV rank", lb: "Best LB (top %)",
+           s1k: "s/1K (DBX)", s1k_all: "s/1K (all)", ctx: "Context variants", lbRank: "LB rank", time: "Time", env: "Env" },
+    modelRank: "Model rank", cfgRank: "CV rank (per config)", bestLb: "Best LB",
+    rows: n => `${n} rows`, trainTest: (a, b) => `train ${a} rows · test ${b} rows`, cap: n => `TFM context cap ${n} rows`, none: "none",
+    better: h => h ? "higher is better →" : "← lower is better", logAxis: "s/1K (log) →", fast: "← faster",
+    focus: b => `Highlighting ${b} (click again to clear)`, focusTitle: "Highlight this model",
+    scatterAria: "Scatter of speed vs mean CV rank", dotsAria: t => `${t} CV scores`, env: { "로컬": "Local" },
+  },
+};
+const T = () => I18N[state.lang];
+const lbl = r => state.lang === "en" ? r.label_en : r.label;
+const envName = e => T().env[e] || e;
+const fmtInt = n => n.toLocaleString("en-US");
 
 // ---- 공통 ----
 const $ = id => document.getElementById(id);
@@ -193,7 +259,7 @@ const num = (v, ref = v) => v == null ? "—" : Math.abs(ref) > 1000 ?  // std �
   v.toLocaleString("en-US", { maximumFractionDigits: 1, minimumFractionDigits: 1 }) : v.toFixed(4);
 const pct = p => p == null ? "—" : p < 0.1 ? "<0.1%" : p.toFixed(1) + "%";
 const fix2 = v => v == null ? "—" : v.toFixed(2);
-const int = v => v == null ? "—" : Math.round(v).toLocaleString("en-US");
+const int = v => v == null ? "—" : fmtInt(Math.round(v));
 const lbRank = r => r.rank == null ? "—" : `${int(r.rank)} / ${int(r.teams)} (${pct(r.top_pct)})`;
 const pub = v => v == null ? "—" : Math.abs(v) > 1000 ? v.toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 }) : String(+v.toPrecision(5));
 
@@ -219,9 +285,9 @@ function hover(node, fn) {
   node.addEventListener("blur", hideTip);
 }
 const runTip = (r, c) => [
-  [`CV ${c.metric}`, `${num(r.cv)} ± ${num(r.cv_std, r.cv)}`], ["설정별 CV 순위", `${r.cv_rank}`],
-  ["LB public", pub(r.public)], ["LB 순위", lbRank(r)],
-  ["시간", `${int(r.seconds)}s`], ["s/1K", fix2(r.s_per_1k)], ["환경", r.env]];
+  [`CV ${c.metric}`, `${num(r.cv)} ± ${num(r.cv_std, r.cv)}`], [T().cfgRank, `${r.cv_rank}`],
+  ["LB public", pub(r.public)], [T().col.lbRank, lbRank(r)],
+  [T().col.time, `${int(r.seconds)}s`], ["s/1K", fix2(r.s_per_1k)], [T().col.env, envName(r.env)]];
 
 // ---- 정렬 가능한 표 ----
 function sortTable(table, cols, rows, sort, onSort, rowAttrs) {
@@ -252,30 +318,30 @@ function sortTable(table, cols, rows, sort, onSort, rowAttrs) {
     }
   }
 }
-function modelCell(td, name, family, bold) {
+function modelCell(td, name, base, family, bold) {
   el("i", { class: "fam " + family }, td);
-  const s = el(bold ? "b" : "span", { class: "model", tabindex: 0, title: "이 모델 강조" }, td, name);
-  const go = () => setFocus(state.focus === baseOf(name) ? null : baseOf(name));
+  const s = el(bold ? "b" : "span", { class: "model", tabindex: 0, title: T().focusTitle }, td, name);
+  const go = () => setFocus(state.focus === base ? null : base);
   s.addEventListener("click", go);
   s.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
 }
-const baseOf = label => label.split(" (")[0];
 function focusAttrs(base) {
   return state.focus == null ? {} : { class: state.focus === base ? "focus" : "dim" };
 }
 
 // ---- 종합 ----
 function renderSummary() {
+  const C = T().col;
   const cols = [
-    { key: "model", name: "모델", left: true, cell: (td, r) => modelCell(td, r.model, r.family) },
-    { key: "family", name: "계열", left: true },
-    { key: "n", name: "대회 수", desc: true },
-    { key: "wins", name: "CV 1위", desc: true },
-    { key: "pct", name: "평균 CV 순위", fmt: fix2 },
-    { key: "lb", name: "최고 LB (상위 %)", fmt: pct },
-    { key: "s1k", name: "s/1K (DBX)", fmt: fix2 },
-    { key: "s1k_all", name: "s/1K (전체)", fmt: fix2 },
-    { key: "ctx", name: "컨텍스트 변형", desc: true, fmt: v => v || "" },
+    { key: "model", name: C.model, left: true, cell: (td, r) => modelCell(td, r.model, r.model, r.family) },
+    { key: "family", name: C.family, left: true },
+    { key: "n", name: C.n, desc: true },
+    { key: "wins", name: C.wins, desc: true },
+    { key: "pct", name: C.pct, fmt: fix2 },
+    { key: "lb", name: C.lb, fmt: pct },
+    { key: "s1k", name: C.s1k, fmt: fix2 },
+    { key: "s1k_all", name: C.s1k_all, fmt: fix2 },
+    { key: "ctx", name: C.ctx, desc: true, fmt: v => v || "" },
   ];
   sortTable($("summary"), cols, SUMMARY.filter(r => famOk(r.family)), state.sumSort,
             s => { state.sumSort = s; renderSummary(); }, r => focusAttrs(r.model));
@@ -284,22 +350,28 @@ function renderSummary() {
 // ---- 히트맵 ----
 function renderHeat() {
   const t = $("heat"); t.replaceChildren();
+  t.style.width = HEAT_MODEL_COL + COMPS.length * HEAT_COL + "px";  // table-layout: fixed 라 너비를 정해 둬야 열이 고정됨
   const dark = isDark();
   const best = RUNS.filter(r => r.base_rank != null);
   const n = {}; for (const r of best) n[r.comp] = (n[r.comp] || 0) + 1;
   const cell = {}; for (const r of best) cell[r.comp + "|" + r.base] = r;
+  const cg = el("colgroup", {}, t);
+  el("col", { style: `width:${HEAT_MODEL_COL}px` }, cg);
+  for (const _ of COMPS) el("col", { style: `width:${HEAT_COL}px` }, cg);
   const hr = el("tr", {}, el("thead", {}, t));
-  el("th", { class: "left" }, hr, "모델");
+  el("th", { class: "left" }, hr, T().col.model);
   for (const c of COMPS) {
-    const th = el("th", { class: "col" + (state.comp === c.id ? " on" : ""), scope: "col", tabindex: 0 }, hr, c.title);
-    el("small", {}, th, c.train ? (c.train >= 10000 ? Math.round(c.train / 1000) + "K" : c.train.toLocaleString("en-US")) + "행" : "");
+    // 긴 대회 이름은 CamelCase 사이 (GiveMe·Some·Credit) 나 영어 하이픈 (Bio-response) 으로 줄바꿈
+    const th = el("th", { class: "col" + (state.comp === c.id ? " on" : ""), scope: "col", tabindex: 0, title: c.title, lang: "en" }, hr,
+                  c.title.replace(/([a-z])([A-Z])/g, "$1​$2"));
+    el("small", {}, th, c.train ? T().rows(c.train >= 10000 ? Math.round(c.train / 1000) + "K" : fmtInt(c.train)) : "");
     th.addEventListener("click", () => selectComp(c.id, true));
     th.addEventListener("keydown", e => { if (e.key === "Enter") selectComp(c.id, true); });
   }
   const tb = el("tbody", {}, t);
   for (const s of SUMMARY.filter(r => famOk(r.family))) {
     const row = el("tr", focusAttrs(s.model), tb);
-    modelCell(el("td", { class: "left" }, row), s.model, s.family);
+    modelCell(el("td", { class: "left" }, row), s.model, s.model, s.family);
     for (const c of COMPS) {
       const r = cell[c.id + "|" + s.model];
       if (!r) { el("td", { class: "cell empty" }, row, "·"); continue; }
@@ -307,7 +379,7 @@ function renderHeat() {
       const i = dark ? 1 + Math.round(q * 11) : 12 - Math.round(q * 12);
       const td = el("td", { class: "cell", tabindex: 0, style: `background:${RAMP[i]};color:${(dark ? i <= 5 : i >= 7) ? (dark ? "#0b0b0b" : "#ffffff") : (dark ? "#f0efec" : "#0b0b0b")}` }, row);
       el("span", {}, td, r.base_rank);
-      hover(td, e => showTip(e, `${r.label} · ${c.title}`, [["모델 순위", `${r.base_rank} / ${n[c.id]}`], ...runTip(r, c)]));
+      hover(td, e => showTip(e, `${lbl(r)} · ${c.title}`, [[T().modelRank, `${r.base_rank} / ${n[c.id]}`], ...runTip(r, c)]));
       td.addEventListener("click", () => selectComp(c.id, true));
     }
   }
@@ -320,7 +392,7 @@ function renderScatter() {
   const box = $("scatter"); box.replaceChildren();
   const pts = SUMMARY.filter(r => famOk(r.family) && r[state.speed] > 0);  // 로그 축이라 0 이하는 못 그림
   const W = Math.max(box.clientWidth, 320), H = 320, m = { l: 44, r: 16, t: 12, b: 36 };
-  const svg = el("svg:svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "속도 대 평균 CV 순위 산점도" }, box);
+  const svg = el("svg:svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": T().scatterAria }, box);
   if (!pts.length) return;
   const xs = pts.map(p => Math.log10(p[state.speed]));
   const x0 = Math.floor(Math.min(...xs)), x1 = Math.ceil(Math.max(...xs));
@@ -334,8 +406,9 @@ function renderScatter() {
     el("svg:line", { class: "gridline", x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v) }, svg);
     el("svg:text", { x: m.l - 8, y: Y(v) + 4, "text-anchor": "end" }, svg, v.toFixed(2));
   }
-  el("svg:text", { x: W - m.r, y: H - 4, "text-anchor": "end" }, svg, "s/1K (로그) →");
-  el("svg:text", { x: m.l, y: H - 4 }, svg, "← 빠름");
+  el("svg:text", { x: W - m.r, y: H - 4, "text-anchor": "end" }, svg, T().logAxis);
+  el("svg:text", { x: m.l, y: H - 4 }, svg, T().fast);
+  const C = T().col;
   for (const p of pts) {
     const g = el("svg:g", { class: state.focus && state.focus !== p.model ? "dimmed" : "" }, svg);
     const cx = X(p[state.speed]), cy = Y(p.pct);
@@ -343,8 +416,8 @@ function renderScatter() {
     const right = cx < W - 90;
     el("svg:text", { class: "lbl", x: cx + (right ? 10 : -10), y: cy + 4, "text-anchor": right ? "start" : "end" }, g, p.model);
     const hit = el("svg:circle", { class: "hit", cx, cy, r: 14, tabindex: 0 }, g);
-    hover(hit, e => showTip(e, p.model, [["평균 CV 순위", fix2(p.pct)], ["s/1K (DBX)", fix2(p.s1k)], ["s/1K (전체)", fix2(p.s1k_all)],
-                                        ["대회 수", String(p.n)], ["CV 1위", String(p.wins)], ["최고 LB", pct(p.lb)]]));
+    hover(hit, e => showTip(e, p.model, [[C.pct, fix2(p.pct)], [C.s1k, fix2(p.s1k)], [C.s1k_all, fix2(p.s1k_all)],
+                                        [C.n, String(p.n)], [C.wins, String(p.wins)], [T().bestLb, pct(p.lb)]]));
     hit.addEventListener("click", () => setFocus(state.focus === p.model ? null : p.model));
   }
 }
@@ -366,7 +439,7 @@ function renderDots() {
   if (!rows.length) return;
   const rowH = 26, labelW = 150, m = { t: 8, r: 24, b: 40 };
   const W = Math.max(box.clientWidth, 360), H = m.t + rows.length * rowH + m.b;
-  const svg = el("svg:svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `${c.title} CV 점수` }, box);
+  const svg = el("svg:svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": T().dotsAria(c.title) }, box);
   let lo = Math.min(...rows.map(r => r.cv - r.cv_std)), hi = Math.max(...rows.map(r => r.cv + r.cv_std));
   const pad = (hi - lo) * 0.06 || Math.abs(hi) * 0.01 || 1; lo -= pad; hi += pad;
   const X = v => labelW + (v - lo) / (hi - lo) * (W - labelW - m.r);
@@ -375,16 +448,16 @@ function renderDots() {
     el("svg:line", { class: "gridline", x1: X(v), x2: X(v), y1: m.t, y2: H - m.b }, svg);
     el("svg:text", { x: X(v), y: H - m.b + 16, "text-anchor": "middle" }, svg, tick(v, step));
   }
-  el("svg:text", { x: W - m.r, y: H - 2, "text-anchor": "end" }, svg, `CV ${c.metric} · ${c.higher ? "오른쪽이 좋음 →" : "← 왼쪽이 좋음"}`);
+  el("svg:text", { x: W - m.r, y: H - 2, "text-anchor": "end" }, svg, `CV ${c.metric} · ${T().better(c.higher)}`);
   rows.forEach((r, i) => {
     const y = m.t + i * rowH + rowH / 2;
     const g = el("svg:g", { class: state.focus && state.focus !== r.base ? "dimmed" : "" }, svg);
-    el("svg:text", { class: "lbl" + (r.cv_rank === 1 ? " best" : ""), x: labelW - 10, y: y + 4, "text-anchor": "end" }, g, `${r.cv_rank}. ${r.label}`);
+    el("svg:text", { class: "lbl" + (r.cv_rank === 1 ? " best" : ""), x: labelW - 10, y: y + 4, "text-anchor": "end" }, g, `${r.cv_rank}. ${lbl(r)}`);
     const col = famColor(r.family);
     el("svg:line", { x1: X(r.cv - r.cv_std), x2: X(r.cv + r.cv_std), y1: y, y2: y, stroke: col, "stroke-width": 2, "stroke-linecap": "round", opacity: 0.55 }, g);
     el("svg:circle", { cx: X(r.cv), cy: y, r: 5, fill: col, stroke: cssVar("--surface"), "stroke-width": 2 }, g);
     const hit = el("svg:rect", { class: "hit", x: 0, y: y - rowH / 2, width: W, height: rowH, tabindex: 0 }, g);
-    hover(hit, e => showTip(e, r.label, runTip(r, c)));
+    hover(hit, e => showTip(e, lbl(r), runTip(r, c)));
     hit.addEventListener("click", () => setFocus(state.focus === r.base ? null : r.base));
   });
 }
@@ -394,40 +467,65 @@ function niceStep(raw) {
 }
 function tick(v, step) {
   const d = Math.max(0, -Math.floor(Math.log10(step)));
-  return Math.abs(v) >= 1000 ? Math.round(v).toLocaleString("en-US") : v.toFixed(d);
+  return Math.abs(v) >= 1000 ? fmtInt(Math.round(v)) : v.toFixed(d);
 }
 function renderCompTable() {
-  const c = compById[state.comp];
+  const c = compById[state.comp], L = T(), C = L.col;
   const lines = [];
-  if (c.train) lines.push(`학습 ${c.train.toLocaleString("en-US")}행 · 테스트 ${c.test.toLocaleString("en-US")}행`);
+  if (c.train) lines.push(L.trainTest(fmtInt(c.train), fmtInt(c.test)));
   lines.push(`${c.metric} ${c.higher ? "↑" : "↓"}`);
-  if (c.cap) lines.push(`TFM 컨텍스트 상한 ${c.cap.toLocaleString("en-US")}행`);
+  if (c.cap) lines.push(L.cap(fmtInt(c.cap)));
   $("compMeta").textContent = lines.join(" · ");
   const rows = compRuns();
   const top = Math.min(...rows.map(r => r.cv_rank));
   const cols = [
     { key: "cv_rank", name: "#" },
-    { key: "label", name: "모델", left: true, cell: (td, r) => modelCell(td, r.label, r.family, r.cv_rank === top) },
-    { key: "cv", name: `CV ${c.metric}`, fmt: num, value: r => c.higher ? -r.cv : r.cv },
+    { key: "label", name: C.model, left: true, value: lbl, cell: (td, r) => modelCell(td, lbl(r), r.base, r.family, r.cv_rank === top) },
+    { key: "cv", name: `CV ${c.metric}`, fmt: v => num(v), value: r => c.higher ? -r.cv : r.cv },
     { key: "cv_std", name: "± std", fmt: (v, r) => num(v, r.cv) },
     { key: "public", name: "LB public", fmt: pub, value: r => r.public == null ? null : c.higher ? -r.public : r.public },
-    { key: "rank", name: "LB 순위", cell: (td, r) => { td.textContent = lbRank(r); } },
-    { key: "seconds", name: "시간", fmt: v => int(v) + "s" },
+    { key: "rank", name: C.lbRank, cell: (td, r) => { td.textContent = lbRank(r); } },
+    { key: "seconds", name: C.time, fmt: v => int(v) + "s" },
     { key: "s_per_1k", name: "s/1K", fmt: fix2 },
-    { key: "env", name: "환경", left: true },
+    { key: "env", name: C.env, left: true, fmt: envName },
   ];
   sortTable($("comp"), cols, rows, state.compSort, s => { state.compSort = s; renderCompTable(); }, r => focusAttrs(r.base));
 }
 function selectComp(id, scroll) {
   state.comp = id;
-  history.replaceState(null, "", "#" + encodeURIComponent(id));
+  syncUrl();
   renderPills(); renderHeat(); renderDots(); renderCompTable();
   if (scroll) $("detail").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 function setFocus(base) {
   state.focus = base;
-  $("focusNote").textContent = base ? `강조: ${base} (다시 누르면 해제)` : "";
   renderAll();
+}
+// URL: ?lang=en#<대회 slug> (공유 링크가 언어·대회를 유지)
+function syncUrl() {
+  const u = new URL(location.href);
+  u.searchParams.set("lang", state.lang);
+  u.hash = encodeURIComponent(state.comp);
+  try { history.replaceState(null, "", u); } catch (e) { /* file:// 등 */ }
+}
+
+// ---- 고정 문구 ----
+function renderText() {
+  const L = T();
+  document.documentElement.lang = state.lang;
+  document.title = L.pageTitle;
+  for (const n of document.querySelectorAll("[data-t]")) n.textContent = L[n.dataset.t];
+  $("theme").title = L.themeTitle;
+  $("date").textContent = L.generated(DATA.date);
+  const caps = {}; for (const c of COMPS) if (c.cap) (caps[c.cap] = caps[c.cap] || []).push(c.title);
+  const capText = "(" + (Object.entries(caps).map(([n, cs]) => `${L.rows(fmtInt(+n))}: ${cs.join(", ")}`).join("; ") || L.none) + ")";
+  const ul = $("notes"); ul.replaceChildren();
+  for (const h of L.notes) {
+    const li = el("li", {}, ul);
+    li.innerHTML = h;  // 직접 쓴 문구만 (데이터는 아래 textContent 로)
+    for (const s of li.querySelectorAll(".caps")) s.textContent = capText;
+  }
+  for (const b of $("lang").children) b.setAttribute("aria-pressed", b.dataset.v === state.lang);
 }
 
 // ---- 컨트롤 ----
@@ -447,18 +545,32 @@ function setTheme(v) {
   renderAll();
 }
 seg("theme", setTheme);
-// 블로그 등에 iframe 으로 넣을 때: 부모가 {kmTheme: "light"|"dark"} 를 보내면 테마를 따르고, 내용 높이를 {kmHeight} 로 알려 줌
-addEventListener("message", e => { if (["auto", "light", "dark"].includes(e.data && e.data.kmTheme)) setTheme(e.data.kmTheme); });
+function setLang(v) {
+  state.lang = v;
+  syncUrl();
+  renderAll();
+}
+seg("lang", setLang);
+// 블로그 등에 iframe 으로 넣을 때: 부모가 {kmTheme: "auto"|"light"|"dark"} 나 {kmLang: "ko"|"en"} 를 보내면 따르고, 내용 높이를 {kmHeight} 로 알려 줌
+addEventListener("message", e => {
+  const d = e.data || {};
+  if (["auto", "light", "dark"].includes(d.kmTheme)) setTheme(d.kmTheme);
+  if (I18N[d.kmLang] && d.kmLang !== state.lang) setLang(d.kmLang);
+});
 if (parent !== window) new ResizeObserver(() => parent.postMessage({ kmHeight: document.documentElement.scrollHeight }, "*")).observe(document.body);
 $("variants").addEventListener("change", e => { state.variants = e.target.checked; renderDots(); renderCompTable(); });
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => renderAll());
 let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { renderScatter(); renderDots(); }, 100); });
 
-function renderAll() { renderSummary(); renderHeat(); renderScatter(); renderPills(); renderDots(); renderCompTable(); }
+function renderAll() {
+  renderText();
+  $("focusNote").textContent = state.focus ? T().focus(state.focus) : "";
+  renderSummary(); renderHeat(); renderScatter(); renderPills(); renderDots(); renderCompTable();
+}
 
-$("date").textContent = `${DATA.date} 생성.`;
-const caps = {}; for (const c of COMPS) if (c.cap) (caps[c.cap] = caps[c.cap] || []).push(c.title);
-$("caps").textContent = "(" + (Object.entries(caps).map(([n, cs]) => `${(+n).toLocaleString("en-US")}행: ${cs.join(", ")}`).join("; ") || "없음") + ")";
+// 언어: ?lang= → 브라우저 언어 (ko 가 아니면 en)
+const qLang = new URLSearchParams(location.search).get("lang");
+state.lang = I18N[qLang] ? qLang : (navigator.language || "").toLowerCase().startsWith("ko") ? "ko" : "en";
 let fromHash = ""; try { fromHash = decodeURIComponent(location.hash.slice(1)); } catch (e) { /* 깨진 해시는 무시 */ }
 state.comp = compById[fromHash] ? fromHash : COMPS[COMPS.length - 1].id;
 renderAll();

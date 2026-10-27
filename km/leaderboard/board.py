@@ -62,15 +62,16 @@ def env(r) -> str:
     return {"kaggle": "Kaggle T4", "colab": "Colab T4", "local": "로컬"}.get(where, where)
 
 
-def label(model: str) -> str:
-    """`kumo@full` → `kumo (ctx 전체)`, `kumo@rand200000` → `kumo (ctx 20만)`, `exaone@knn1000_g8_imp` → `exaone (kNN 1000)`."""
+def label(model: str, en: bool = False) -> str:
+    """`kumo@full` → `kumo (ctx 전체)`, `kumo@rand200000` → `kumo (ctx 20만)`, `exaone@knn1000_g8_imp` → `exaone (kNN 1000)`.
+    en=True 면 `kumo (ctx full)`, `kumo (ctx 200K)` (HTML 영어 화면용)."""
     base, _, spec = model.partition("@")
     if not spec:
         return base
     mode, k = re.match(r"(full|rand|knn|part)(\d*)", spec).groups()
     if mode == "full":
-        return f"{base} (ctx 전체)"
-    size = f"{int(k) // 10000}만" if int(k) % 10000 == 0 else k
+        return f"{base} (ctx {'full' if en else '전체'})"
+    size = (f"{int(k) // 1000}K" if en else f"{int(k) // 10000}만") if int(k) % 10000 == 0 else k
     return f"{base} ({ {'rand': 'ctx', 'knn': 'kNN', 'part': 'part'}[mode] } {size})"
 
 
@@ -214,8 +215,8 @@ def render_html(d: pd.DataFrame, sizes: dict) -> str:
     comps = sorted(d.comp.unique(), key=lambda c: (sizes[c] or (0, 0))[0])
     # base_rank = 종합·히트맵용 순위 (기본 모델끼리, 대회별 최고 설정 행에만). cv_rank 는 설정별 순위
     best = best_per_base(d)[["comp", "model", "cv_rank"]].rename(columns={"cv_rank": "base_rank"})
-    runs = d.merge(best, on=["comp", "model"], how="left")
-    runs = runs[["comp", "model", "label", "base", "family", "cv", "cv_std", "cv_rank", "base_rank", "public", "rank",
+    runs = d.merge(best, on=["comp", "model"], how="left").assign(label_en=lambda x: x.model.map(lambda m: label(m, en=True)))
+    runs = runs[["comp", "model", "label", "label_en", "base", "family", "cv", "cv_std", "cv_rank", "base_rank", "public", "rank",
                  "teams", "top_pct", "seconds", "s_per_1k", "env"]]
     data = dict(
         date=pd.Timestamp.now().strftime("%Y-%m-%d"),
