@@ -111,14 +111,15 @@ def fmt_num(v: float) -> str:
 
 
 def summary(d: pd.DataFrame) -> list[str]:
-    """모델별 종합. 컨텍스트 변형은 기본 모델로 합치고 대회마다 CV 가 가장 좋은 설정 한 행만 (점수·LB·시간 모두 그 행)."""
+    """모델별 종합. 컨텍스트 변형은 기본 모델로 합치고 대회마다 CV 가 가장 좋은 설정 한 행만 (점수·시간은 그 행).
+    최고 LB 는 제출한 모든 설정 중 최고 (최고 CV 설정이 미제출이면 그 행만으로는 LB 가 비거나 나빠 보임)."""
     b = d.sort_values("better", ascending=False).drop_duplicates(["comp", "base"]).copy()
     b["cv_rank"] = b.groupby("comp").better.rank(ascending=False, method="min").astype(int)
     b["n_models"] = b.groupby("comp").model.transform("size")
     rows = []
     for m, g in b.groupby("base"):
         rows.append(dict(model=m, family=g.family.iloc[0], n=len(g), wins=int((g.cv_rank == 1).sum()),
-                         pct=((g.cv_rank - 1) / (g.n_models - 1).clip(lower=1)).mean(), lb=g.top_pct.min(),
+                         pct=((g.cv_rank - 1) / (g.n_models - 1).clip(lower=1)).mean(), lb=d[d.base == m].top_pct.min(),
                          s1k=g[g.env.isin(["DBX H100", "DBX CPU4"])].s_per_1k.median(), s1k_all=g.s_per_1k.median(),
                          ctx=int(g.model.str.contains("@").sum())))
     out = ["| 모델 | 계열 | 대회 수 | CV 1위 | 평균 CV 순위 | 최고 LB (상위 %) | s/1K (DBX) | s/1K (전체) | 컨텍스트 변형 |",
@@ -172,16 +173,27 @@ HEADER = """\
 ## 종합
 
 평균 CV 순위 = 대회마다 (순위−1)/(모델 수−1) 의 평균 (0 = 항상 1위, 1 = 항상 꼴찌). 실행한 대회가 모델마다 달라 대략적인 비교.
-모델마다 대회별로 CV 가 가장 좋은 설정 하나만 셈 (`컨텍스트 변형` 열 = 그중 `@` 설정 수). 최고 LB · s/1K 도 그 행의 값.
+모델마다 대회별로 CV 가 가장 좋은 설정 하나만 셈 (`컨텍스트 변형` 열 = 그중 `@` 설정 수). s/1K 도 그 행의 값, 최고 LB 는 제출한 모든 설정 중 최고.
 s/1K 중앙값: `DBX` = 2026-10-23 이후 Databricks 실행만 (TFM H100, GBDT CPU 4코어), `전체` = 환경 섞임.
 
 **해석 주의**
-- **조건이 같지 않을 수 있음**: 상한이 걸린 대회에서 `@full`·`@rand` 로 다시 돌린 모델만 큰 컨텍스트를 씀
-  (2026-10-26 기준 kumo·tabicl 은 6개 대회 모두, tabpfn_v2 는 Amazon·Otto·GiveMeSomeCredit 만 — 나머지는 시간 초과·미실행).
+- **조건이 같지 않을 수 있음**: 상한이 걸린 대회에서 `@full`·`@rand` 로 다시 돌린 모델만 큰 컨텍스트를 씀 ({rerun}).
   다시 돌리지 않은 모델은 상한 그대로라, 그 대회의 순위 일부는 모델 차이가 아니라 컨텍스트 차이.
 - **사전학습 데이터 중복 가능성**: Otto·GiveMeSomeCredit·Amazon 등은 OpenML 등에 공개된 데이터라 TFM 사전학습에 학습 데이터가 들어갔을 수 있음 → CV 는 부풀었을 수 있음.
   테스트 라벨은 공개된 적이 없어 LB 점수는 영향 없음. 확인은 안 함.
 """
+
+
+def rerun_status(d: pd.DataFrame) -> str:
+    """상한이 걸린 대회 중 `@full`·`@rand` 5-fold 결과가 있는 대회 수, 모델별 (예: `kumo 6/6, tabpfn_v2 3/6 (Amazon, Otto)`)."""
+    capped = [c for c in d.comp.unique() if load_competition(c).tfm_max_rows]
+    big = d[d.comp.isin(capped) & d.model.str.contains(r"@(?:full|rand)")]
+    parts = []
+    for base, g in big.groupby("base"):
+        done = sorted(g.comp.unique(), key=lambda c: TITLES.get(c, c))
+        names = f" ({', '.join(TITLES.get(c, c) for c in done)})" if len(done) < len(capped) else ""
+        parts.append(f"{base} {len(done)}/{len(capped)}{names}")
+    return ", ".join(parts) or "없음"
 
 
 def render(d: pd.DataFrame, sizes: dict) -> str:
@@ -190,7 +202,7 @@ def render(d: pd.DataFrame, sizes: dict) -> str:
         if (n := load_competition(c).tfm_max_rows):
             capped.setdefault(n, []).append(TITLES.get(c, c))
     capped = "; ".join(f"{n:,}행: {', '.join(cs)}" for n, cs in capped.items()) or "없음"
-    head = HEADER.format(date=pd.Timestamp.now().strftime("%Y-%m-%d"), capped=capped)
+    head = HEADER.format(date=pd.Timestamp.now().strftime("%Y-%m-%d"), capped=capped, rerun=rerun_status(d))
     return "\n".join([head, *summary(d), "", "## 대회별\n", *per_comp(d, sizes)])
 
 
