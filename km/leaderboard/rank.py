@@ -6,26 +6,34 @@
 
 순위: 리더보드에서 우리 팀을 뺀 뒤 (점수가 더 좋은 팀 수 + 1). 기준 열 `basis` 는 대회 마감일로 정함:
      - public: 진행 중 대회 (마감 전. Titanic·House Prices 같은 상시 대회는 마감이 2030 년). 리더보드의 public 점수끼리 비교.
+       리더보드 다운로드 (= `kaggle competitions leaderboard -d`, zip 하나) 의 TeamMemberUserNames 로 우리 팀을 찾음.
      - private: 종료된 대회. 리더보드 조회 API 의 기본 응답은 private 이 공개되어 있으면 private 이라, 우리 private 점수와 남의 private 점수를 비교.
-       `kaggle competitions leaderboard -d` 다운로드는 종료 뒤에도 public 이라 (파일명 publicleaderboard, 2026-10-27 확인) 여기 쓰지 않음.
-       CLI 에는 조회·마감일 옵션이 없어 kagglesdk 로 직접 받음 (`override_public` 을 안 줘서 기본 = private 우선).
+       다운로드는 종료 뒤에도 public 이라 (파일명 publicleaderboard, 2026-10-27 확인) 받지 않음.
+       `override_public` 을 안 줘서 기본 = private 우선. 마감 뒤 제출은 리더보드에 안 올라가니, 마감 전 제출이 있을 때만
+       우리 팀을 찾아 뺌 (조회 API 에는 멤버가 없어 제출 기록의 팀 이름으로).
        종료됐어도 우리 제출에 private 점수가 없으면 (private 비공개) public 으로 비교.
      public·private 점수는 둘 다 기록.
+Kaggle 호출: 제출 기록·리더보드·마감일·username 은 kagglesdk (sdk + sdk_call: 429 재시도, 오류는 RuntimeError → 그 대회만 건너뜀).
+     제출 (push) 만 kaggle CLI.
 모델 이름: 제출 설명에서 `lgbm`, `kumo+catboost`, `exaone@knn1000` 처럼 모델 이름으로 해석되는 첫 토큰.
          RETIRED 모델(limix2)이 들어간 제출은 순위 집계·자동 제출에서 뺌.
 실행: 제출을 만든 실행의 CV 와 시각(run 열 = results.csv timestamp)을 같이 기록 → km board 가 실행 단위로 LB 를 붙임.
      설명의 `run <시각>` (km submit 기본) → `<n>-fold CV <점수>` → 제출 시각 전 마지막 실행 순으로 찾음.
      못 찾으면 이전 leaderboard.csv 에서 찾은 값을 제출 ref 로 유지. --submit 도 이미 제출한 '실행' 은 다시 내지 않음.
+시각을 못 읽으면: 집계는 그 제출만 실행 연결 없이 (이전 leaderboard.csv 값이 있으면 유지) 두고 나머지는 집계.
+     단 종료 대회에서 그 때문에 마감 전 제출이 있는지 모르면 (우리 팀을 뺄지 모름) 그 대회를 건너뜀.
+     --submit 은 제출의 출처를 정하는 데 쓰는 시각 (설명의 run, 이전 leaderboard.csv 의 run, 설명의 run 으로 실행을 못 찾은 제출의 date) 을
+     못 읽으면 그 대회 제출·집계를 건너뜀 (출처를 모른 채 내면 이미 낸 실행을 다시 낼 수 있음).
+빠진 예측: 아직 제출 안 한 모델별 마지막 예측 실행 (results.csv test=True) 의 test.npy·test.json 이 없거나 다른 실행 것이면 대회마다 목록 출력.
 """
 
 from __future__ import annotations
 
 import argparse
 import functools
-import json
+import io
 import re
 import subprocess
-import tempfile
 import time
 import zipfile
 from datetime import datetime, timezone
@@ -35,68 +43,47 @@ import pandas as pd
 
 from km.core.competition import COMP_DIR, load_competition
 from km.core.metrics import METRICS
-from km.core.results import RESULTS, made_test, parse_utc, read_results, test_info
+from km.core.results import OUTPUTS, RESULTS, made_test, parse_utc, read_results, test_info
 from km.leaderboard.submit import make_submission, parse_message, push
 from km.models import REGISTRY, RETIRED, base_name
 
 
-def kaggle(*args) -> str:
-    return subprocess.run(["kaggle", *args], check=True, text=True, capture_output=True, timeout=600).stdout
-
-
-def me() -> str:
-    for line in kaggle("config", "view").splitlines():
-        if line.strip().startswith("- username:"):
-            return line.split(":", 1)[1].strip()
-    raise RuntimeError("Kaggle username 을 찾지 못함")
-
-
-def submissions(comp: str) -> list[dict]:
-    """제출 기록. 읽지 못하면 빈 목록 대신 예외 → `--submit` 이 이미 낸 모델을 다시 내지 않도록.
-
-    (2026-10-23: JSON 앞에 버전 경고 줄이 붙어 기록이 늘 빈 목록 → 이미 낸 모델 21개를 다시 제출)
-    """
-    text = kaggle("competitions", "submissions", "-c", comp, "--format", "json", "--page-size", "200")
-    if "No submissions found" in text:
-        return []
-    for m in re.finditer(r"^\[", text, re.M):  # 경고 줄은 건너뛰고 '[' 로 시작하는 줄부터 JSON 배열을 찾음
-        try:
-            out = json.JSONDecoder().raw_decode(text, m.start())[0]
-        except json.JSONDecodeError:
-            continue
-        if isinstance(out, list):
-            break
-    else:
-        raise RuntimeError(f"제출 기록을 읽지 못함 (kaggle 출력: {text.strip()[-300:]!r})")
-    if len(out) == 200:
-        print(f"{comp}: 제출이 200개 이상 → 최근 200개만 반영")
-    return out
-
-
-def public_leaderboard(comp: str) -> pd.DataFrame:
-    with tempfile.TemporaryDirectory() as d:
-        kaggle("competitions", "leaderboard", "-c", comp, "-d", "-p", d, "-q")
-        with zipfile.ZipFile(next(Path(d).glob("*.zip"))) as z:
-            with z.open(next(n for n in z.namelist() if n.endswith(".csv"))) as f:
-                return pd.read_csv(f, encoding="utf-8-sig")
-
-
 @functools.cache
-def sdk():
-    """kagglesdk 클라이언트. km lb 한 번에 인증·세션 하나 (세션은 프로세스가 끝날 때까지 씀).
-    CLI 에 없는 마감일·리더보드 조회용 (kaggle 패키지에 이미 들어 있음)."""
+def kaggle_api():
+    """인증한 KaggleApi (kaggle 패키지, kagglesdk 클라이언트와 username 을 얻음). 설치·인증 문제 → RuntimeError."""
     try:
         from kaggle.api.kaggle_api_extended import KaggleApi
 
         api = KaggleApi()
         api.authenticate()
-        return api.build_kaggle_client().__enter__()
-    except Exception as e:  # 설치·인증 문제 → RuntimeError 로 바꿔 main 이 이 대회만 건너뛰고 집계한 행은 저장
+        return api
+    except (Exception, SystemExit) as e:  # 인증 정보가 없으면 authenticate() 가 exit(1)
+        raise RuntimeError(f"Kaggle 인증 실패: {e!r}") from e
+
+
+def me() -> str:
+    user = kaggle_api().config_values.get("username")
+    if not user:
+        raise RuntimeError("Kaggle username 을 찾지 못함")
+    return user
+
+
+@functools.cache
+def sdk():
+    """kagglesdk 대회 API 클라이언트. km lb 한 번에 세션 하나 (세션은 프로세스가 끝날 때까지 씀)."""
+    try:
+        client = kaggle_api().build_kaggle_client().__enter__()
+        # kagglesdk 는 요청에 타임아웃을 안 줌 → 응답이 멈추면 km lb 전체가 멈추지 않도록 (예전 CLI 호출은 600초).
+        # 비공개 속성이라 kagglesdk 가 바뀌면 여기서 깨짐 → 이 try 안에서 RuntimeError 로
+        session = client.http_client()._session
+        session.send = functools.partial(session.send, timeout=300)
+    except Exception as e:
         raise RuntimeError(f"kagglesdk 준비 실패: {e!r}") from e
+    return client.competitions.competition_api_client
 
 
 def sdk_call(what: str, fn, req):
-    """429 (요청 제한, 연속 조회 중 자주 남) 는 잠깐 쉬고 다시. 그 밖의 네트워크·HTTP 오류는 RuntimeError → main 이 이 대회만 건너뜀."""
+    """429 (요청 제한, 연속 조회 중 자주 남) 는 잠깐 쉬고 다시. 그 밖의 네트워크·HTTP 오류 (Rules 미동의 등) 는 RuntimeError → main 이 이 대회만 건너뜀."""
     import requests
 
     for attempt in range(5):
@@ -110,38 +97,86 @@ def sdk_call(what: str, fn, req):
             raise RuntimeError(f"{what} 실패: {e}") from e
 
 
-def is_closed(comp: str) -> bool:
-    """마감이 지난 대회인지. deadline 은 kagglesdk 가 UTC 'Z' 를 떼고 준 naive datetime (타임존이 붙어 와도 parse_utc 로 맞춤)."""
-    from kagglesdk.competitions.types.competition_api_service import ApiGetCompetitionRequest
-
-    req = ApiGetCompetitionRequest()
-    req.competition_name = comp
-    deadline = sdk_call("대회 정보 조회", sdk().competitions.competition_api_client.get_competition, req).deadline
-    if deadline is None:
-        raise RuntimeError("대회 마감일을 모름")
-    return parse_utc(deadline.isoformat()) < datetime.now(timezone.utc).replace(tzinfo=None)
-
-
-def private_leaderboard(comp: str) -> pd.DataFrame:
-    """리더보드 조회 API 의 기본 응답 전 페이지 (TeamId, Score). private 이 공개됐으면 private, 아니면 public. 종료 대회에만 부름."""
-    from kagglesdk.competitions.types.competition_api_service import ApiGetLeaderboardRequest
-
-    rows, token = [], None
+def pages(what: str, fn, req_cls, comp: str):
+    """페이지 끝까지 응답을 하나씩 (200개씩). 제출 기록·리더보드 조회 응답은 둘 다 submissions + next_page_token.
+    같은 토큰이 다시 오거나 빈 페이지에 토큰이 붙어 오면 RuntimeError (같은 페이지를 끝없이 다시 받지 않도록)."""
+    seen, token = set(), None
     while True:
-        req = ApiGetLeaderboardRequest()
+        req = req_cls()
         req.competition_name = comp
         req.page_size = 200
         if token:
             req.page_token = token
-        resp = sdk_call("리더보드 조회", sdk().competitions.competition_api_client.get_leaderboard, req)
-        try:
-            rows += [(s.team_id, float(s.score)) for s in resp.submissions or [] if s.score not in (None, "")]
-        except ValueError as e:
-            raise RuntimeError(f"리더보드 점수를 읽지 못함: {e}") from e
+        resp = sdk_call(what, fn, req)
+        yield resp
         token = resp.next_page_token
         if not token:
-            break
-    return pd.DataFrame(rows, columns=["TeamId", "Score"])
+            return
+        if token in seen or not resp.submissions:
+            raise RuntimeError(f"{what} 실패: 페이지가 끝나지 않음")
+        seen.add(token)
+
+
+def submissions(comp: str) -> list[dict]:
+    """제출 기록 전부 (페이지 끝까지). 읽지 못하면 빈 목록 대신 예외 → `--submit` 이 이미 낸 모델을 다시 내지 않도록.
+    키는 예전 `kaggle competitions submissions --format json` 과 같음 + teamName. date 는 UTC naive isoformat.
+
+    (2026-10-23: CLI 출력의 JSON 앞에 버전 경고 줄이 붙어 기록이 늘 빈 목록 → 이미 낸 모델 21개를 다시 제출. 지금은 SDK 응답을 바로 씀)
+    """
+    from kagglesdk.competitions.types.competition_api_service import ApiListSubmissionsRequest
+
+    out = []
+    for resp in pages("제출 기록 조회", sdk().list_submissions, ApiListSubmissionsRequest, comp):
+        for s in resp.submissions or []:
+            if s.date is None:
+                raise RuntimeError(f"제출 {s.ref} 의 시각이 없음")
+            out.append(dict(ref=s.ref, fileName=s.file_name, date=s.date.isoformat(), description=s.description,
+                            status=s.status.name, publicScore=s.public_score, privateScore=s.private_score,
+                            teamName=s.team_name))
+    return out
+
+
+def public_leaderboard(comp: str) -> pd.DataFrame:
+    """public 리더보드 다운로드 (zip 안의 CSV: TeamId, TeamName, ..., Score, TeamMemberUserNames). 진행 중 대회에만 부름."""
+    from kagglesdk.competitions.types.competition_api_service import ApiDownloadLeaderboardRequest
+
+    req = ApiDownloadLeaderboardRequest()
+    req.competition_name = comp
+    data = sdk_call("리더보드 다운로드", lambda r: sdk().download_leaderboard(r).content, req)
+    try:  # pandas 의 빈 파일·파싱·인코딩 오류는 모두 ValueError
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            with z.open(next(n for n in z.namelist() if n.endswith(".csv"))) as f:
+                lb = pd.read_csv(f, encoding="utf-8-sig")
+    except (zipfile.BadZipFile, StopIteration, ValueError) as e:
+        raise RuntimeError(f"리더보드 파일을 읽지 못함: {e!r}") from e
+    if missing := {"Score", "TeamMemberUserNames"} - set(lb.columns):
+        raise RuntimeError(f"리더보드 파일에 열이 없음: {sorted(missing)}")
+    return lb
+
+
+def deadline(comp: str) -> datetime:
+    """대회 마감 시각 (UTC naive). kagglesdk 가 UTC 'Z' 를 떼고 준 naive datetime (타임존이 붙어 와도 parse_utc 로 맞춤)."""
+    from kagglesdk.competitions.types.competition_api_service import ApiGetCompetitionRequest
+
+    req = ApiGetCompetitionRequest()
+    req.competition_name = comp
+    at = sdk_call("대회 정보 조회", sdk().get_competition, req).deadline
+    if at is None:
+        raise RuntimeError("대회 마감일을 모름")
+    return parse_utc(at.isoformat())
+
+
+def private_leaderboard(comp: str) -> pd.DataFrame:
+    """리더보드 조회 API 의 기본 응답 전 페이지 (TeamId, TeamName, Score). private 이 공개됐으면 private, 아니면 public. 종료 대회에만 부름."""
+    from kagglesdk.competitions.types.competition_api_service import ApiGetLeaderboardRequest
+
+    rows = []
+    for resp in pages("리더보드 조회", sdk().get_leaderboard, ApiGetLeaderboardRequest, comp):
+        try:
+            rows += [(s.team_id, s.team_name, float(s.score)) for s in resp.submissions or [] if s.score not in (None, "")]
+        except ValueError as e:
+            raise RuntimeError(f"리더보드 점수를 읽지 못함: {e}") from e
+    return pd.DataFrame(rows, columns=["TeamId", "TeamName", "Score"])
 
 
 def model_of(sub: dict) -> str:
@@ -173,13 +208,9 @@ def prediction_runs(comp, results: pd.DataFrame) -> pd.DataFrame:
     return runs[runs.run_at.notna()].sort_values("run_at")
 
 
-def submit_pending(comp_name: str, n: int, known: dict | None, subs: list[dict], results: pd.DataFrame) -> int:
-    """test.npy 가 있지만 그 실행을 아직 제출 안 한 단일 모델을 CV 좋은 순으로 최대 n 개 제출. 제출한 개수 반환.
-    known: 제출 ref → (cv, run), 이전 leaderboard.csv 에서 찾은 값. subs: 이 대회의 제출 목록 (submissions 결과, 다시 읽지 않음)."""
-    comp = load_competition(comp_name)
-    # 이미 제출한 실행: (모델, run). 실행을 알 수 없는 제출은 그 제출 시각까지의 예측을 이미 낸 것으로 봄
-    # (그 뒤에 만든 예측은 낸 적이 없으니 제출 대상)
-    runs = prediction_runs(comp, results)
+def submitted(comp, runs: pd.DataFrame, known: dict | None, subs: list[dict]) -> tuple[set, dict]:
+    """이미 제출한 실행 {(모델, run_at)} 과 실행을 알 수 없는 제출의 모델별 마지막 제출 시각.
+    실행을 알 수 없는 제출은 그 제출 시각까지의 예측을 이미 낸 것으로 봄 (그 뒤에 만든 예측은 낸 적이 없으니 제출 대상)."""
     done, unknown_until = set(), {}
     for s in subs:
         model = model_of(s)
@@ -189,8 +220,39 @@ def submit_pending(comp_name: str, n: int, known: dict | None, subs: list[dict],
         else:
             sent_at = parse_utc(s["date"])
             unknown_until[model] = max(unknown_until.get(model, sent_at), sent_at)
+    return done, unknown_until
+
+
+def report_missing(comp_name: str, known: dict | None, subs: list[dict], results: pd.DataFrame):
+    """results.csv 에 테스트 예측을 만들었다고 (test=True) 남았지만 그 예측이 OUTPUTS 에 없어 제출할 수 없는 실행을 알림.
+    모델마다 마지막 예측 실행만 봄 (예전 실행의 test.npy 는 새 실행이 덮어쓰는 게 정상). 이미 제출한 실행은 뺌.
+    (#22: worktree 에서 받은 Kaggle 예측이 worktree 와 함께 사라져 LB 칸이 빈 채로 남았음)"""
+    comp = load_competition(comp_name)
+    runs = prediction_runs(comp, results)
+    done, unknown_until = submitted(comp, runs, known, subs)
+    lost = []
+    for model, last in runs.groupby("model").run_at.max().items():
+        if is_retired(model) or (model, last) in done or last <= unknown_until.get(model, datetime.min):
+            continue
+        t = test_info(comp_name, model)
+        try:
+            ok = t is not None and parse_utc(t["run"]) == last
+        except RuntimeError:
+            ok = False
+        if not ok:
+            lost.append(f"{model} (run {last:%Y-%m-%dT%H:%M:%S}, 있는 예측: {t['run'] if t else '없음'})")
+    if lost:
+        print(f"{comp_name}: 예측이 없어 제출 못 하는 실행 {len(lost)}개 ({OUTPUTS / comp_name}/<모델>/test.npy·test.json): "
+              + ", ".join(lost))
+
+
+def submit_pending(comp_name: str, n: int, known: dict | None, subs: list[dict], results: pd.DataFrame) -> int:
+    """test.npy 가 있지만 그 실행을 아직 제출 안 한 단일 모델을 CV 좋은 순으로 최대 n 개 제출. 제출한 개수 반환.
+    known: 제출 ref → (cv, run), 이전 leaderboard.csv 에서 찾은 값. subs: 이 대회의 제출 목록 (submissions 결과, 다시 읽지 않음)."""
+    comp = load_competition(comp_name)
+    done, unknown_until = submitted(comp, prediction_runs(comp, results), known, subs)
     todo = []
-    for d in (RESULTS / comp_name).glob("*/"):
+    for d in (OUTPUTS / comp_name).glob("*/"):
         t = test_info(comp_name, d.name)  # 제출할 test.npy 를 만든 실행. 출처를 모르면 자동 제출 안 함
         if not t or t["n_folds"] != comp.cv["n_splits"] or is_retired(d.name):
             continue
@@ -247,6 +309,14 @@ def submission_run(comp, sub: dict, runs: pd.DataFrame) -> tuple[float | None, s
     return (float(before.cv.iloc[-1]), before.timestamp.iloc[-1]) if len(before) else (None, None)
 
 
+def submitted_at(sub: dict) -> datetime | None:
+    """제출 시각 (UTC naive), 못 읽으면 None. rank_rows 용 (경고는 submission_run 실패 쪽에서 한 번). submit_pending 은 parse_utc 를 바로 써서 대회를 건너뜀."""
+    try:
+        return parse_utc(sub["date"])
+    except RuntimeError:
+        return None
+
+
 def rank_rows(comp_name: str, user: str, known: dict | None, subs: list[dict], results: pd.DataFrame) -> list[dict]:
     """known: 제출 ref → (cv, run), 이전 leaderboard.csv 에서 찾은 값. 이번에 실행을 못 찾으면 그 값을 유지.
     subs: 이 대회의 제출 목록 (submissions 결과), results: results.csv 전체 (read_results)."""
@@ -255,17 +325,30 @@ def rank_rows(comp_name: str, user: str, known: dict | None, subs: list[dict], r
     subs = [s for s in subs if s["publicScore"] not in (None, "")]
     if not subs:
         return []
-    lb = public_leaderboard(comp_name)
-    mine = lb.TeamMemberUserNames.fillna("").str.split(",").apply(lambda u: user in [x.strip() for x in u])
     # 종료 대회는 private 기준. 우리 제출에 private 점수가 없으면 (private 비공개) public 기준으로 둠
     has_private = any(s["privateScore"] not in (None, "") for s in subs)
-    basis = "private" if has_private and is_closed(comp_name) else "public"
+    closed_at = deadline(comp_name) if has_private else None
+    basis = "private" if closed_at and closed_at < datetime.now(timezone.utc).replace(tzinfo=None) else "public"
     if basis == "private":
         priv = private_leaderboard(comp_name)
         if priv.empty:
             raise RuntimeError("리더보드 조회 결과가 비어 있음")
-        others = priv.loc[~priv.TeamId.isin(set(lb.loc[mine, "TeamId"])), "Score"].to_numpy()
+        # 마감 뒤 제출 (late submission) 은 리더보드에 안 올라감 (2026-10-27 확인) → 마감 전 제출이 있을 때만 우리 팀을 찾아 뺌.
+        # 조회 API 에는 멤버가 없어 팀 이름으로 찾음. 못 찾거나 같은 이름이 여럿이면 순위가 하나 틀리니 건너뜀
+        mine = pd.Series(False, index=priv.index)
+        sent = [submitted_at(s) for s in subs]
+        early = any(t is not None and t <= closed_at for t in sent)
+        if not early and None in sent:  # 시각을 못 읽은 제출이 마감 전일 수 있음 → 우리 팀을 뺄지 모름, 순위가 하나 틀릴 수 있어 건너뜀
+            raise RuntimeError("시각을 못 읽은 제출이 있어 마감 전 제출이 있는지 모름")
+        if early:
+            team = {s["teamName"] for s in subs}
+            mine = priv.TeamName.isin(team)
+            if mine.sum() != 1:
+                raise RuntimeError(f"리더보드에서 우리 팀 {sorted(team)} 이 {mine.sum()}개")
+        others = priv.loc[~mine, "Score"].to_numpy()
     else:
+        lb = public_leaderboard(comp_name)
+        mine = lb.TeamMemberUserNames.fillna("").str.split(",").apply(lambda u: user in [x.strip() for x in u])
         others = lb.loc[~mine, "Score"].to_numpy()
     runs = prediction_runs(comp, results)
     rows = []
@@ -276,7 +359,11 @@ def rank_rows(comp_name: str, user: str, known: dict | None, subs: list[dict], r
         model = model_of(s)
         if is_retired(model):
             continue
-        cv, run = submission_run(comp, s, runs[runs.model == model])
+        try:
+            cv, run = submission_run(comp, s, runs[runs.model == model])
+        except RuntimeError as e:  # 제출 date·설명의 run 을 못 읽음 → 이 제출만 실행 연결 없이 (submit_pending 은 대회를 건너뜀)
+            print(f"{comp_name}: 제출 {s['ref']} 을 실행에 연결하지 못함 ({e})")
+            cv, run = None, None
         if run is None and str(s["ref"]) in (known or {}):
             cv, run = known[str(s["ref"])]
         rows.append(dict(comp=comp_name, model=model, metric=comp.metric, basis=basis, cv=cv,
@@ -304,13 +391,15 @@ def main(argv: list[str] | None = None):
     for c in comps:
         try:
             subs = submissions(c)  # 대회마다 한 번. 새로 제출했을 때만 wait_scored 가 다시 읽은 목록을 씀
+            try:  # 알림만 하는 검사 → 실패해도 제출·집계는 계속
+                report_missing(c, known, subs, results)
+            except RuntimeError as e:
+                print(f"{c}: 빠진 예측 확인 실패 ({e})")
             if args.submit and submit_pending(c, args.submit, known, subs, results):
                 subs = wait_scored(c)
             rows += rank_rows(c, user, known, subs, results)
             tallied.add(c)
-        except subprocess.CalledProcessError as e:  # Rules 미동의 대회 등은 건너뜀
-            print(f"{c}: 건너뜀 ({e.stderr.strip().splitlines()[-1] if e.stderr else e})")
-        except RuntimeError as e:  # 제출 기록을 못 읽음 → 이 대회는 제출·집계 모두 건너뜀
+        except RuntimeError as e:  # 제출 기록을 못 읽음 (Rules 미동의 등) → 이 대회는 제출·집계 모두 건너뜀
             print(f"{c}: 건너뜀 ({e})")
     if not rows:
         return
