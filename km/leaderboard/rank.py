@@ -113,15 +113,18 @@ def wait_scored(comp_name: str, timeout: int = 900):
         time.sleep(15)
 
 
-def submission_cv(comp, model: str, sub: dict) -> float | None:
-    """제출 당시의 CV: 설명의 `<n>-fold CV <점수>` (km submit 기본 형식), 없으면 제출 시각 전 마지막 실행.
+def submission_cv(comp, sub: dict, runs: pd.DataFrame) -> float | None:
+    """제출 당시의 CV. runs = 그 모델의 전체 fold 실행 (full_runs, 시각 순, UTC).
+    설명의 `<n>-fold CV <점수>` (km submit 기본 형식, n 이 대회 fold 수일 때만) → 반올림이 같은 실행 값, 없으면 그 점수.
+    설명에 없으면 제출 시각(UTC) 전 마지막 실행.
     모델 이름만으로 찾으면 같은 이름으로 다시 돌린 뒤 예전 제출에도 새 CV 가 붙음 (2026-10-26 Allstate kumo@full 평균 → 중앙값)."""
-    m = re.search(r"\d+-fold CV (-?[\d.]+)", sub["description"] or "")
-    if not m:
-        return latest_cv(comp, model, before=sub["date"])
-    cv = float(m.group(1))  # 설명은 소수 5자리 → 반올림이 같은 실행이 있으면 그 실행의 값
-    same = [x for x in full_runs(comp, model).cv if round(x, 5) == round(cv, 5)]
-    return float(same[-1]) if same else cv
+    m = re.search(r"(\d+)-fold CV (-?\d+(?:\.\d+)?)(?!\.?\d)", sub["description"] or "")  # `1.2.3` 같은 깨진 숫자는 무시
+    if m and int(m.group(1)) == comp.cv["n_splits"]:
+        cv = float(m.group(2))  # 설명은 소수 5자리
+        same = runs.cv[runs.cv.round(5) == round(cv, 5)]
+        return float(same.iloc[-1]) if len(same) else cv
+    before = runs[runs.timestamp <= sub["date"].replace(" ", "T")]
+    return float(before.cv.iloc[-1]) if len(before) else None
 
 
 def rank_rows(comp_name: str, user: str) -> list[dict]:
@@ -133,6 +136,7 @@ def rank_rows(comp_name: str, user: str) -> list[dict]:
     lb = public_leaderboard(comp_name)
     mine = lb.TeamMemberUserNames.fillna("").str.split(",").apply(lambda u: user in [x.strip() for x in u])
     others = lb.loc[~mine, "Score"].to_numpy()
+    runs = full_runs(comp)  # 제출마다 results.csv 를 다시 읽지 않도록 한 번만
     rows = []
     for s in subs:
         pub = float(s["publicScore"])
@@ -140,7 +144,7 @@ def rank_rows(comp_name: str, user: str) -> list[dict]:
         model = model_of(s)
         if is_retired(model):
             continue
-        rows.append(dict(comp=comp_name, model=model, metric=comp.metric, cv=submission_cv(comp, model, s), public=pub,
+        rows.append(dict(comp=comp_name, model=model, metric=comp.metric, cv=submission_cv(comp, s, runs[runs.model == model]), public=pub,
                          private=float(s["privateScore"]) if s["privateScore"] not in (None, "") else None,
                          rank=rank, teams=len(others) + 1, top_pct=round(100 * rank / (len(others) + 1), 1),
                          date=s["date"][:10], description=s["description"], ref=s["ref"]))

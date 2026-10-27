@@ -73,7 +73,8 @@ LB 순위는 표마다 집계 시점을 적음 — `km lb` 집계(`results/leade
 - **tabicl·tabpfn_v2 도 상한을 풀면 좋아지지만 폭은 kumo 보다 작음**: 비교할 수 있는 대회 (tabicl 5개 — S6E10 은 1만 행 기준이 없음, tabpfn_v2 3개 — Amazon·Otto·GiveMeSomeCredit) 에서 모두 개선.
   tabicl 은 Otto (0.4083)·GiveMeSomeCredit (0.8671) 에서 GBDT 최고를 넘고 Allstate (1,184.8) 는 lgbm 과 동률, Amazon·S6E1·S6E10 은 GBDT 아래.
   tabpfn_v2 는 GBDT 를 넘은 대회가 없고 느림 (Otto 4,915s, Allstate·S6E1 은 240분 제한 초과, S6E10 미실행).
-  세 모델이 모두 있는 대회에서 순서는 kumo > tabicl > tabpfn_v2 (Allstate 는 kumo 만 MAE 용 중앙값 예측이라 완전히 같은 조건은 아님)
+  세 모델의 `(ctx …)` 결과가 모두 있는 대회 (Amazon·Otto·GiveMeSomeCredit) 에서 순서는 kumo > tabicl > tabpfn_v2.
+  Allstate 는 tabpfn_v2 가 없고, kumo 만 MAE 용 중앙값 예측이라 kumo ↔ tabicl 도 완전히 같은 조건은 아님
   → "상한이 모든 TFM 에 불리했고, 그걸 가장 잘 살린 게 kumo".
 - **TFM 중에서는 kumo 가 가장 꾸준함**: 2026-10-23 배치 5개 대회에서 모두 CV 기준 TFM 1위. 전체 1위는 재실행 전 3개 (Restaurant·Mercedes·Allstate) → 재실행 후 5개 (Otto·S6E1 추가).
 - **상위 모델 간 차이는 대부분 fold std 안**: 작은 대회일수록 CV 순위가 LB 에서 자주 뒤집힘 (House, Restaurant, Titanic).
