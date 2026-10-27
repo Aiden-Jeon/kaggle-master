@@ -440,10 +440,15 @@ function seg(id, onPick) {
 }
 seg("family", v => { state.family = v; renderAll(); });
 seg("speedEnv", v => { state.speed = v; renderScatter(); });
-seg("theme", v => {
+function setTheme(v) {
   if (v === "auto") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = v;
+  for (const b of $("theme").children) b.setAttribute("aria-pressed", b.dataset.v === v);
   renderAll();
-});
+}
+seg("theme", setTheme);
+// 블로그 등에 iframe 으로 넣을 때: 부모가 {kmTheme: "light"|"dark"} 를 보내면 테마를 따르고, 내용 높이를 {kmHeight} 로 알려 줌
+addEventListener("message", e => { if (["auto", "light", "dark"].includes(e.data && e.data.kmTheme)) setTheme(e.data.kmTheme); });
+if (parent !== window) new ResizeObserver(() => parent.postMessage({ kmHeight: document.documentElement.scrollHeight }, "*")).observe(document.body);
 $("variants").addEventListener("change", e => { state.variants = e.target.checked; renderDots(); renderCompTable(); });
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => renderAll());
 let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { renderScatter(); renderDots(); }, 100); });
