@@ -21,7 +21,7 @@ import pandas as pd
 
 from km.core.competition import COMP_DIR, ROOT, load_competition
 from km.core.metrics import METRICS
-from km.core.results import RESULTS, made_test
+from km.core.results import RESULTS, is_exploration, made_test
 from km.models import REGISTRY
 
 OUT = ROOT / "docs" / "leaderboard.md"
@@ -37,6 +37,7 @@ TITLES = {  # 표 제목용 짧은 이름 (없으면 대회 이름 그대로)
 }
 # results.csv 의 where 가 databricks 인 실행 중 이 날짜 전은 A10G 노드 (GBDT 도 같은 노드), 이후는 H100 (GBDT 는 databricks-cpu)
 H100_SINCE = "2026-10-23"
+BASIS_LABEL = {"public": "public (진행 중)", "private": "private (종료)"}  # leaderboard.csv 의 basis 열 (km lb 참고)
 
 
 def row_counts(name: str) -> tuple[int, int] | None:
@@ -78,11 +79,14 @@ def label(model: str, en: bool = False) -> str:
 def load() -> tuple[pd.DataFrame, dict]:
     res = pd.read_csv(RESULTS / "results.csv")
     lb = pd.read_csv(RESULTS / "leaderboard.csv")  # 제출마다 한 행, 대회·순위 순 정렬
+    for col in ("private", "basis"):  # 이 열이 생기기 전 km lb 가 쓴 파일 → public 기준으로 봄
+        if col not in lb:
+            lb[col] = "public" if col == "basis" else np.nan
     comps = sorted(p.name for p in COMP_DIR.iterdir() if (p / "config.yaml").exists() and not p.name.startswith("_"))
     d = res[res.comp.isin(comps) & (res.n_folds == 5) & res.cv.notna() & res.seconds.notna()]
     d = d[~d.model.str.contains(r"\+|llm|sap_rpt")]  # 앙상블, LLM 결정 모델, sap_rpt
     # ctx: 컨텍스트 탐색 실험 (테스트 예측 없음). llm·sap: 결정 모델 실험 중 같이 다시 돌린 GBDT
-    d = d[~d.note.fillna("").str.match(r"ctx |llm|sap")]
+    d = d[~is_exploration(d.note)]
     d = d[made_test(d)]  # 테스트 예측을 만든 실행만 → --no-test 재실행이 제출한 예측의 LB 를 가리지 않음
     d = d.sort_values("timestamp").drop_duplicates(["comp", "model"], keep="last")
 
@@ -106,8 +110,9 @@ def load() -> tuple[pd.DataFrame, dict]:
         print(f"leaderboard.csv: 실행(run)을 모르는 단일 모델 제출 {missing}건은 LB 를 붙이지 않음 (`km lb` 로 다시 집계)",
               file=sys.stderr)
     known = lb[run.notna()].assign(timestamp=run[run.notna()]).drop_duplicates(["comp", "model", "timestamp"])
-    d = d.merge(known[["comp", "model", "timestamp", "public", "rank", "teams", "top_pct"]],
+    d = d.merge(known[["comp", "model", "timestamp", "public", "private", "basis", "rank", "teams", "top_pct"]],
                 on=["comp", "model", "timestamp"], how="left")
+    d["lb_score"] = d.private.where(d.basis == "private", d.public)  # 순위와 같은 기준 점수 (종료 대회는 private)
     return d, sizes
 
 
@@ -158,14 +163,21 @@ def summary(d: pd.DataFrame) -> list[str]:
     return out
 
 
+def comp_basis(d: pd.DataFrame) -> dict:
+    """대회 → LB 기준 (public·private, km lb 의 basis 열). 제출이 없는 대회는 빠짐."""
+    return {c: b.iloc[-1] for c, b in d.dropna(subset=["basis"]).groupby("comp").basis}
+
+
 def per_comp(d: pd.DataFrame, sizes: dict) -> list[str]:
+    bases = comp_basis(d)
     out = []
     for comp in sorted(d.comp.unique(), key=lambda c: (sizes[c] or (0, 0))[0]):
         g = d[d.comp == comp].sort_values("cv_rank")
         metric = g.metric.iloc[0]
         rows = f"학습 {sizes[comp][0]:,}행 · 테스트 {sizes[comp][1]:,}행 · " if sizes[comp] else ""
-        out += [f"### {TITLES.get(comp, comp)}\n", f"{rows}{metric} {'↑' if METRICS[metric][1] else '↓'}\n",
-                f"| # | 모델 | CV {metric} | ± std | LB public | LB 순위 | 시간 | s/1K | 환경 |",
+        basis = f" · LB 기준 {BASIS_LABEL.get(b, b)}" if (b := bases.get(comp)) else ""
+        out += [f"### {TITLES.get(comp, comp)}\n", f"{rows}{metric} {'↑' if METRICS[metric][1] else '↓'}{basis}\n",
+                f"| # | 모델 | CV {metric} | ± std | LB 점수 | LB 순위 | 시간 | s/1K | 환경 |",
                 "|---|---|---|---|---|---|---|---|---|"]
         best = g.better.max()
         for r in g.itertuples():
@@ -174,7 +186,7 @@ def per_comp(d: pd.DataFrame, sizes: dict) -> list[str]:
             cells = [r.cv_rank, f"{name} 🌳" if r.family == "GBDT" else name,
                      f"{r.cv:,.1f}" if abs(r.cv) > 1000 else f"{r.cv:.4f}",
                      f"{r.cv_std:,.1f}" if abs(r.cv) > 1000 else f"{r.cv_std:.4f}",
-                     "—" if pd.isna(r.public) else fmt_num(r.public), rank, fmt_time(r.seconds),
+                     "—" if pd.isna(r.lb_score) else fmt_num(r.lb_score), rank, fmt_time(r.seconds),
                      "—" if pd.isna(r.s_per_1k) else f"{r.s_per_1k:.2f}", r.env]
             out.append("| " + " | ".join(map(str, cells)) + " |")
         out.append("")
@@ -189,7 +201,7 @@ HEADER = """\
 - **시간** = 5-fold 합계 (학습 + 검증·테스트 예측). TFM 은 학습 루프가 없어 거의 전부 추론(컨텍스트 인코딩 + 예측) 시간.
 - **s/1K** = 시간 ÷ 예측 행 수 × 1000. 예측 행 = 학습 행(OOF) + 테스트 행 × 5 (fold 마다 테스트 전체 예측). TabArena 의 predict s/1K 와 비슷한 단위.
 - **환경이 다르면 시간 비교 불가**: DBX H100 (TFM, 10-23~) · DBX CPU4 (GBDT, serverless 4코어, 10-23~) · DBX A10G (10-22, GBDT 도 같은 노드) · Kaggle T4.
-- **LB 순위**는 `km lb` 집계 (public 점수 기준 위치. 종료 대회는 늦은 제출이라 실제 순위표에는 없음). — = 미제출.
+- **LB 순위**는 `km lb` 집계. 진행 중 대회는 public 점수 기준, 종료 대회는 private 점수 기준 (대회 제목 옆 `LB 기준`). 종료 대회는 늦은 제출이라 실제 순위표에는 없음. — = 미제출.
 - 작은 대회(수천 행 이하)는 모델 로드·전처리 같은 고정 비용이 커서 s/1K 가 부풀려짐 → 큰 대회 값이 모델 속도에 더 가까움.
 - 앙상블·LLM 결정 모델·sap_rpt, 컨텍스트 탐색 실험(results.csv note 가 `ctx ` 로 시작, 테스트 예측 없음)은 제외.
   `(kNN 1000)` 은 포함: S4E2·Spaceship 에서 kumo·exaone·tabpfn_v2 는 전체 컨텍스트로 실패해 kNN 1000 행 컨텍스트가 유일한 5-fold·제출 결과.
@@ -248,13 +260,14 @@ def render_html(d: pd.DataFrame, sizes: dict) -> str:
     # base_rank = 종합·히트맵용 순위 (기본 모델끼리, 대회별 최고 설정 행에만). cv_rank 는 설정별 순위
     best = best_per_base(d)[["comp", "model", "cv_rank"]].rename(columns={"cv_rank": "base_rank"})
     runs = d.merge(best, on=["comp", "model"], how="left").assign(label_en=lambda x: x.model.map(lambda m: label(m, en=True)))
-    runs = runs[["comp", "model", "label", "label_en", "base", "family", "cv", "cv_std", "cv_rank", "base_rank", "public", "rank",
+    basis = comp_basis(d)
+    runs = runs[["comp", "model", "label", "label_en", "base", "family", "cv", "cv_std", "cv_rank", "base_rank", "lb_score", "rank",
                  "teams", "top_pct", "seconds", "s_per_1k", "env"]]
     caps = {c: n for c in comps if (n := load_competition(c).tfm_max_rows)}
     data = dict(
         date=pd.Timestamp.now().strftime("%Y-%m-%d"),
         comps=[dict(id=c, title=TITLES.get(c, c), metric=(m := d[d.comp == c].metric.iloc[0]), higher=METRICS[m][1],
-                    train=sizes[c] and sizes[c][0], test=sizes[c] and sizes[c][1], cap=caps.get(c)) for c in comps],
+                    train=sizes[c] and sizes[c][0], test=sizes[c] and sizes[c][1], cap=caps.get(c), basis=basis.get(c)) for c in comps],
         rerun=rerun_status(d, caps),  # md 해석 주의와 같은 문구 (예: `kumo 6/6, tabicl 3/6 (...)`)
         runs=records(runs.sort_values(["comp", "cv_rank"])),
         summary=records(summary_rows(d)),

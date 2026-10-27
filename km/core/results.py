@@ -5,7 +5,9 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import re
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -13,6 +15,11 @@ import pandas as pd
 from km.core.competition import ROOT
 
 RESULTS = ROOT / "results"
+# 탐색 실행 (km board 에서 뺌): 컨텍스트 탐색(`ctx …`), 결정 모델 실험 중 같이 돌린 GBDT(`llm…`, `sap…`).
+# 결정 모델(llm·sap) 실행도 테스트 예측이 있어 km lb 는 이 규칙을 쓰지 않음 (제출 ↔ 실행 연결이 끊김).
+EXPLORATION = re.compile(r"ctx |llm|sap")
+# 테스트 예측을 안 만든 실행의 note (test 열이 없던 예전 행의 추정, 백필 값). 1-fold 탐색(probe·ctx-size)도 포함.
+NO_TEST = re.compile(r"ctx[ -]|probe")
 
 
 def append_rows(rows: pd.DataFrame):
@@ -24,22 +31,38 @@ def append_rows(rows: pd.DataFrame):
         pd.concat([pd.read_csv(csv), rows] if csv.exists() else [rows]).to_csv(csv, index=False)
 
 
+def read_results() -> pd.DataFrame:
+    """results.csv 전체. km lb 는 한 번만 읽고 대회마다 넘김."""
+    csv = RESULTS / "results.csv"
+    if not csv.exists():
+        return pd.DataFrame(columns=["timestamp", "comp", "model", "cv", "n_folds", "note", "test"])
+    return pd.read_csv(csv)
+
+
+def parse_utc(text) -> datetime:
+    """시각 문자열 → UTC 기준 naive datetime. 문자열 비교 대신 이걸로 비교.
+    타임존이 없으면 UTC 로 봄: results.csv timestamp·test.json run 은 datetime.now(timezone.utc) 로 쓰고,
+    Kaggle 제출 날짜는 kagglesdk 가 UTC 'Z' 를 떼고 naive 로 준 값 (2026-10-27 확인). 타임존이 붙어 있으면 UTC 로 환산.
+    못 읽으면 RuntimeError (조용히 틀리지 않도록 그 대회·모델 처리를 멈춤)."""
+    try:
+        t = datetime.fromisoformat(str(text).strip())
+    except ValueError as e:
+        raise RuntimeError(f"시각을 읽지 못함: {text!r}") from e
+    return t.astimezone(timezone.utc).replace(tzinfo=None) if t.tzinfo else t
+
+
 TEST_INFO = "test.json"  # test.npy 옆: 그 예측을 만든 실행 {run, cv, n_folds}
 
 
-def full_runs(comp) -> pd.DataFrame:
-    """results.csv 에서 대회의 전체 fold 실행들, 시각 순 (timestamp 는 UTC)."""
-    csv = RESULTS / "results.csv"
-    if not csv.exists():
-        return pd.DataFrame(columns=["timestamp", "model", "cv", "note", "test"])
-    r = pd.read_csv(csv)
-    return r[(r.comp == comp.name) & (r.n_folds == comp.cv["n_splits"])].sort_values("timestamp")
+def is_exploration(note: pd.Series) -> pd.Series:
+    """탐색 실행인지 (km board 가 LB 표에서 뺌). note 가 비었으면 False."""
+    return note.fillna("").str.match(EXPLORATION)
 
 
 def made_test(runs: pd.DataFrame) -> pd.Series:
-    """테스트 예측을 만든 실행인지. test 열(2026-10-27~)이 없던 예전 행은 `ctx ` 탐색 실험(테스트 예측 생략)만 아니라고 봄."""
+    """테스트 예측을 만든 실행인지 (km lb 의 제출 연결 후보, km board). test 열이 없거나 빈 값이면 note 로 추정 (NO_TEST)."""
     test = runs["test"] if "test" in runs else pd.Series(None, index=runs.index, dtype=object)
-    return test.fillna(~runs.note.fillna("").str.startswith("ctx ")).astype(bool)
+    return test.fillna(~runs.note.fillna("").str.match(NO_TEST)).astype(bool)
 
 
 def clear_test_info(out: Path):
@@ -47,12 +70,17 @@ def clear_test_info(out: Path):
     (out / TEST_INFO).unlink(missing_ok=True)
 
 
+def save_test_info(out: Path, info: dict):
+    """test.json 을 임시 파일 → 교체로 원자적으로 씀."""
+    tmp = out / f".{TEST_INFO}.tmp"
+    tmp.write_text(json.dumps(info, indent=2))
+    os.replace(tmp, out / TEST_INFO)
+
+
 def write_test_info(out: Path, run: str, cv: float, n_folds: int, classes: list | None):
     """test.npy 를 저장한 직후에만 씀 → --no-test 재실행·원격 결과 병합(copytree)에도 예측과 출처가 함께 다님.
-    classes: 예측 열 순서 (meta.json 은 --no-test 재실행이 덮어쓰므로 제출 파일은 이 값으로 만듦). 임시 파일 → 교체로 원자적."""
-    tmp = out / f".{TEST_INFO}.tmp"
-    tmp.write_text(json.dumps(dict(run=run, cv=cv, n_folds=n_folds, classes=classes), indent=2))
-    os.replace(tmp, out / TEST_INFO)
+    classes: 예측 열 순서 (meta.json 은 --no-test 재실행이 덮어쓰므로 제출 파일은 이 값으로 만듦)."""
+    save_test_info(out, dict(run=run, cv=cv, n_folds=n_folds, classes=classes))
 
 
 def test_info(comp_name: str, model: str) -> dict | None:
