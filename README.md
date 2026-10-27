@@ -58,7 +58,7 @@ km/
 docker/air/                       # Databricks 실행 이미지 (패키지 미리 설치)
 results/
   results.csv                     # 실행마다 한 줄 (CV 점수, fold std, 시간, 실행 위치)
-  leaderboard.csv                 # 제출별 public/private 점수와 순위
+  leaderboard.csv                 # 제출별 public/private 점수와 순위, 제출을 만든 실행(run = results.csv timestamp)
   <slug>/<model>/                 # OOF·테스트 예측 (git 제외)
 EXPERIMENTS.md                    # 실험 결과와 분석
 docs/known-issues.md              # 겪은 오류와 해결, Kaggle·Databricks 운영 메모

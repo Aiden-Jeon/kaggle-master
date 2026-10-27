@@ -22,14 +22,14 @@ def append_rows(rows: pd.DataFrame):
         pd.concat([pd.read_csv(csv), rows] if csv.exists() else [rows]).to_csv(csv, index=False)
 
 
-def latest_cv(comp, model: str) -> float | None:
-    """results.csv 에서 해당 모델의 전체 fold 실행 중 가장 최근 CV."""
+def full_runs(comp) -> pd.DataFrame:
+    """results.csv 에서 대회의 전체 fold 실행들, 시각 순 (timestamp 는 UTC)."""
     csv = RESULTS / "results.csv"
     if not csv.exists():
-        return None
+        return pd.DataFrame(columns=["timestamp", "model", "cv"])
     r = pd.read_csv(csv)
-    r = r[(r.comp == comp.name) & (r.model == model) & (r.n_folds == comp.cv["n_splits"])]
-    return float(r.sort_values("timestamp").cv.iloc[-1]) if len(r) else None
+    return r[(r.comp == comp.name) & (r.n_folds == comp.cv["n_splits"])].sort_values("timestamp")
+
 
 
 def merge_results(remote: Path, where: str):

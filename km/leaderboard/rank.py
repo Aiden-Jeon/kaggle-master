@@ -8,6 +8,9 @@
      Kaggle API 는 private 리더보드를 주지 않으므로 종료된 대회도 public 점수 기준이고, private 점수는 따로 기록.
 모델 이름: 제출 설명에서 `lgbm`, `kumo+catboost`, `exaone@knn1000` 처럼 모델 이름으로 해석되는 첫 토큰.
          RETIRED 모델(limix2)이 들어간 제출은 순위 집계·자동 제출에서 뺌.
+실행: 제출을 만든 실행의 CV 와 시각(run 열 = results.csv timestamp)을 같이 기록 → km board 가 실행 단위로 LB 를 붙임.
+     설명의 `run <시각>` (km submit 기본) → `<n>-fold CV <점수>` → 제출 시각 전 마지막 실행 순으로 찾음.
+     못 찾으면 이전 leaderboard.csv 에서 찾은 값을 제출 ref 로 유지. --submit 도 이미 제출한 '실행' 은 다시 내지 않음.
 """
 
 from __future__ import annotations
@@ -25,8 +28,8 @@ import pandas as pd
 
 from km.core.competition import COMP_DIR, load_competition
 from km.core.metrics import METRICS
-from km.core.results import RESULTS, latest_cv
-from km.leaderboard.submit import make_submission, push
+from km.core.results import RESULTS, full_runs
+from km.leaderboard.submit import make_submission, parse_message, push, test_run
 from km.models import REGISTRY, RETIRED, base_name
 
 
@@ -83,13 +86,26 @@ def is_retired(model: str) -> bool:
     return any(base_name(p) in RETIRED for p in model.split("+"))
 
 
-def submit_pending(comp_name: str, n: int) -> int:
-    """test.npy 가 있지만 아직 제출 안 한 단일 모델을 CV 좋은 순으로 최대 n 개 제출. 제출한 개수 반환."""
+def submit_pending(comp_name: str, n: int, known: dict | None = None) -> int:
+    """test.npy 가 있지만 그 실행을 아직 제출 안 한 단일 모델을 CV 좋은 순으로 최대 n 개 제출. 제출한 개수 반환.
+    known: 제출 ref → (cv, run), 이전 leaderboard.csv 에서 찾은 값."""
     comp = load_competition(comp_name)
-    done = {model_of(s) for s in submissions(comp_name)}
-    todo = [(latest_cv(comp, d.name), d.name) for d in (RESULTS / comp_name).glob("*/")
-            if (d / "test.npy").exists() and d.name not in done and not is_retired(d.name)
-            and latest_cv(comp, d.name) is not None]
+    # 이미 제출한 실행: (모델, run). 실행을 알 수 없는 예전 제출이 있는 모델은 다시 내지 않음 (같은 예측일 수 있음)
+    runs = full_runs(comp)
+    done, unknown = set(), set()
+    for s in submissions(comp_name):
+        model = model_of(s)
+        run = submission_run(comp, s, runs[runs.model == model])[1] or (known or {}).get(str(s["ref"]), (None, None))[1]
+        if run:
+            done.add((model, run))
+        else:
+            unknown.add(model)
+    todo = []
+    for d in (RESULTS / comp_name).glob("*/"):
+        t = test_run(comp, d.name) if (d / "test.npy").exists() else None
+        if (t and t["n_folds"] == comp.cv["n_splits"] and (d.name, t["run"]) not in done and d.name not in unknown
+                and not is_retired(d.name)):
+            todo.append((t["cv"], d.name))  # 제출할 test.npy 를 만든 실행의 CV
     todo.sort(reverse=METRICS[comp.metric][1])
     sent = 0
     for cv, model in todo[:n]:
@@ -113,7 +129,27 @@ def wait_scored(comp_name: str, timeout: int = 900):
         time.sleep(15)
 
 
-def rank_rows(comp_name: str, user: str) -> list[dict]:
+def submission_run(comp, sub: dict, runs: pd.DataFrame) -> tuple[float | None, str | None]:
+    """제출을 만든 실행의 (CV, 실행 시각). runs = 그 모델의 전체 fold 실행 (full_runs, 시각 순, UTC).
+    1) 설명의 `run <시각>` (km submit 기본, 2026-10-27~)  2) 설명의 `<n>-fold CV <점수>` 와 같은 점수의 실행
+    3) 제출 시각(UTC) 전 마지막 실행. 실행을 못 찾으면 실행 시각은 None (km board 는 모델 이름으로만 연결).
+    모델 이름만으로 찾으면 같은 이름으로 다시 돌린 뒤 예전 제출에도 새 CV 가 붙음 (2026-10-26 Allstate kumo@full 평균 → 중앙값)."""
+    info = parse_message(sub["description"])
+    cv_ok = info.cv is not None and info.n_folds == comp.cv["n_splits"]
+    if info.cv is not None and not cv_ok:  # 1-fold 시험 등 → 전체 fold 실행이 아님, 날짜로 추측하지 않음
+        return None, None
+    if info.run:  # 적힌 실행이 없으면 (지워짐 등) 추측하지 않음
+        hit = runs[runs.timestamp == info.run]
+        return (float(hit.cv.iloc[-1]), info.run) if len(hit) else (float(info.cv) if cv_ok else None, None)
+    before = runs[runs.timestamp <= sub["date"].replace(" ", "T")]
+    if cv_ok:  # 설명을 쓸 때와 같은 형식으로 비교 (반올림 차이 없음), 제출 뒤 실행은 제외
+        hit = before[[f"{x:.5f}" == info.cv for x in before.cv]]
+        return (float(hit.cv.iloc[-1]), hit.timestamp.iloc[-1]) if len(hit) else (float(info.cv), None)
+    return (float(before.cv.iloc[-1]), before.timestamp.iloc[-1]) if len(before) else (None, None)
+
+
+def rank_rows(comp_name: str, user: str, known: dict | None = None) -> list[dict]:
+    """known: 제출 ref → (cv, run), 이전 leaderboard.csv 에서 찾은 값. 이번에 실행을 못 찾으면 그 값을 유지."""
     comp = load_competition(comp_name)
     higher = METRICS[comp.metric][1]
     subs = [s for s in submissions(comp_name) if s["publicScore"] not in (None, "")]
@@ -122,6 +158,7 @@ def rank_rows(comp_name: str, user: str) -> list[dict]:
     lb = public_leaderboard(comp_name)
     mine = lb.TeamMemberUserNames.fillna("").str.split(",").apply(lambda u: user in [x.strip() for x in u])
     others = lb.loc[~mine, "Score"].to_numpy()
+    runs = full_runs(comp)  # 제출마다 results.csv 를 다시 읽지 않도록 한 번만
     rows = []
     for s in subs:
         pub = float(s["publicScore"])
@@ -129,10 +166,13 @@ def rank_rows(comp_name: str, user: str) -> list[dict]:
         model = model_of(s)
         if is_retired(model):
             continue
-        rows.append(dict(comp=comp_name, model=model, metric=comp.metric, cv=latest_cv(comp, model), public=pub,
+        cv, run = submission_run(comp, s, runs[runs.model == model])
+        if run is None and str(s["ref"]) in (known or {}):
+            cv, run = known[str(s["ref"])]
+        rows.append(dict(comp=comp_name, model=model, metric=comp.metric, cv=cv, public=pub,
                          private=float(s["privateScore"]) if s["privateScore"] not in (None, "") else None,
                          rank=rank, teams=len(others) + 1, top_pct=round(100 * rank / (len(others) + 1), 1),
-                         date=s["date"][:10], description=s["description"], ref=s["ref"]))
+                         date=s["date"][:10], description=s["description"], ref=s["ref"], run=run))
     return rows
 
 
@@ -145,12 +185,15 @@ def main(argv: list[str] | None = None):
     comps = args.comps or sorted(p.name for p in COMP_DIR.iterdir()
                                  if (p / "config.yaml").exists() and not p.name.startswith("_"))
     user = me()
+    path = RESULTS / "leaderboard.csv"
+    prev = pd.read_csv(path, dtype={"ref": str}) if path.exists() else pd.DataFrame()
+    known = {r.ref: (r.cv, r.run) for r in prev.itertuples() if "run" in prev and pd.notna(r.run)}  # 이전에 찾은 실행
     rows = []
     for c in comps:
         try:
-            if args.submit and submit_pending(c, args.submit):
+            if args.submit and submit_pending(c, args.submit, known):
                 wait_scored(c)
-            rows += rank_rows(c, user)
+            rows += rank_rows(c, user, known)
         except subprocess.CalledProcessError as e:  # Rules 미동의 대회 등은 건너뜀
             print(f"{c}: 건너뜀 ({e.stderr.strip().splitlines()[-1] if e.stderr else e})")
         except RuntimeError as e:  # 제출 기록을 못 읽음 → 이 대회는 제출·집계 모두 건너뜀
@@ -158,10 +201,8 @@ def main(argv: list[str] | None = None):
     if not rows:
         return
     df = pd.DataFrame(rows).sort_values(["comp", "rank", "date"])
-    path = RESULTS / "leaderboard.csv"
-    if args.comps and path.exists():  # 일부 대회만 갱신할 때는 나머지 대회 행 유지
-        old = pd.read_csv(path)
-        old = old[~old.comp.isin(comps) & ~old.model.astype(str).map(is_retired)]
+    if args.comps and len(prev):  # 일부 대회만 갱신할 때는 나머지 대회 행 유지
+        old = prev[~prev.comp.isin(comps) & ~prev.model.astype(str).map(is_retired)]
         df = pd.concat([old, df]).sort_values(["comp", "rank", "date"])
     df.to_csv(path, index=False)
     print(df.drop(columns=["description", "ref"]).to_string(index=False))
