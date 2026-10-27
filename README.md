@@ -63,6 +63,9 @@ results/
   results.csv                     # 실행마다 한 줄 (CV 점수, fold std, 시간, 실행 위치, 테스트 예측 여부). timestamp 는 UTC
   leaderboard.csv                 # 제출별 public/private 점수와 순위, 제출을 만든 실행(run = results.csv timestamp)
   <slug>/<model>/                 # OOF·테스트 예측, test.json = test.npy 를 만든 실행 (km submit 이 제출 설명에 적음, git 제외)
+                                  # git 제외 파일 (<slug>/, _air/runs.json) 은 worktree 에서 실행·수집해도 메인 체크아웃의 results/ 에 씀
+                                  # (worktree 를 지워도 남음, KM_OUTPUTS 로 위치 지정). results.csv·leaderboard.csv 는 체크아웃마다 (PR 로 합침)
+                                  # 여러 세션이 같은 대회·모델을 돌리면 마지막에 쓴 예측만 남음 (아직 안 합친 실행의 예측을 덮어쓰면 경고)
 EXPERIMENTS.md                    # 실험 결과와 분석
 docs/known-issues.md              # 겪은 오류와 해결, Kaggle·Databricks 운영 메모
 ```
@@ -113,6 +116,7 @@ uv run km databricks allstate-claims-severity exaone mitra_ft --split-folds
 uv run km submit spaceship-titanic catboost tabicl --push -m "cb+tabicl"
 
 # 제출 기록 → 리더보드 순위 (results/leaderboard.csv), --submit N: 미제출 모델을 CV 순으로 N개 제출 후 집계
+# 아직 안 낸 마지막 실행의 test.npy 가 없으면 (results.csv 는 test=True) 대회마다 목록으로 알림
 uv run km lb
 uv run km lb bioresponse --submit 2
 

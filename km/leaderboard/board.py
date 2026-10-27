@@ -22,7 +22,7 @@ import pandas as pd
 
 from km.core.competition import COMP_DIR, ROOT, load_competition
 from km.core.metrics import METRICS
-from km.core.results import RESULTS, is_exploration, made_test, parse_utc
+from km.core.results import OUTPUTS, RESULTS, is_exploration, made_test, parse_utc
 from km.models import REGISTRY
 
 OUT = ROOT / "docs" / "leaderboard.md"
@@ -47,7 +47,7 @@ def row_counts(name: str) -> tuple[int, int] | None:
     train, test = comp.data_dir / comp.train_file, comp.data_dir / comp.test_file
     if train.exists() and test.exists():
         return len(pd.read_csv(train, usecols=[0])), len(pd.read_csv(test, usecols=[0]))
-    for d in (RESULTS / name).glob("*/"):
+    for d in (OUTPUTS / name).glob("*/"):
         if (d / "oof.npy").exists() and (d / "test.npy").exists():
             return len(np.load(d / "oof.npy", mmap_mode="r")), len(np.load(d / "test.npy", mmap_mode="r"))
     return None
