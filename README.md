@@ -31,7 +31,7 @@ Tabular Foundation Model(TabPFN, TabICL, Kumo 등)을 GBDT 베이스라인(Light
 | S6E10 | 699,635 | AUC ↑ | kumo (ctx 20만) | 상위 65.6% (kumo (ctx 20만)) |
 
 LB 순위는 `km lb` 집계: 종료된 대회는 private 점수, 진행 중·상시 대회 (Titanic·House Prices·Spaceship·S6E10) 는 public 점수 기준.
-종료된 대회의 순위는 늦은 제출 점수로 매긴 위치 (Otto·GiveMeSomeCredit·Allstate 1위, Mercedes 3위 포함).
+종료된 대회의 순위는 늦은 제출 점수로 매긴 위치 (Otto·GiveMeSomeCredit·Allstate·Bioresponse 1위, Mercedes 3위 포함).
 
 - 작은 데이터에서는 TFM 이 GBDT 와 같거나 앞섬. 큰 데이터의 GBDT 우위는 대부분 TFM 컨텍스트 1만 행 상한 탓 — 상한을 푼 kumo 가 Otto·GiveMeSomeCredit·Allstate·S6E1 에서 GBDT 최고를 넘고 S6E10 은 동률.
 - TFM 중에서는 kumo 가 가장 꾸준함. 2026-10-27 에 비어 있던 조합(exaone·causilo·limix2m·mitra·mitra_ft 등 45개)을 채우자 CV 1위가 4개 대회에서 바뀜 (Restaurant limix2m, Bioresponse·S4E2 causilo, Mercedes exaone) — 모두 2위와의 차이가 fold std 안. 범주 ID 만 있는 데이터(Amazon)는 상한을 풀어도 catboost 가 앞섬 (원인은 추정).
