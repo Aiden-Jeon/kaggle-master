@@ -22,6 +22,8 @@ def add_run_args(ap: argparse.ArgumentParser, models_nargs: str = "+"):
     ap.add_argument("--no-test", action="store_true", help="실험용: 테스트 예측 생략 (test.npy 저장 안 함)")
     ap.add_argument("--fold", type=int, default=None,
                     help="fold 하나만 실행 → results/<대회>/<모델>/folds/<k>/ 에 저장 (results.csv 는 전체 fold 를 모아 합칠 때)")
+    ap.add_argument("--fold-batch", default=None,
+                    help="--fold 실행 묶음 이름. 합칠 때 묶음이 같은 fold 만 합침 (km databricks --split-folds 가 자동으로 붙임)")
 
 
 def run_argv(args: argparse.Namespace, models: list[str] | None = None) -> list[str]:
@@ -33,7 +35,20 @@ def run_argv(args: argparse.Namespace, models: list[str] | None = None) -> list[
         out.append("--no-test")
     if args.fold is not None:
         out += ["--fold", str(args.fold)]
+    if args.fold_batch:
+        out += ["--fold-batch", args.fold_batch]
     return out
+
+
+def check_fold_args(ap: argparse.ArgumentParser, args: argparse.Namespace):
+    """--fold 범위·--max-folds 충돌을 원격에 보내기 전에 확인 (원격에서 실패하면 준비 시간만 버림)."""
+    if args.fold is None:
+        return
+    if args.max_folds:
+        ap.error("--fold 와 --max-folds 는 같이 쓸 수 없음")
+    n = load_competition(args.comp).cv["n_splits"]
+    if not 0 <= args.fold < n:
+        ap.error(f"--fold 는 0 ~ {n - 1}")
 
 
 def bundle() -> str:

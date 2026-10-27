@@ -121,7 +121,8 @@ uv run km migrate test-info
 ```
 
 공통 실행 인자: `--max-folds N` (앞 N개 fold 만), `--no-test` (테스트 예측 생략), `--note` (results.csv 에 남길 메모),
-`--fold k` (fold 하나만 → `results/<대회>/<모델>/folds/<k>/`, 다 모이면 `km run <대회> <모델> --merge-folds` 로 합침).
+`--fold k` (fold 하나만 → `results/<대회>/<모델>/folds/<k>/`, 다 모이면 `km run <대회> <모델> --merge-folds` 로 합침.
+`km databricks --split-folds`·`--fetch`, `km kaggle --fold` 는 마지막 fold 를 받을 때 자동으로 합침).
 
 ## 모델
 

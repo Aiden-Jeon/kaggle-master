@@ -34,11 +34,11 @@ from pathlib import Path
 
 import yaml
 
-from km.core.competition import ROOT, load_competition, load_data
+from km.core.competition import ROOT, load_competition
 from km.core.download import download
 from km.core.results import RESULTS, merge_results
 from km.models import GATED, base_name
-from km.runner.common import CODE_PATHS, add_run_args, pip_args, run_argv
+from km.runner.common import CODE_PATHS, add_run_args, check_fold_args, pip_args, run_argv
 
 LOCAL_CONFIG = ROOT / "databricks.local.yaml"
 DEFAULT_ACCELERATOR = "GPU_1xH100"  # A10G(24GB)는 TFM 이 OOM 재시도를 반복해 느림
@@ -365,14 +365,17 @@ def fetch(profile: str, run_id: str):
     run = runs[run_id]
     if run.get("code"):  # CPU 작업 코드 (Workspace). 끝난 작업에만 fetch 하므로 더는 필요 없음
         databricks(profile, "workspace", "delete", "--recursive", run["code"], capture=True, check=False)
-    # --fold 실행은 results.csv 없이 <대회>/<모델>/folds/ 만 옴
-    if res.returncode != 0 or not any(p.name in ("results.csv", "meta.json") for p in (dl / "results").rglob("*")):
+    # --fold 실행은 results.csv 없이 <대회>/<모델>/folds/<k>/ 만 옴
+    folds = list((dl / "results").glob("*/*/folds/*/meta.json"))
+    if res.returncode != 0 or not ((dl / "results" / "results.csv").exists() or folds):
         logs = (f"{run['url']} 또는 databricks jobs get-run {run_id} -p {profile}" if run.get("kind") == "cpu"
                 else f"databricks air logs {run_id} -p {profile}")
         print(f"results 없음. 로그 확인: {logs}\n{res.stderr.strip()}")
         shutil.rmtree(dl)
         return
     merge_results(dl / "results", "databricks-cpu" if run.get("kind") == "cpu" else "databricks")
+    if folds:  # 모델 하나가 실패해도 다른 모델의 fold 는 옴 → 빠진 fold 는 합칠 때 알림. 그때 볼 로그 위치
+        print(f"fold 결과 {len(folds)}개 수집. 로그: databricks air logs {run_id} -p {profile}")
     shutil.rmtree(dl)
 
 
@@ -403,24 +406,41 @@ def main(argv: list[str] | None = None):
                     help="GPU 모델을 fold 마다 작업 하나로 나눠 동시에 제출 (GPU 작업이 fold 수만큼). 다 끝나면 fold 를 합쳐 "
                          "results.csv 에 기록. 벽시계 시간은 줄지만 GPU 시간은 작업마다 준비 시간만큼 늘어남")
     args = ap.parse_args(argv)
-    if args.split_folds and (args.fold is not None or args.max_folds):
-        ap.error("--split-folds 는 --fold·--max-folds 와 같이 쓸 수 없음")
+    check_fold_args(ap, args)
+    if args.split_folds and (args.fold is not None or args.max_folds or args.fold_batch):
+        ap.error("--split-folds 는 --fold·--max-folds·--fold-batch 와 같이 쓸 수 없음")
 
     cfg = settings(args)
     comp = load_competition(args.comp)  # 설정 존재 확인
+    from km.runner.run import merge_ready  # km.models 까지 불러오므로 필요할 때만
+
     if args.fetch:
         fetch(cfg["profile"], args.fetch)
+        merge_ready(comp, "databricks")  # fold 작업이면 마지막 fold 를 받을 때 합쳐짐
         return
     if not args.models:
         ap.error("models 가 필요함 (--fetch 가 아닐 때)")
     cpu = [m for m in args.models if base_name(m) in CPU_MODELS]
     gpu = [m for m in args.models if m not in cpu]
+    if args.split_folds:
+        if not gpu:
+            ap.error("--split-folds 는 GPU 모델용 (GBDT 는 CPU 작업 하나로 충분히 빠름)")
+        if int(re.match(r"GPU_(\d+)x", cfg["accelerator"])[1]) > 1:  # fold 작업 수 × 장수만큼 GPU 를 잡음
+            ap.error(f"--split-folds 는 GPU 1장 작업으로 (지금 {cfg['accelerator']} × fold {comp.cv['n_splits']}개)")
+        if not (comp.data_dir / comp.train_file).exists():  # 다 끝난 뒤 합칠 때 로컬 타깃이 필요 → 미리 받아 둠
+            download(comp)
+        for name in gpu:  # 예전 시도에서 남은 fold 가 이번 묶음과 섞이지 않게 (합칠 때 batch 로도 확인)
+            if (stale := RESULTS / comp.name / name / "folds").exists():
+                print(f"예전 fold 결과 삭제: {stale}")
+                shutil.rmtree(stale)
     data = ensure_data(comp, cfg["profile"], cfg["volume"])
     runs = []  # (run_id, CPU 작업 여부)
     if gpu and args.split_folds:
+        batch = f"{args.tag + '-' if args.tag else ''}{datetime.now():%Y%m%d-%H%M%S}"
+        print(f"GPU 작업 {comp.cv['n_splits']}개 제출 (fold 마다 {cfg['accelerator']}, 묶음 {batch}) — 워크스페이스 GPU 쿼터 확인")
         for k in range(comp.cv["n_splits"]):  # 같은 초에 제출해도 실행 이름이 겹치지 않게 태그에 fold 번호
             fold_args = copy.copy(args)
-            fold_args.fold = k
+            fold_args.fold, fold_args.fold_batch = k, batch
             runs.append((submit(cfg, comp.name, data, run_argv(fold_args, gpu), gpu, cfg["accelerator"], args.timeout,
                                 f"{args.tag + '-' if args.tag else ''}fold{k}"), False))
     elif gpu:
@@ -429,6 +449,8 @@ def main(argv: list[str] | None = None):
     if cpu:
         runs.append((submit_cpu(cfg, comp.name, data, run_argv(args, cpu), cpu, args.timeout, args.tag), True))
     if args.no_wait:
+        if args.split_folds:
+            print(f"끝난 뒤 작업마다 km databricks {comp.name} --fetch <run_id> → 마지막 fold 를 받을 때 자동으로 합쳐짐")
         return
     # CPU 작업은 상태만 폴링 → 스레드에서 기다리다 끝나는 대로 수집. GPU 작업은 여기서 로그를 스트리밍
     threads = [threading.Thread(target=finish, args=(cfg["profile"], comp.name, rid, True), daemon=True)
@@ -446,14 +468,8 @@ def main(argv: list[str] | None = None):
         for rid, _ in runs:
             print(f"  km databricks {comp.name} --fetch {rid}")
         if args.split_folds:
-            print(f"  km run {comp.name} {' '.join(gpu)} --merge-folds --where databricks")
+            print("  (fold 작업은 마지막 fold 를 받을 때 자동으로 합쳐짐)")
         raise SystemExit(130)
     if args.split_folds:
-        from km.runner.run import merge_folds, target
-
-        y, _ = target(comp, load_data(comp)[0])
-        failed = [name for name in gpu if not merge_folds(comp, name, y, where="databricks")]
-        if failed:
-            print(f"합치지 못한 모델: {', '.join(failed)} → 빠진 fold 를 다시 돌린 뒤 "
-                  f"km run {comp.name} {' '.join(failed)} --merge-folds --where databricks")
+        merge_ready(comp, "databricks", gpu)
 
