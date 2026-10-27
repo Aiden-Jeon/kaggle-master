@@ -47,6 +47,12 @@
 - Kaggle 세션에는 T4 가 2장 → `km run` 이 GPU 수를 감지해 GPU 마다 작업자를 두고 모델을 나눠 동시 실행 (`--gpus N` 으로 조절). 큐에 대기 중인 버전도 동시 실행 2개 한도에 포함됨.
 - `machine_shape: NvidiaTeslaP100` 으로 올렸지만 실제로는 T4 ×2 에서 실행됨 (S6E10 로그 기준) → GPU 종류 지정이 반영되지 않는 것으로 보임.
 - Kaggle API 는 private LB 순위를 주지 않음 → `km lb` 의 순위는 public LB 기준.
+- 코드 대회 (노트북 제출만, 인터넷 끔 — Name That LLM, 2026-10-27):
+  - API 제출 (`kaggle competitions submit -k <kernel> -v <버전>`) 이 403 이면 본문을 볼 것. `IdentityVerificationRequired` 는 토큰 문제가 아니라 계정 **신원 인증** (Settings, 전화번호 인증과 별개) 이 필요하다는 뜻.
+  - 노트북 출력은 심볼릭 링크를 보존하지 않음 → HF 캐시 (`snapshots` → `blobs` 링크) 를 출력으로 넘기면 오프라인에서 가중치를 못 찾음. 링크를 실제 파일로 풀어 복사 (`kernel/prep_offline.py`).
+  - 숨겨진 재실행은 로그를 볼 수 없고 오류 문구만 옴. 대화형 실행에 있던 파일이 없을 수 있음 (`sample_submission.parquet` 으로 데이터 폴더를 찾다가 재실행만 실패) → 대회가 안내하는 경로 (`/kaggle/input/competitions/<slug>`) 를 쓰고, 무거운 단계는 실패하면 단순 모델로 제출하게 감싸 점수로 어느 경로였는지 구분.
+  - 큰 테스트 재현은 학습 글을 뽑아 만든 가짜 테스트로 (`build.py --fake-test 4000`). 글자 n-gram TF-IDF 와 GPU 모델을 같이 메모리에 두면 GPU 노트북에서 OOM → TF-IDF 를 먼저 끝내고 반환.
+  - `kaggle kernels status`·`output` 을 짧은 간격으로 부르면 429 → 90초 이상 간격.
 
 ### Databricks
 

@@ -30,7 +30,8 @@ TEMPLATE = Path(__file__).with_name("board.html")  # script#data 의 `__DATA__` 
 GBDT = {name for name, (module, _) in REGISTRY.items() if module == "km.models.gbdt"}
 TITLES = {  # 표 제목용 짧은 이름 (없으면 대회 이름 그대로)
     "restaurant-revenue-prediction": "Restaurant", "titanic": "Titanic",
-    "house-prices-advanced-regression-techniques": "House Prices", "bioresponse": "Bioresponse",
+    "house-prices-advanced-regression-techniques": "House Prices", "name-that-llm": "Name That LLM",
+    "bioresponse": "Bioresponse",
     "mercedes-benz-greener-manufacturing": "Mercedes", "spaceship-titanic": "Spaceship",
     "playground-series-s4e2": "S4E2", "amazon-employee-access-challenge": "Amazon",
     "otto-group-product-classification-challenge": "Otto", "GiveMeSomeCredit": "GiveMeSomeCredit",

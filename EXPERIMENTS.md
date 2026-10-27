@@ -15,6 +15,7 @@ Tabular Foundation Model(TFM) vs GBDT 비교. 원본 수치는 `results/results.
 | 2026-10-22 | Databricks AI Runtime A10G → H100 | GiveMeSomeCredit, Amazon, Bioresponse, 결정 모델, 추론 속도 |
 | 2026-10-23 ~ | Databricks: TFM 은 H100 1장, GBDT 는 CPU serverless 4코어 | Restaurant, Mercedes, Otto, Allstate, S6E1 |
 | 2026-10-26 | Databricks H100 (kumo · tabicl · tabpfn_v2): 컨텍스트 상한 해제·20만 행 재실행 | Amazon, Otto, GiveMeSomeCredit, Allstate, S6E1, S6E10 |
+| 2026-10-27 | 로컬 맥 (GBDT) · Databricks H100 1장 (TFM) | Name That LLM |
 | 2026-10-27 | Databricks H100 1장 | [빈 조합 채우기](#빈-조합-채우기-2026-10-27) (exaone·causilo·limix2m·mitra·mitra_ft, Bioresponse TFM) |
 
 2026-10-23 이후 대회는 **같은 표 안에서도** GBDT(CPU 4코어)와 TFM(H100) 시간을 직접 비교하기 어려움.
@@ -32,7 +33,7 @@ LB 순위는 표마다 집계 시점을 적음 — `km lb` 집계(`results/leade
 - [요약](#요약)
 - [대회별 결과](#대회별-결과) (학습 행 수 순):
   [Restaurant Revenue](#restaurant-revenue) · [Titanic](#titanic) · [House Prices](#house-prices) ·
-  [Bioresponse](#bioresponse) · [Mercedes-Benz](#mercedes-benz) · [Spaceship Titanic](#spaceship-titanic) ·
+  [Name That LLM](#name-that-llm) · [Bioresponse](#bioresponse) · [Mercedes-Benz](#mercedes-benz) · [Spaceship Titanic](#spaceship-titanic) ·
   [S4E2](#playground-s4e2) · [Amazon](#amazon-employee-access) · [Otto](#otto) · [GiveMeSomeCredit](#givemesomecredit) ·
   [Allstate](#allstate-claims-severity) · [S6E1](#playground-s6e1) · [S6E10](#playground-s6e10)
 - [주제별 실험](#주제별-실험):
@@ -47,6 +48,7 @@ LB 순위는 표마다 집계 시점을 적음 — `km lb` 집계(`results/leade
 | Restaurant Revenue | 137 | 회귀 · RMSE ↓ | limix2m 2,395,841 | catboost 2,640,319 | limix2m | limix2m 315 / 2,260 (13.9%) |
 | Titanic | 891 | 이진 · acc ↑ | exaone 0.8462 | catboost 0.8451 | exaone | kumo 2,029 / 11,667 (17.4%) |
 | House Prices | 1,460 | 회귀 · RMSE ↓ | tabpfn_v2 0.1151 | catboost 0.1250 | tabpfn_v2 | kumo 85 / 4,501 (1.9%) |
+| Name That LLM | 2,699 | 18-class 텍스트 · balanced acc ↑ | kumo 0.3674 | catboost 0.3141 | kumo | kumo + TF-IDF LR 2,453 / 3,504 (70.0%) |
 | Bioresponse | 3,751 | 이진 · logloss ↓ | causilo 0.4262 | xgb 0.4500 | causilo | kumo·tabicl·causilo 1 / 703 (0.1%) |
 | Mercedes-Benz | 4,209 | 회귀 · R² ↑ | exaone 0.5748 | catboost 0.5564 | exaone | kumo 3 / 3,825 (0.1%) |
 | Spaceship Titanic | 8,693 | 이진 · acc ↑ | kumo 0.8243 | catboost 0.8117 | kumo | kumo 39 / 1,756 (2.2%) |
@@ -59,6 +61,7 @@ LB 순위는 표마다 집계 시점을 적음 — `km lb` 집계(`results/leade
 | S6E10 | 699,635 | 이진 · AUC ↑ | kumo 0.95880 (ctx 20만) | lgbm 0.95838 | kumo 0.95880 (ctx 20만) | kumo (ctx 20만) 2,102 / 3,202 (65.6%) |
 
 순위는 `results/leaderboard.csv` 기준 (`basis` 열). 종료된 대회는 private 점수로 매긴 위치 (Kaggle 조회 API 가 private 을 공개한 대회: Restaurant·Bioresponse·Mercedes·S4E2·Amazon·Otto·GiveMeSomeCredit·Allstate·S6E1), 진행 중 대회와 Titanic·Spaceship·House Prices 는 public 점수 기준. 늦은 제출이라 실제 순위표에는 없음. `(ctx …)` 는 상한을 푼 TFM 재실행 (2026-10-26, kumo·tabicl·tabpfn_v2).
+Name That LLM 은 코드 대회라 `km lb` 집계 밖 — 2026-10-27 public LB, 이 표에서 유일한 마감 전 제출 (실제 순위표에 있음).
 
 **지금까지의 결론**
 
@@ -170,6 +173,55 @@ CV 와 LB 차이가 7%p — 418행 테스트라 변동이 크고, CV 1위 차이
 - 튜닝 없는 TFM 단일 모델이 상위 2% 안. GBDT 기본 설정보다 훨씬 위.
 - CV 에서는 tabpfn_v2 > kumo 였지만 LB 에서는 뒤집힘 → 두 모델 차이는 오차 범위로 봐야 함.
 - 이 대회 LB 최상위에는 0.0 점(정답 유출) 제출이 섞여 있어 실제 순위는 이보다 좋은 편.
+
+### Name That LLM
+
+2,699행 (prompt 150개 × 모델 18개, prompt 마다 모델이 한 번씩 답함), 18-class 텍스트 분류, 진행 중 코드 대회 (마감 2027-01-13).
+지표: balanced accuracy ↑. 이 저장소의 첫 텍스트 대회이자 첫 **마감 전 제출** (메달 대상) — 노트북 제출만 받고 인터넷은 꺼야 함.
+테스트는 학습에 없는 prompt 의 글 약 4,000개, 모델별 글 수가 다르고 public·private 구성도 다름 (대회 데이터 설명).
+
+- 피처 (`features.py`, 168개): 문체 통계 24 (길이·문장 길이·구두점 빈도 — em-dash 는 Claude·GLM, 굽은 따옴표는 GPT·Gemini 쪽에 많음),
+  글자 1~4-gram TF-IDF → SVD 48, 단어 1~2-gram TF-IDF → SVD 32, Qwen3-0.6B 가운데·마지막 층 평균 → PCA 64. TF-IDF·SVD·PCA 는 라벨 없이 train+test 로 맞춤.
+- CV 는 `cv.group: prompt_id` (같은 prompt 는 같은 fold) — 묶지 않으면 주제가 새어 CV 가 부풀음. 클래스 18개라 tabpfn_v2 는 `_ManyClass` (코드표 4장, 10-class 상한) 로 돌림.
+
+5-fold (2026-10-27. GBDT 는 로컬 맥, TFM 은 Databricks H100 1장 — 시간 직접 비교 불가)
+
+| 모델 | balanced acc | ± fold std | Logloss | 시간 |
+|---|---|---|---|---|
+| **kumo** | **0.3674** | 0.020 | 1.685 | 92s |
+| tabicl | 0.3638 | 0.014 | 1.755 | 39s |
+| causilo | 0.3530 | 0.020 | 1.736 | 38s |
+| exaone | 0.3504 | 0.021 | 1.756 | 79s |
+| catboost | 0.3141 | 0.013 | 1.914 | 308s |
+| lgbm | 0.3108 | 0.016 | 2.296 | 372s |
+| tabpfn_v2 (`_ManyClass`) | 0.3052 | 0.021 | 2.232 | 119s |
+| limix2m · mitra | 실패: 클래스 10개 초과 미지원 (limix2m CUDA assert, mitra `y contains class values ... n_classes`) | | | |
+
+같은 fold 로 돌린 TF-IDF 로지스틱 회귀 (단어 1~2 + 글자 1~5-gram, `kernel/probe_lr.py` 와 같은 설정, `km` 밖이라 `results.csv` 에 없음) 와의 확률 평균:
+
+| 조합 | balanced acc |
+|---|---|
+| TF-IDF 로지스틱 회귀 | 0.3219 |
+| **kumo + 로지스틱 회귀** | **0.4034** |
+| kumo + tabicl + 로지스틱 회귀 | 0.3904 |
+| tabicl + causilo + 로지스틱 회귀 | 0.3841 |
+
+- 작은 데이터 (fold 학습 2,160행) 라 TFM 이 GBDT 보다 4~6점 위 — 기존 결론과 같음. 텍스트를 직접 보는 로지스틱 회귀와 섞으면 +3.6점.
+- **prompt 안 배정은 LB 에서 이득 없음**: 학습 데이터는 prompt 마다 18개 모델이 한 번씩 → 테스트를 주제 (TF-IDF 코사인) 로 묶고 묶음 안에서
+  모델당 최대 1번 배정 (헝가리안) 하면 CV 에서 +8~15점 (모델별 글 수를 30~100% 로 솎아낸 시뮬레이션에서도 +8점).
+  LB 는 0.322 → 0.321 로 그대로 → 숨겨진 테스트는 prompt 당 글이 적어 묶음이 거의 한 개짜리인 것으로 추정 (확인 불가). 제출 코드에서 뺌.
+
+리더보드 (public LB, 2026-10-27, 3,504팀. 코드 대회 제출이라 `km lb` 집계에는 없음)
+
+| 제출 | CV | Public LB | 순위 |
+|---|---|---|---|
+| **kumo + 로지스틱 회귀** | 0.4034 | **0.386** | 2,453 / 3,504 (상위 70.0%) |
+| TF-IDF 로지스틱 회귀 | 0.3219 | 0.322 | |
+| TF-IDF 로지스틱 회귀 + 주제 묶음 배정 | (0.40, 시뮬레이션) | 0.321 | |
+
+- CV 가 LB 를 잘 따라감 (0.322 → 0.322, 0.403 → 0.386).
+- 메달과는 거리가 멂: 동 컷 (상위 10%) 0.643, 중앙값 0.538, 1위 0.728. 공개 노트북 상위권은 LLM LoRA 파인튜닝으로 이미 0.60~0.65 →
+  "텍스트 → 표 피처 → TFM" 으로는 한계가 뚜렷해 여기서 정리. 오프라인 제출 경로 (`kernel/`) 와 운영 메모 ([docs/known-issues.md](docs/known-issues.md#kaggle)) 는 다음 코드 대회에 재사용.
 
 ### Bioresponse
 

@@ -10,7 +10,7 @@ Tabular Foundation Model(TabPFN, TabICL, Kumo 등)을 GBDT 베이스라인(Light
 
 ## 결과 요약
 
-13개 대회, 모두 5-fold CV. 대회별 표·분석은 [EXPERIMENTS.md](EXPERIMENTS.md),
+14개 대회, 모두 5-fold CV. 대회별 표·분석은 [EXPERIMENTS.md](EXPERIMENTS.md),
 정렬·필터·차트로 보는 리더보드는 https://aiden-jeon.github.io/kaggle-master/ (`docs/leaderboard.html`, GitHub Pages).
 `(ctx 전체)` · `(ctx 20만)` = TFM 컨텍스트 상한(`tfm_max_rows: 10000`)을 풀고 다시 돌린 kumo.
 
@@ -19,6 +19,7 @@ Tabular Foundation Model(TabPFN, TabICL, Kumo 등)을 GBDT 베이스라인(Light
 | Restaurant Revenue | 137 | RMSE ↓ | limix2m | 상위 13.9% (limix2m) |
 | Titanic | 891 | acc ↑ | exaone | 상위 17.4% (kumo) |
 | House Prices | 1,460 | RMSE ↓ | tabpfn_v2 | **상위 1.9%** (kumo) |
+| Name That LLM | 2,699 | balanced acc ↑ | kumo | 상위 70.0% (kumo + TF-IDF LR) |
 | Bioresponse | 3,751 | logloss ↓ | causilo | **1위** (kumo·tabicl·causilo) |
 | Mercedes-Benz | 4,209 | R² ↑ | exaone | **3위 · 상위 0.1%** (kumo) |
 | Spaceship Titanic | 8,693 | acc ↑ | kumo | 상위 2.2% (kumo) |
@@ -32,6 +33,7 @@ Tabular Foundation Model(TabPFN, TabICL, Kumo 등)을 GBDT 베이스라인(Light
 
 LB 순위는 `km lb` 집계: 종료된 대회는 private 점수, 진행 중·상시 대회 (Titanic·House Prices·Spaceship·S6E10) 는 public 점수 기준.
 종료된 대회의 순위는 늦은 제출 점수로 매긴 위치 (Otto·GiveMeSomeCredit·Allstate·Bioresponse 1위, Mercedes 3위 포함).
+Name That LLM 은 코드 대회 (노트북 제출, `km lb` 집계 밖) 이자 유일한 마감 전 제출 — 2026-10-27 public LB. 텍스트를 표 피처로 바꿔 TFM 에 넣는 방식은 LLM 파인튜닝 공개 노트북 (0.60~0.65) 에 크게 못 미쳐 정리함.
 
 - 작은 데이터에서는 TFM 이 GBDT 와 같거나 앞섬. 큰 데이터의 GBDT 우위는 대부분 TFM 컨텍스트 1만 행 상한 탓 — 상한을 푼 kumo 가 Otto·GiveMeSomeCredit·Allstate·S6E1 에서 GBDT 최고를 넘고 S6E10 은 동률.
 - TFM 중에서는 kumo 가 가장 꾸준함. 2026-10-27 에 비어 있던 조합(exaone·causilo·limix2m·mitra·mitra_ft 등 45개)을 채우자 CV 1위가 4개 대회에서 바뀜 (Restaurant limix2m, Bioresponse·S4E2 causilo, Mercedes exaone) — 모두 2위와의 차이가 fold std 안. 범주 ID 만 있는 데이터(Amazon)는 상한을 풀어도 catboost 가 앞섬 (원인은 추정).
@@ -168,6 +170,7 @@ cv:
   n_splits: 5
   seed: 42
   stratify: true
+  # group: prompt_id            # 선택: 같은 값은 같은 fold (StratifiedGroupKFold, 예: competitions/name-that-llm)
 # 선택
 # target_transform: log1p       # 회귀 타깃 변환 (학습·평가는 변환 스케일, 제출 시 역변환)
 # submit_proba: true            # 분류에서 레이블 대신 확률 제출
