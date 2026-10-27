@@ -28,8 +28,8 @@ import pandas as pd
 
 from km.core.competition import COMP_DIR, load_competition
 from km.core.metrics import METRICS
-from km.core.results import RESULTS, full_runs
-from km.leaderboard.submit import make_submission, parse_message, push, test_run
+from km.core.results import RESULTS, full_runs, made_test, test_info
+from km.leaderboard.submit import make_submission, parse_message, push
 from km.models import REGISTRY, RETIRED, base_name
 
 
@@ -86,26 +86,33 @@ def is_retired(model: str) -> bool:
     return any(base_name(p) in RETIRED for p in model.split("+"))
 
 
+def prediction_runs(comp) -> pd.DataFrame:
+    """제출과 연결할 후보: 전체 fold 실행 중 테스트 예측을 만든 것 (탐색 실험·--no-test 재실행 제외)."""
+    runs = full_runs(comp)
+    return runs[made_test(runs)]
+
+
 def submit_pending(comp_name: str, n: int, known: dict | None = None) -> int:
     """test.npy 가 있지만 그 실행을 아직 제출 안 한 단일 모델을 CV 좋은 순으로 최대 n 개 제출. 제출한 개수 반환.
     known: 제출 ref → (cv, run), 이전 leaderboard.csv 에서 찾은 값."""
     comp = load_competition(comp_name)
-    # 이미 제출한 실행: (모델, run). 실행을 알 수 없는 예전 제출이 있는 모델은 다시 내지 않음 (같은 예측일 수 있음)
-    runs = full_runs(comp)
-    done, unknown = set(), set()
+    # 이미 제출한 실행: (모델, run). 실행을 알 수 없는 제출은 그 제출 시각까지의 예측을 이미 낸 것으로 봄
+    # (그 뒤에 만든 예측은 낸 적이 없으니 제출 대상)
+    runs = prediction_runs(comp)
+    done, unknown_until = set(), {}
     for s in submissions(comp_name):
         model = model_of(s)
         run = submission_run(comp, s, runs[runs.model == model])[1] or (known or {}).get(str(s["ref"]), (None, None))[1]
         if run:
             done.add((model, run))
         else:
-            unknown.add(model)
+            unknown_until[model] = max(unknown_until.get(model, ""), s["date"].replace(" ", "T"))
     todo = []
     for d in (RESULTS / comp_name).glob("*/"):
-        t = test_run(comp, d.name) if (d / "test.npy").exists() else None
-        if (t and t["n_folds"] == comp.cv["n_splits"] and (d.name, t["run"]) not in done and d.name not in unknown
-                and not is_retired(d.name)):
-            todo.append((t["cv"], d.name))  # 제출할 test.npy 를 만든 실행의 CV
+        t = test_info(comp_name, d.name)  # 제출할 test.npy 를 만든 실행. 출처를 모르면 자동 제출 안 함
+        if (t and t["n_folds"] == comp.cv["n_splits"] and (d.name, t["run"]) not in done
+                and t["run"] > unknown_until.get(d.name, "") and not is_retired(d.name)):
+            todo.append((t["cv"], d.name))
     todo.sort(reverse=METRICS[comp.metric][1])
     sent = 0
     for cv, model in todo[:n]:
@@ -130,7 +137,7 @@ def wait_scored(comp_name: str, timeout: int = 900):
 
 
 def submission_run(comp, sub: dict, runs: pd.DataFrame) -> tuple[float | None, str | None]:
-    """제출을 만든 실행의 (CV, 실행 시각). runs = 그 모델의 전체 fold 실행 (full_runs, 시각 순, UTC).
+    """제출을 만든 실행의 (CV, 실행 시각). runs = 그 모델의 예측 실행 (prediction_runs, 시각 순, UTC).
     1) 설명의 `run <시각>` (km submit 기본, 2026-10-27~)  2) 설명의 `<n>-fold CV <점수>` 와 같은 점수의 실행
     3) 제출 시각(UTC) 전 마지막 실행. 실행을 못 찾으면 실행 시각은 None (km board 는 모델 이름으로만 연결).
     모델 이름만으로 찾으면 같은 이름으로 다시 돌린 뒤 예전 제출에도 새 CV 가 붙음 (2026-10-26 Allstate kumo@full 평균 → 중앙값)."""
@@ -158,7 +165,7 @@ def rank_rows(comp_name: str, user: str, known: dict | None = None) -> list[dict
     lb = public_leaderboard(comp_name)
     mine = lb.TeamMemberUserNames.fillna("").str.split(",").apply(lambda u: user in [x.strip() for x in u])
     others = lb.loc[~mine, "Score"].to_numpy()
-    runs = full_runs(comp)  # 제출마다 results.csv 를 다시 읽지 않도록 한 번만
+    runs = prediction_runs(comp)  # 제출마다 results.csv 를 다시 읽지 않도록 한 번만
     rows = []
     for s in subs:
         pub = float(s["publicScore"])
@@ -188,12 +195,13 @@ def main(argv: list[str] | None = None):
     path = RESULTS / "leaderboard.csv"
     prev = pd.read_csv(path, dtype={"ref": str}) if path.exists() else pd.DataFrame()
     known = {r.ref: (r.cv, r.run) for r in prev.itertuples() if "run" in prev and pd.notna(r.run)}  # 이전에 찾은 실행
-    rows = []
+    rows, tallied = [], set()
     for c in comps:
         try:
             if args.submit and submit_pending(c, args.submit, known):
                 wait_scored(c)
             rows += rank_rows(c, user, known)
+            tallied.add(c)
         except subprocess.CalledProcessError as e:  # Rules 미동의 대회 등은 건너뜀
             print(f"{c}: 건너뜀 ({e.stderr.strip().splitlines()[-1] if e.stderr else e})")
         except RuntimeError as e:  # 제출 기록을 못 읽음 → 이 대회는 제출·집계 모두 건너뜀
@@ -201,8 +209,8 @@ def main(argv: list[str] | None = None):
     if not rows:
         return
     df = pd.DataFrame(rows).sort_values(["comp", "rank", "date"])
-    if args.comps and len(prev):  # 일부 대회만 갱신할 때는 나머지 대회 행 유지
-        old = prev[~prev.comp.isin(comps) & ~prev.model.astype(str).map(is_retired)]
+    if len(prev):  # 이번에 집계하지 않은 대회(지정 안 함·Kaggle 오류로 건너뜀)는 이전 행 유지
+        old = prev[~prev.comp.isin(tallied) & ~prev.model.astype(str).map(is_retired)]
         df = pd.concat([old, df]).sort_values(["comp", "rank", "date"])
     df.to_csv(path, index=False)
     print(df.drop(columns=["description", "ref"]).to_string(index=False))
