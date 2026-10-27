@@ -30,6 +30,9 @@
 body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
 main { max-width: 1080px; margin: 0 auto; padding: 24px 16px 48px; }
 h1 { font-size: 22px; margin: 0 0 4px; }
+.top { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.top h1 { margin: 0; }
+.prefs { display: flex; gap: 8px; }
 h2 { font-size: 17px; margin: 0 0 4px; }
 p { margin: 4px 0; }
 a { color: var(--accent); }
@@ -95,7 +98,17 @@ footer { margin-top: 24px; }
 </head>
 <body>
 <main>
-  <h1 data-t="title"></h1>
+  <header class="top">
+    <h1 data-t="title"></h1>
+    <div class="prefs">
+      <div class="seg" id="lang">
+        <button data-v="ko" aria-pressed="false" lang="ko">한국어</button><button data-v="en" aria-pressed="false" lang="en">English</button>
+      </div>
+      <div class="seg" id="theme">
+        <button data-v="auto" aria-pressed="true" data-t="auto"></button><button data-v="light" aria-pressed="false" data-t="light"></button><button data-v="dark" aria-pressed="false" data-t="dark"></button>
+      </div>
+    </div>
+  </header>
   <p class="sub"><span data-t="sub"></span> <span id="date"></span></p>
   <details>
     <summary data-t="howto"></summary>
@@ -108,13 +121,6 @@ footer { margin-top: 24px; }
       <button data-v="all" aria-pressed="true" data-t="all"></button><button data-v="TFM" aria-pressed="false">TFM</button><button data-v="GBDT" aria-pressed="false">GBDT</button>
     </div>
     <span class="muted" id="focusNote"></span>
-    <span style="flex:1"></span>
-    <div class="seg" id="lang">
-      <button data-v="ko" aria-pressed="false" lang="ko">한국어</button><button data-v="en" aria-pressed="false" lang="en">English</button>
-    </div>
-    <div class="seg" id="theme">
-      <button data-v="auto" aria-pressed="true" data-t="auto"></button><button data-v="light" aria-pressed="false" data-t="light"></button><button data-v="dark" aria-pressed="false" data-t="dark"></button>
-    </div>
   </div>
 
   <section class="card">
