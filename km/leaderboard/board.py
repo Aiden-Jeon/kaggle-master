@@ -37,6 +37,7 @@ TITLES = {  # 표 제목용 짧은 이름 (없으면 대회 이름 그대로)
 }
 # results.csv 의 where 가 databricks 인 실행 중 이 날짜 전은 A10G 노드 (GBDT 도 같은 노드), 이후는 H100 (GBDT 는 databricks-cpu)
 H100_SINCE = "2026-10-23"
+BASIS_LABEL = {"public": "public (진행 중)", "private": "private (종료)"}  # leaderboard.csv 의 basis 열 (km lb 참고)
 
 
 def row_counts(name: str) -> tuple[int, int] | None:
@@ -106,7 +107,7 @@ def load() -> tuple[pd.DataFrame, dict]:
         print(f"leaderboard.csv: 실행(run)을 모르는 단일 모델 제출 {missing}건은 LB 를 붙이지 않음 (`km lb` 로 다시 집계)",
               file=sys.stderr)
     known = lb[run.notna()].assign(timestamp=run[run.notna()]).drop_duplicates(["comp", "model", "timestamp"])
-    d = d.merge(known[["comp", "model", "timestamp", "public", "rank", "teams", "top_pct"]],
+    d = d.merge(known[["comp", "model", "timestamp", "public", "private", "basis", "rank", "teams", "top_pct"]],
                 on=["comp", "model", "timestamp"], how="left")
     return d, sizes
 
@@ -164,17 +165,20 @@ def per_comp(d: pd.DataFrame, sizes: dict) -> list[str]:
         g = d[d.comp == comp].sort_values("cv_rank")
         metric = g.metric.iloc[0]
         rows = f"학습 {sizes[comp][0]:,}행 · 테스트 {sizes[comp][1]:,}행 · " if sizes[comp] else ""
-        out += [f"### {TITLES.get(comp, comp)}\n", f"{rows}{metric} {'↑' if METRICS[metric][1] else '↓'}\n",
-                f"| # | 모델 | CV {metric} | ± std | LB public | LB 순위 | 시간 | s/1K | 환경 |",
+        basis = g.basis.dropna()
+        basis = f" · LB 기준 {BASIS_LABEL.get(basis.iloc[-1], basis.iloc[-1])}" if len(basis) else ""
+        out += [f"### {TITLES.get(comp, comp)}\n", f"{rows}{metric} {'↑' if METRICS[metric][1] else '↓'}{basis}\n",
+                f"| # | 모델 | CV {metric} | ± std | LB 점수 | LB 순위 | 시간 | s/1K | 환경 |",
                 "|---|---|---|---|---|---|---|---|---|"]
         best = g.better.max()
         for r in g.itertuples():
             name = f"**{r.label}**" if r.better == best else r.label
             rank = "—" if pd.isna(r.rank) else f"{int(r.rank):,} / {int(r.teams):,} ({fmt_pct(r.top_pct)})"
+            score = r.private if r.basis == "private" else r.public  # 종료 대회는 private 기준 점수
             cells = [r.cv_rank, f"{name} 🌳" if r.family == "GBDT" else name,
                      f"{r.cv:,.1f}" if abs(r.cv) > 1000 else f"{r.cv:.4f}",
                      f"{r.cv_std:,.1f}" if abs(r.cv) > 1000 else f"{r.cv_std:.4f}",
-                     "—" if pd.isna(r.public) else fmt_num(r.public), rank, fmt_time(r.seconds),
+                     "—" if pd.isna(score) else fmt_num(score), rank, fmt_time(r.seconds),
                      "—" if pd.isna(r.s_per_1k) else f"{r.s_per_1k:.2f}", r.env]
             out.append("| " + " | ".join(map(str, cells)) + " |")
         out.append("")
@@ -189,7 +193,7 @@ HEADER = """\
 - **시간** = 5-fold 합계 (학습 + 검증·테스트 예측). TFM 은 학습 루프가 없어 거의 전부 추론(컨텍스트 인코딩 + 예측) 시간.
 - **s/1K** = 시간 ÷ 예측 행 수 × 1000. 예측 행 = 학습 행(OOF) + 테스트 행 × 5 (fold 마다 테스트 전체 예측). TabArena 의 predict s/1K 와 비슷한 단위.
 - **환경이 다르면 시간 비교 불가**: DBX H100 (TFM, 10-23~) · DBX CPU4 (GBDT, serverless 4코어, 10-23~) · DBX A10G (10-22, GBDT 도 같은 노드) · Kaggle T4.
-- **LB 순위**는 `km lb` 집계 (public 점수 기준 위치. 종료 대회는 늦은 제출이라 실제 순위표에는 없음). — = 미제출.
+- **LB 순위**는 `km lb` 집계. 진행 중 대회는 public 점수 기준, 종료 대회는 private 점수 기준 (대회 제목 옆 `LB 기준`). 종료 대회는 늦은 제출이라 실제 순위표에는 없음. — = 미제출.
 - 작은 대회(수천 행 이하)는 모델 로드·전처리 같은 고정 비용이 커서 s/1K 가 부풀려짐 → 큰 대회 값이 모델 속도에 더 가까움.
 - 앙상블·LLM 결정 모델·sap_rpt, 컨텍스트 탐색 실험(results.csv note 가 `ctx ` 로 시작, 테스트 예측 없음)은 제외.
   `(kNN 1000)` 은 포함: S4E2·Spaceship 에서 kumo·exaone·tabpfn_v2 는 전체 컨텍스트로 실패해 kNN 1000 행 컨텍스트가 유일한 5-fold·제출 결과.

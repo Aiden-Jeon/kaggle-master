@@ -4,8 +4,12 @@
     uv run km lb spaceship-titanic titanic
     uv run km lb bioresponse --submit 2   # 아직 제출 안 한 모델을 CV 좋은 순으로 2개 제출 후 집계
 
-순위: 다운로드한 public 리더보드에서 우리 팀을 뺀 뒤 (점수가 더 좋은 팀 수 + 1).
-     Kaggle API 는 private 리더보드를 주지 않으므로 종료된 대회도 public 점수 기준이고, private 점수는 따로 기록.
+순위: 리더보드에서 우리 팀을 뺀 뒤 (점수가 더 좋은 팀 수 + 1). 기준 열 `basis`:
+     - public: 진행 중 대회. 리더보드의 public 점수끼리 비교 (private 은 아직 안 보임).
+     - private: 종료된 대회. 리더보드 조회 API 의 기본 응답은 private 이 공개되어 있으면 private 이라, 우리 private 점수와 남의 private 점수를 비교.
+       `kaggle competitions leaderboard -d` 다운로드는 종료 뒤에도 public 이라 (파일명 publicleaderboard, 2026-10-27 확인) 여기 쓰지 않음.
+       CLI 에는 조회 옵션이 없어 kagglesdk 로 직접 받음 (`override_public` 을 안 줘서 기본 = private 우선).
+     public·private 점수는 둘 다 기록.
 모델 이름: 제출 설명에서 `lgbm`, `kumo+catboost`, `exaone@knn1000` 처럼 모델 이름으로 해석되는 첫 토큰.
          RETIRED 모델(limix2)이 들어간 제출은 순위 집계·자동 제출에서 뺌.
 실행: 제출을 만든 실행의 CV 와 시각(run 열 = results.csv timestamp)을 같이 기록 → km board 가 실행 단위로 LB 를 붙임.
@@ -72,6 +76,40 @@ def public_leaderboard(comp: str) -> pd.DataFrame:
         with zipfile.ZipFile(next(Path(d).glob("*.zip"))) as z:
             with z.open(next(n for n in z.namelist() if n.endswith(".csv"))) as f:
                 return pd.read_csv(f, encoding="utf-8-sig")
+
+
+def private_leaderboard(comp: str) -> pd.DataFrame:
+    """리더보드 조회 API 의 기본 응답 전 페이지 (TeamId, Score). private 이 공개됐으면 private, 아니면 public.
+    CLI 에는 이 응답을 받는 옵션이 없어 kagglesdk 를 직접 호출 (kaggle 패키지에 이미 들어 있음)."""
+    import requests
+    from kaggle.api.kaggle_api_extended import KaggleApi
+    from kagglesdk.competitions.types.competition_api_service import ApiGetLeaderboardRequest
+
+    api = KaggleApi()
+    api.authenticate()
+    rows, token = [], None
+    with api.build_kaggle_client() as kc:
+        while True:
+            req = ApiGetLeaderboardRequest()
+            req.competition_name = comp
+            req.page_size = 200
+            if token:
+                req.page_token = token
+            for attempt in range(5):  # 연속 조회 중 429 (요청 제한) 이 자주 남 → 잠깐 쉬고 다시
+                try:
+                    resp = kc.competitions.competition_api_client.get_leaderboard(req)
+                    break
+                except requests.exceptions.HTTPError as e:
+                    if e.response is None or e.response.status_code != 429:
+                        raise RuntimeError(f"리더보드 조회 실패: {e}") from e  # main 이 이 대회만 건너뜀
+                    if attempt == 4:
+                        raise RuntimeError(f"리더보드 조회 429 가 계속됨: {e}") from e
+                    time.sleep(10 * (attempt + 1))
+            rows += [(s.team_id, float(s.score)) for s in resp.submissions or [] if s.score not in (None, "")]
+            token = resp.next_page_token
+            if not token:
+                break
+    return pd.DataFrame(rows, columns=["TeamId", "Score"])
 
 
 def model_of(sub: dict) -> str:
@@ -164,19 +202,29 @@ def rank_rows(comp_name: str, user: str, known: dict | None = None) -> list[dict
         return []
     lb = public_leaderboard(comp_name)
     mine = lb.TeamMemberUserNames.fillna("").str.split(",").apply(lambda u: user in [x.strip() for x in u])
-    others = lb.loc[~mine, "Score"].to_numpy()
+    priv = private_leaderboard(comp_name)
+    if priv.empty:
+        raise RuntimeError("리더보드 조회 결과가 비어 있음")
+    # 조회 응답이 공개 리더보드와 다르면 (= private 공개됨, 종료 대회) private 기준. 같으면 public 기준
+    basis = "private" if sorted(priv.Score) != sorted(lb.Score) else "public"
+    if basis == "private":
+        others = priv.loc[~priv.TeamId.isin(set(lb.loc[mine, "TeamId"])), "Score"].to_numpy()
+        subs = [s for s in subs if s["privateScore"] not in (None, "")]
+    else:
+        others = lb.loc[~mine, "Score"].to_numpy()
     runs = prediction_runs(comp)  # 제출마다 results.csv 를 다시 읽지 않도록 한 번만
     rows = []
     for s in subs:
-        pub = float(s["publicScore"])
-        rank = int(((others > pub) if higher else (others < pub)).sum()) + 1
+        score = float(s["privateScore"] if basis == "private" else s["publicScore"])
+        rank = int(((others > score) if higher else (others < score)).sum()) + 1
         model = model_of(s)
         if is_retired(model):
             continue
         cv, run = submission_run(comp, s, runs[runs.model == model])
         if run is None and str(s["ref"]) in (known or {}):
             cv, run = known[str(s["ref"])]
-        rows.append(dict(comp=comp_name, model=model, metric=comp.metric, cv=cv, public=pub,
+        rows.append(dict(comp=comp_name, model=model, metric=comp.metric, basis=basis, cv=cv,
+                         public=float(s["publicScore"]),
                          private=float(s["privateScore"]) if s["privateScore"] not in (None, "") else None,
                          rank=rank, teams=len(others) + 1, top_pct=round(100 * rank / (len(others) + 1), 1),
                          date=s["date"][:10], description=s["description"], ref=s["ref"], run=run))
