@@ -4,11 +4,12 @@
 
 - **시간** = 5-fold 합계 (학습 + 검증·테스트 예측). TFM 은 학습 루프가 없어 거의 전부 추론(컨텍스트 인코딩 + 예측) 시간.
 - **s/1K** = 시간 ÷ 예측 행 수 × 1000. 예측 행 = 학습 행(OOF) + 테스트 행 × 5 (fold 마다 테스트 전체 예측). TabArena 의 predict s/1K 와 비슷한 단위.
-- **환경이 다르면 시간 비교 불가**: DBX H100 (TFM, 10-23~) · DBX CPU4 (GBDT, serverless 4코어, 10-23~) · DBX A10G (10-22, GBDT 도 같은 노드) · Kaggle T4.
+- **환경**: 모든 실행이 Databricks. DBX H100 (TFM, GPU 1장, 10-23~) · DBX CPU4 (GBDT, serverless 4코어, 10-23~). 같은 대회 안에서도 GBDT 와 TFM 은 하드웨어가 달라 시간은 계열 안에서 비교하는 게 정확함.
 - **LB 순위**는 `km lb` 집계. 진행 중 대회는 public 점수 기준, 종료 대회는 private 점수 기준 (대회 제목 옆 `LB 기준`). 종료 대회는 늦은 제출이라 실제 순위표에는 없음. — = 미제출.
 - 작은 대회(수천 행 이하)는 모델 로드·전처리 같은 고정 비용이 커서 s/1K 가 부풀려짐 → 큰 대회 값이 모델 속도에 더 가까움.
 - 앙상블·LLM 결정 모델·sap_rpt, 컨텍스트 탐색 실험(results.csv note 가 `ctx ` 로 시작, 테스트 예측 없음)은 제외.
-  `(kNN 1000)` 은 포함: S4E2·Spaceship 에서 kumo·exaone·tabpfn_v2 는 전체 컨텍스트로 실패해 kNN 1000 행 컨텍스트가 유일한 5-fold·제출 결과.
+  `(kNN 1000)` 은 포함: S4E2·Spaceship 에서 kumo·exaone·tabpfn_v2 는 Kaggle T4 에서 전체 컨텍스트로 실패해 kNN 1000 행 컨텍스트로 돌린 것이
+  유일한 5-fold·제출 결과 (H100 에서는 같은 kNN 설정만 다시 돌림, 전체 컨텍스트는 다시 시도 안 함).
 - TFM 컨텍스트 상한: 대회 config 의 `tfm_max_rows` (10,000행: Amazon, Otto, GiveMeSomeCredit, Allstate, S6E1, S6E10) 는 무작위 샘플, 나머지 대회는 상한 없이 학습 fold 전체.
   `(ctx 전체)` / `(ctx 20만)` = 그 대회들에서 상한을 풀거나 20만 행으로 올린 실행 (`@full` / `@rand200000`).
 
@@ -17,7 +18,7 @@
 평균 CV 순위 = 대회마다 (순위−1)/(모델 수−1) 의 평균 (0 = 항상 1위, 1 = 항상 꼴찌). 실행한 대회가 모델마다 달라 대략적인 비교.
 모델마다 대회별로 CV 가 가장 좋은 설정 하나만 셈 (`컨텍스트 변형` 열 = 그중 `@` 설정 수). s/1K 도 그 행의 값, 최고 LB 는 제출한 모든 설정 중 최고 (`*` = 최고 CV 설정이 아닌 설정의 제출).
 s/1K 중앙값: 모든 모델이 같이 돌린 대회만 셈 (모델마다 대회가 다르면 작은 대회의 고정 비용이 일부 모델에만 섞임).
-`DBX` = 2026-10-23 이후 Databricks 실행만 (TFM H100, GBDT CPU 4코어. 13개: Restaurant, Titanic, House Prices, Bioresponse, Mercedes, Spaceship, S4E2, Amazon, Otto, GiveMeSomeCredit, Allstate, S6E1, S6E10), `전체` = 환경 섞임 (13개: Restaurant, Titanic, House Prices, Bioresponse, Mercedes, Spaceship, S4E2, Amazon, Otto, GiveMeSomeCredit, Allstate, S6E1, S6E10).
+넣은 대회 13개: Restaurant, Titanic, House Prices, Bioresponse, Mercedes, Spaceship, S4E2, Amazon, Otto, GiveMeSomeCredit, Allstate, S6E1, S6E10.
 
 **해석 주의**
 - **조건이 같지 않을 수 있음**: 상한이 걸린 대회에서 `@full`·`@rand` 로 다시 돌린 모델만 큰 컨텍스트를 씀 (kumo 6/6, tabicl 6/6, tabpfn_v2 3/6 (Amazon, GiveMeSomeCredit, Otto)).
@@ -25,19 +26,19 @@ s/1K 중앙값: 모든 모델이 같이 돌린 대회만 셈 (모델마다 대�
 - **사전학습 데이터 중복 가능성**: Otto·GiveMeSomeCredit·Amazon 등은 OpenML 등에 공개된 데이터라 TFM 사전학습에 학습 데이터가 들어갔을 수 있음 → CV 는 부풀었을 수 있음.
   테스트 라벨은 공개된 적이 없어 LB 점수는 영향 없음. 확인은 안 함.
 
-| 모델 | 계열 | 대회 수 | CV 1위 | 평균 CV 순위 | 최고 LB (상위 %) | s/1K (DBX) | s/1K (전체) | 컨텍스트 변형 |
-|---|---|---|---|---|---|---|---|---|
-| kumo | TFM | 13 | 6 | 0.12 | <0.1% | 1.18 | 1.18 | 7 |
-| tabicl | TFM | 13 | 0 | 0.32 | 0.1% | 1.28 | 1.28 | 6 |
-| exaone | TFM | 13 | 2 | 0.37 | 0.7% | 1.78 | 1.78 | 2 |
-| causilo | TFM | 13 | 2 | 0.38 | 0.1% | 0.19 | 0.19 |  |
-| catboost | GBDT | 13 | 1 | 0.48 | 2.5% | 3.01 | 3.01 |  |
-| lgbm | GBDT | 13 | 0 | 0.52 | 6.4% | 0.74 | 0.74 |  |
-| xgb | GBDT | 13 | 0 | 0.57 | 1.7% | 0.58 | 0.58 |  |
-| tabpfn_v2 | TFM | 13 | 1 | 0.61 | 2.2% | 2.39 | 2.39 | 4 |
-| mitra | TFM | 13 | 0 | 0.67 | 1.0% | 0.83 | 0.83 |  |
-| mitra_ft | TFM | 13 | 0 | 0.72 | 0.2% | 3.55 | 3.55 |  |
-| limix2m | TFM | 13 | 1 | 0.72 | 3.1% | 0.48 | 0.48 |  |
+| 모델 | 계열 | 대회 수 | CV 1위 | 평균 CV 순위 | 최고 LB (상위 %) | s/1K | 컨텍스트 변형 |
+|---|---|---|---|---|---|---|---|
+| kumo | TFM | 13 | 6 | 0.12 | <0.1% | 1.18 | 7 |
+| tabicl | TFM | 13 | 0 | 0.32 | 0.1% | 1.28 | 6 |
+| exaone | TFM | 13 | 2 | 0.37 | 0.7% | 1.78 | 2 |
+| causilo | TFM | 13 | 2 | 0.38 | 0.1% | 0.19 |  |
+| catboost | GBDT | 13 | 1 | 0.48 | 2.5% | 3.01 |  |
+| lgbm | GBDT | 13 | 0 | 0.52 | 6.4% | 0.74 |  |
+| xgb | GBDT | 13 | 0 | 0.57 | 1.7% | 0.58 |  |
+| tabpfn_v2 | TFM | 13 | 1 | 0.61 | 2.2% | 2.39 | 4 |
+| mitra | TFM | 13 | 0 | 0.67 | 1.0% | 0.83 |  |
+| mitra_ft | TFM | 13 | 0 | 0.72 | 0.2% | 3.55 |  |
+| limix2m | TFM | 13 | 1 | 0.72 | 3.1% | 0.48 |  |
 
 ## 대회별
 

@@ -115,7 +115,7 @@ uv run km databricks allstate-claims-severity exaone mitra_ft --split-folds
 # 제출 (여러 모델이면 테스트 예측 평균)
 uv run km submit spaceship-titanic catboost tabicl --push -m "cb+tabicl"
 
-# 제출 기록 → 리더보드 순위 (results/leaderboard.csv), --submit N: 미제출 모델을 CV 순으로 N개 제출 후 집계
+# 제출 기록 → 리더보드 순위 (results/leaderboard.csv), --submit N: 미제출 모델을 CV 순으로 N개 제출 후 집계 (board 에 안 나오는 llm·sap_rpt 는 뒤로)
 # 아직 안 낸 마지막 실행의 test.npy 가 없으면 (results.csv 는 test=True) 대회마다 목록으로 알림
 uv run km lb
 uv run km lb bioresponse --submit 2

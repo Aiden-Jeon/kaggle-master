@@ -40,6 +40,8 @@ OUTPUTS = outputs_dir()  # 실행 출력. 원격 실행·메인 체크아웃에�
 EXPLORATION = re.compile(r"ctx |llm|sap")
 # 테스트 예측을 안 만든 실행의 note (test 열이 없던 예전 행의 추정, 백필 값). 1-fold 탐색(probe·ctx-size)도 포함.
 NO_TEST = re.compile(r"ctx[ -]|probe")
+# km board 에 안 나오는 모델 이름: 앙상블(`a+b`), LLM 결정 모델(`llm…`), sap_rpt. km lb --submit 은 이 모델들을 뒤로 미룸
+OFF_BOARD = re.compile(r"\+|llm|sap_rpt")
 
 
 def append_rows(rows: pd.DataFrame):
