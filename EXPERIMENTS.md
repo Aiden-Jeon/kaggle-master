@@ -62,9 +62,12 @@ LB 순위는 `km lb` 집계 — 종료 대회는 private 점수 기준 위치 (�
   비용은 kumo 5-fold 시간 2~5.3배 (Otto 150→302s, Allstate 212→959s, S6E1 369→1,952s, 모두 H100).
 - **Amazon 은 상한을 풀어도 격차가 남음**: kumo 0.8274 → 0.8795 로 올랐지만 catboost 0.8957 과 AUC 0.016 차이 (fold std 의 약 2배).
   9개 열이 모두 범주 ID 라 범주 처리 방식 차이가 원인일 것으로 추정 — 검증 안 함. 외부 BeyondArena 고카디널리티 부분집합에서도 CatBoost 가 강함.
-- **상한 해제의 이득은 kumo > tabicl > tabpfn_v2**: tabicl·tabpfn_v2 도 비교 가능한 모든 대회에서 좋아졌지만 폭이 작음.
+- **상한을 푼 뒤 점수는 kumo > tabicl > tabpfn_v2, 개선 폭은 대회마다 다름**: 세 모델 결과가 모두 있는 Amazon·Otto·GiveMeSomeCredit 에서 점수 순서는 모두 이 순서.
+  개선 폭은 kumo ≈ tabicl 인 대회가 많음 (Otto 둘 다 −0.089, Amazon +0.052 / +0.051, GiveMeSomeCredit +0.004 / +0.004). tabpfn_v2 는 Amazon 만 비슷하고 (+0.052) Otto·GiveMeSomeCredit 은 작음.
+  kumo 가 확실히 더 오른 건 S6E1 (−0.180 vs tabicl −0.052) 과 Allstate (−67 vs −14, kumo 만 중앙값 예측으로 바뀜).
   tabicl 은 Otto·GiveMeSomeCredit 에서 GBDT 최고를 넘고 Allstate 는 동률, 나머지는 GBDT 아래. tabpfn_v2 는 GBDT 를 넘은 대회가 없고 느림 (Otto 4,915s, Allstate·S6E1 은 240분 제한 초과).
-- **TFM 중에서는 kumo 가 가장 꾸준함**: 13개 대회 중 CV 1위 6개, 평균 CV 순위 0.14 (0 = 항상 1위, 다음은 tabicl 0.30). 나머지 1위는 exaone·causilo 각 2, catboost·tabpfn_v2·limix2m 각 1.
+- **TFM 중에서는 kumo 가 가장 꾸준함 (큰 대회는 조건 차이 포함)**: 13개 대회 중 CV 1위 6개지만 그중 5개는 상한을 푼 kumo (ctx) 라, 1만 행 상한 그대로인 exaone·causilo 등과는 컨텍스트 크기도 다름.
+  상한이 없어 모든 모델이 같은 조건인 작은 7개 대회에서는 Spaceship 1위, House·Bioresponse·Mercedes 2위, S4E2 3위 (kNN 1000), Restaurant 4위, Titanic 10위 (fold std 가 모델 간 차이보다 큰 대회).
 - **상위 모델 간 차이는 대부분 fold std 안**: 2026-10-27 에 CV 1위가 바뀐 4개 대회 (Restaurant·Bioresponse·Mercedes·S4E2) 도 모두 2위와 fold std 안.
   작은 대회일수록 CV 순위가 LB 에서 자주 뒤집힘 (House, Restaurant, Titanic).
 - **컨텍스트 선택**: kNN 컨텍스트는 무작위보다 확실히 좋고 TFM 을 한도 밖 크기(S4E2)에서도 쓰게 해 주지만, 70만 행(S6E10)에서는 무작위로 많이 넣는 쪽이 kNN 보다 나음.
@@ -97,7 +100,7 @@ LB 순위는 `km lb` 집계 — 종료 대회는 private 점수 기준 위치 (�
 
 1,460행, 회귀, 83 피처 중 범주형 44. 지표: log1p(SalePrice) RMSE ↓. 2026-10-19 Kaggle (limix2m·exaone·mitra 계열 10-21, causilo 10-27).
 
-- CV 는 tabpfn_v2 0.1151 > kumo 0.1191 > causilo 0.1207. 상위 모델 간 차이가 fold std (0.013~0.023) 보다 작은 경우가 많음.
+- CV 는 tabpfn_v2 0.1151 > kumo 0.1191 > causilo 0.1207, GBDT 최고 catboost 0.1250 (`results/leaderboard.csv` 의 2026-10-19 제출 메모 "CV rmse from EXPERIMENTS.md" 가 가리키는 값). 상위 모델 간 차이가 fold std (0.013~0.023) 보다 작은 경우가 많음.
 - exaone 은 RMSE 7위지만 MAE 0.0721 은 상위권 (kumo 0.0703, tabpfn_v2 0.0713) → 대부분은 잘 맞히고 일부 이상치 집에서 크게 틀림 (fold std 0.032 로 큼).
 - mitra_ft 는 fine-tuning 으로 mitra 대비 RMSE 0.003 개선, 대신 시간은 30배 (7,994s).
 - LB (public, 4,501팀): kumo 85위 (1.9%) · exaone 98위 (2.2%) · tabpfn_v2 99위 (2.2%) · causilo 108위 (2.4%). TFM 8개가 모두 상위 7.5% 안, GBDT 최고 catboost 800위 (17.8%).
@@ -187,7 +190,7 @@ LB 순위는 `km lb` 집계 — 종료 대회는 private 점수 기준 위치 (�
 699,635행, 이진 분류, 22 피처, 진행 중 대회. 지표: AUC ↑ (제출이 확률값이라 AUC 로 추정).
 2026-10-20 Kaggle T4 ×2 (TFM 1만 행 무작위, GBDT 는 fold 당 ~56만 행 전부), `(ctx 20만)` 은 2026-10-26 H100 (fold 학습의 약 36%).
 
-- 1만 행 (전체의 1.8%) 에서는 GBDT 가 확실히 앞섬 (AUC +0.004, fold std 의 5배 이상).
+- 1만 행 (전체의 1.8%) 에서는 GBDT 가 확실히 앞섬: lgbm 0.9584 이 1만 행 TFM 최고 causilo 0.9554 보다 AUC 0.003 높음 (fold std 의 약 4배).
 - 20만 행 kumo 0.95880 은 lgbm 0.95838 과 0.0004 차이 — fold std 이내 동률. 전체 56만 행에서의 우열은 미확인. tabicl (ctx 20만) 0.95760 은 GBDT 3개보다 낮음 (lgbm 과 −0.0008).
 - 1만 행 kumo·tabicl 은 2026-10-20 메모리 부족으로 실패 (tabicl 은 이후 예측을 2만 행 단위로 나눠 해결) → `(ctx 20만)` 으로 대체.
   tabpfn_v2 (ctx 20만) 은 1-fold 시험 0.9535 · 2,437s/fold 라 240분 제한을 넘길 것으로 보고 미실행.
@@ -203,8 +206,8 @@ LB 순위는 `km lb` 집계 — 종료 대회는 private 점수 기준 위치 (�
 
 - CV 1위가 바뀐 대회 4개: Restaurant (kumo → limix2m), Bioresponse (xgb → causilo), Mercedes (kumo → exaone), S4E2 (tabicl → causilo).
   넷 다 2위와의 차이가 fold std 안 (Restaurant 16,430 vs std 690,000, Bioresponse 0.0008 vs 0.016, Mercedes 0.0006 vs 0.065, S4E2 0.0028 vs 0.005).
-- causilo 는 빠르고 (대부분 30~160s) 13개 대회 중 5개에서 3위 안 (Bioresponse·S4E2 1위, House·Mercedes·Spaceship 3위). 큰 대회에서는 상한을 푼 kumo·tabicl 아래 (6~8위).
-- limix2m 은 큰 대회에서 뚜렷하게 처짐: GiveMeSomeCredit AUC 0.833 (다른 TFM 0.863 안팎, fold std 0.017 로 혼자 큼), Otto logloss 0.629 (다른 TFM 0.49~0.51). 원인은 확인 안 함.
+- causilo 는 빠르고 (대부분 30~160s) 13개 대회 중 5개에서 3위 안 (Bioresponse·S4E2 1위, House·Mercedes·Spaceship 3위). 큰 대회에서는 상한을 푼 kumo·tabicl 아래 (6~9위).
+- limix2m 은 큰 대회에서 뚜렷하게 처짐: GiveMeSomeCredit AUC 0.833 (다른 1만 행 TFM 0.858~0.865, fold std 0.017 로 혼자 큼), Otto logloss 0.629 (다른 1만 행 TFM 0.467~0.564). 원인은 확인 안 함.
 - mitra_ft (50 step fine-tune) 는 같이 돌린 7개 대회 중 4개에서 mitra 보다 나음 (Mercedes·Otto·Allstate·S6E1), 3개는 더 나쁨 (Restaurant·Bioresponse·GiveMeSomeCredit). 시간은 mitra 의 1.6~18배.
   T4 에서 2~3시간 걸리던 것이 H100 에서는 대회당 2~48분.
 - exaone 은 Allstate 1-fold 시험에서 CUDA OOM → VRAM 상한 70% 를 주는 수정 후 실행 ([known-issues](docs/known-issues.md)).
