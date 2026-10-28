@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import functools
 import io
+import math
 import re
 import subprocess
 import time
@@ -43,7 +44,7 @@ import pandas as pd
 
 from km.core.competition import COMP_DIR, load_competition
 from km.core.metrics import METRICS
-from km.core.results import OUTPUTS, RESULTS, made_test, parse_utc, read_results, test_info
+from km.core.results import OFF_BOARD, OUTPUTS, RESULTS, made_test, parse_utc, read_results, test_info
 from km.leaderboard.submit import make_submission, parse_message, push
 from km.models import REGISTRY, RETIRED, base_name
 
@@ -248,6 +249,7 @@ def report_missing(comp_name: str, known: dict | None, subs: list[dict], results
 
 def submit_pending(comp_name: str, n: int, known: dict | None, subs: list[dict], results: pd.DataFrame) -> int:
     """test.npy 가 있지만 그 실행을 아직 제출 안 한 단일 모델을 CV 좋은 순으로 최대 n 개 제출. 제출한 개수 반환.
+    km board 에 안 나오는 모델 (OFF_BOARD: llm·sap_rpt) 은 CV 와 상관없이 뒤로 → 하루 한도를 board 모델에 먼저 씀.
     known: 제출 ref → (cv, run), 이전 leaderboard.csv 에서 찾은 값. subs: 이 대회의 제출 목록 (submissions 결과, 다시 읽지 않음)."""
     comp = load_competition(comp_name)
     done, unknown_until = submitted(comp, prediction_runs(comp, results), known, subs)
@@ -263,14 +265,17 @@ def submit_pending(comp_name: str, n: int, known: dict | None, subs: list[dict],
             continue
         if (d.name, run_at) not in done and run_at > unknown_until.get(d.name, datetime.min):
             todo.append((t["cv"], d.name))
-    todo.sort(reverse=METRICS[comp.metric][1])
+    higher = METRICS[comp.metric][1]
+    # (board 밖 모델인지, CV 좋은 순, 이름). CV 가 없으면 (test.json 의 null) 맨 뒤, 같은 CV 는 이름 순으로 고정
+    todo.sort(key=lambda x: (bool(OFF_BOARD.search(x[1])), math.inf if x[0] is None else -x[0] if higher else x[0], x[1]))
     sent = 0
     for cv, model in todo[:n]:
-        print(f"{comp_name}: {model} 제출 (CV {comp.metric}={cv:.5f})")
+        # "제출 중" 만 찍고 결과는 다음 줄 → 실패한 모델을 낸 것으로 읽지 않고, 다른 예외에도 어느 모델인지 남음
+        print(f"{comp_name}: {model} 제출 중 (CV {comp.metric}={'—' if cv is None else f'{cv:.5f}'})")
         try:
             push(comp_name, make_submission(comp_name, [model]), model)
         except subprocess.CalledProcessError:  # 대개 하루 제출 한도 초과
-            print(f"{comp_name}: 제출 실패 → 중단")
+            print(f"{comp_name}: {model} 제출 실패 (대개 하루 제출 한도) → 중단")
             break
         sent += 1
     if len(todo) > sent:
@@ -378,7 +383,7 @@ def main(argv: list[str] | None = None):
     ap = argparse.ArgumentParser(prog="km lb")
     ap.add_argument("comps", nargs="*", help="기본: competitions/ 아래 전부 (_ 로 시작하는 것 제외)")
     ap.add_argument("--submit", type=int, default=0, metavar="N",
-                    help="대회마다 미제출 모델을 CV 순으로 N 개 제출 (대회별 하루 제출 한도 주의)")
+                    help="대회마다 미제출 모델을 CV 순으로 N 개 제출 (board 에 안 나오는 llm·sap_rpt 는 뒤로. 대회별 하루 제출 한도 주의)")
     args = ap.parse_args(argv)
     all_comps = sorted(p.name for p in COMP_DIR.iterdir() if (p / "config.yaml").exists() and not p.name.startswith("_"))
     comps = args.comps or all_comps

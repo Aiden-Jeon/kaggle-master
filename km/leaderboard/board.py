@@ -22,7 +22,7 @@ import pandas as pd
 
 from km.core.competition import COMP_DIR, ROOT, load_competition
 from km.core.metrics import METRICS
-from km.core.results import OUTPUTS, RESULTS, is_exploration, made_test, parse_utc
+from km.core.results import OFF_BOARD, OUTPUTS, RESULTS, is_exploration, made_test, parse_utc
 from km.models import REGISTRY
 
 OUT = ROOT / "docs" / "leaderboard.md"
@@ -89,7 +89,7 @@ def load() -> tuple[pd.DataFrame, dict]:
             lb[col] = "public" if col == "basis" else np.nan
     comps = sorted(p.name for p in COMP_DIR.iterdir() if (p / "config.yaml").exists() and not p.name.startswith("_"))
     d = res[res.comp.isin(comps) & (res.n_folds == 5) & res.cv.notna() & res.seconds.notna()]
-    d = d[~d.model.str.contains(r"\+|llm|sap_rpt")]  # 앙상블, LLM 결정 모델, sap_rpt
+    d = d[~d.model.str.contains(OFF_BOARD)]  # 앙상블, LLM 결정 모델, sap_rpt
     # ctx: 컨텍스트 탐색 실험 (테스트 예측 없음). llm·sap: 결정 모델 실험 중 같이 다시 돌린 GBDT
     d = d[~is_exploration(d.note)]
     d = d[made_test(d)]  # 테스트 예측을 만든 실행만 → --no-test 재실행이 제출한 예측의 LB 를 가리지 않음
@@ -142,6 +142,22 @@ def best_per_base(d: pd.DataFrame) -> pd.DataFrame:
 
 
 DBX_ENVS = ["DBX H100", "DBX CPU4"]  # 종합 s/1K (DBX): 같은 시기 Databricks, 모델마다 둘 중 하나에서만 돌림
+# 머리말 환경 목록의 설명 (md 는 한국어, HTML 은 언어별). 없는 환경은 이름만 (HTML 은 envName 번역)
+ENV_DESC = {"DBX H100": ("DBX H100 (TFM, GPU 1장, 10-23~)", "DBX H100 (TFM, 1 GPU, since 10-23)"),
+            "DBX CPU4": ("DBX CPU4 (GBDT, serverless 4코어, 10-23~)", "DBX CPU4 (GBDT, serverless 4 cores, since 10-23)"),
+            "DBX A10G": ("DBX A10G (10-22, GBDT 도 같은 노드)", "DBX A10G (10-22, GBDTs on the same node)")}
+
+
+def env_info(d: pd.DataFrame) -> dict:
+    """머리말·종합 표의 환경 문구에 쓰는 값. md·HTML 이 같은 값을 씀.
+    split: 종합 s/1K 를 DBX·전체 두 열로 (그 열이 쓰는 대회별 최고 설정 행 중 DBX H100·CPU4 밖이 있을 때만. 없으면 두 열이 같은 값)
+    all_dbx: 보드의 모든 실행 (변형 행 포함) 이 DBX H100·CPU4. envs: 보드에 있는 환경 [(이름, 한국어 설명, 영어 설명)],
+    ENV_DESC 순서 뒤에 나머지는 이름 순. 환경을 모르는 실행 ('—') 은 envs 에서 빼고 unknown 으로."""
+    have = set(d.env) - {"—"}
+    names = [e for e in ENV_DESC if e in have] + sorted(have - set(ENV_DESC))
+    best = best_per_base(d).dropna(subset=["s_per_1k"])
+    return dict(split=not best.env.isin(DBX_ENVS).all(), all_dbx=bool(d.env.isin(DBX_ENVS).all()),
+                envs=[(e, *ENV_DESC.get(e, (None, None))) for e in names], unknown=bool((d.env == "—").any()))
 
 
 def common_comps(b: pd.DataFrame) -> list[str]:
@@ -180,14 +196,15 @@ def summary_rows(d: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows).sort_values("pct")
 
 
-def summary(d: pd.DataFrame) -> list[str]:
-    out = ["| 모델 | 계열 | 대회 수 | CV 1위 | 평균 CV 순위 | 최고 LB (상위 %) | s/1K (DBX) | s/1K (전체) | 컨텍스트 변형 |",
-           "|---|---|---|---|---|---|---|---|---|"]
+def summary(d: pd.DataFrame, split: bool) -> list[str]:
+    """split: s/1K 를 DBX·전체 두 열로 (env_info)."""
+    s1k_cols = ["s/1K (DBX)", "s/1K (전체)"] if split else ["s/1K"]
+    head = ["모델", "계열", "대회 수", "CV 1위", "평균 CV 순위", "최고 LB (상위 %)", *s1k_cols, "컨텍스트 변형"]
+    out = ["| " + " | ".join(head) + " |", "|" + "---|" * len(head)]
     for r in summary_rows(d).itertuples():
         lb = fmt_pct(r.lb) + ("*" if r.lb_other else "") if pd.notna(r.lb) else "—"
-        cells = [r.model, r.family, r.n, r.wins, f"{r.pct:.2f}", lb,
-                 f"{r.s1k:.2f}" if pd.notna(r.s1k) else "—", f"{r.s1k_all:.2f}" if pd.notna(r.s1k_all) else "—",
-                 r.ctx or ""]
+        s1k = [f"{v:.2f}" if pd.notna(v) else "—" for v in ((r.s1k, r.s1k_all) if split else (r.s1k,))]
+        cells = [r.model, r.family, r.n, r.wins, f"{r.pct:.2f}", lb, *s1k, r.ctx or ""]
         out.append("| " + " | ".join(map(str, cells)) + " |")
     return out
 
@@ -229,11 +246,12 @@ HEADER = """\
 
 - **시간** = 5-fold 합계 (학습 + 검증·테스트 예측). TFM 은 학습 루프가 없어 거의 전부 추론(컨텍스트 인코딩 + 예측) 시간.
 - **s/1K** = 시간 ÷ 예측 행 수 × 1000. 예측 행 = 학습 행(OOF) + 테스트 행 × 5 (fold 마다 테스트 전체 예측). TabArena 의 predict s/1K 와 비슷한 단위.
-- **환경이 다르면 시간 비교 불가**: DBX H100 (TFM, 10-23~) · DBX CPU4 (GBDT, serverless 4코어, 10-23~) · DBX A10G (10-22, GBDT 도 같은 노드) · Kaggle T4.
+- {env_note}
 - **LB 순위**는 `km lb` 집계. 진행 중 대회는 public 점수 기준, 종료 대회는 private 점수 기준 (대회 제목 옆 `LB 기준`). 종료 대회는 늦은 제출이라 실제 순위표에는 없음. — = 미제출.
 - 작은 대회(수천 행 이하)는 모델 로드·전처리 같은 고정 비용이 커서 s/1K 가 부풀려짐 → 큰 대회 값이 모델 속도에 더 가까움.
 - 앙상블·LLM 결정 모델·sap_rpt, 컨텍스트 탐색 실험(results.csv note 가 `ctx ` 로 시작, 테스트 예측 없음)은 제외.
-  `(kNN 1000)` 은 포함: S4E2·Spaceship 에서 kumo·exaone·tabpfn_v2 는 전체 컨텍스트로 실패해 kNN 1000 행 컨텍스트가 유일한 5-fold·제출 결과.
+  `(kNN 1000)` 은 포함: S4E2·Spaceship 에서 kumo·exaone·tabpfn_v2 는 Kaggle T4 에서 전체 컨텍스트로 실패해 kNN 1000 행 컨텍스트로 돌린 것이
+  유일한 5-fold·제출 결과 (H100 에서는 같은 kNN 설정만 다시 돌림, 전체 컨텍스트는 다시 시도 안 함).
 - TFM 컨텍스트 상한: 대회 config 의 `tfm_max_rows` ({capped}) 는 무작위 샘플, 나머지 대회는 상한 없이 학습 fold 전체.
   `(ctx 전체)` / `(ctx 20만)` = 그 대회들에서 상한을 풀거나 20만 행으로 올린 실행 (`@full` / `@rand200000`).
 
@@ -242,7 +260,7 @@ HEADER = """\
 평균 CV 순위 = 대회마다 (순위−1)/(모델 수−1) 의 평균 (0 = 항상 1위, 1 = 항상 꼴찌). 실행한 대회가 모델마다 달라 대략적인 비교.
 모델마다 대회별로 CV 가 가장 좋은 설정 하나만 셈 (`컨텍스트 변형` 열 = 그중 `@` 설정 수). s/1K 도 그 행의 값, 최고 LB 는 제출한 모든 설정 중 최고 (`*` = 최고 CV 설정이 아닌 설정의 제출).
 s/1K 중앙값: 모든 모델이 같이 돌린 대회만 셈 (모델마다 대회가 다르면 작은 대회의 고정 비용이 일부 모델에만 섞임).
-`DBX` = 2026-10-23 이후 Databricks 실행만 (TFM H100, GBDT CPU 4코어. {s1k_dbx}), `전체` = 환경 섞임 ({s1k_all}).
+{s1k_note}
 
 **해석 주의**
 - **조건이 같지 않을 수 있음**: 상한이 걸린 대회에서 `@full`·`@rand` 로 다시 돌린 모델만 큰 컨텍스트를 씀 ({rerun}).
@@ -276,10 +294,16 @@ def render(d: pd.DataFrame, sizes: dict) -> str:
     for c, n in caps.items():
         by_cap.setdefault(n, []).append(TITLES.get(c, c))
     capped = "; ".join(f"{n:,}행: {', '.join(cs)}" for n, cs in by_cap.items()) or "없음"
-    dbx, every = (s1k_titles(cs, comps) for cs in s1k_sets(d))
+    dbx, every = (f"{len(t)}개: {', '.join(t) or '없음'}" for t in (s1k_titles(cs, comps) for cs in s1k_sets(d)))
+    info = env_info(d)
+    envs = " · ".join(ko or e for e, ko, _ in info["envs"]) + (" · — (환경 모름)" if info["unknown"] else "")
+    env_note = (f"**환경**: 모든 실행이 Databricks. {envs}. 같은 대회 안에서도 GBDT 와 TFM 은 하드웨어가 달라 시간은 계열 안에서 "
+                "비교하는 게 정확함." if info["all_dbx"] else f"**환경이 다르면 시간 비교 불가**: {envs}.")
+    s1k_note = (f"`DBX` = 2026-10-23 이후 Databricks 실행만 (TFM H100, GBDT CPU 4코어. {dbx}), `전체` = 환경 섞임 ({every})."
+                if info["split"] else f"넣은 대회 {dbx}.")
     head = HEADER.format(date=pd.Timestamp.now().strftime("%Y-%m-%d"), capped=capped, rerun=rerun_status(d, caps),
-                         s1k_dbx=f"{len(dbx)}개: {', '.join(dbx) or '없음'}", s1k_all=f"{len(every)}개: {', '.join(every) or '없음'}")
-    return "\n".join([head, *summary(d), "", "## 대회별\n", *per_comp(d, sizes)])
+                         env_note=env_note, s1k_note=s1k_note)
+    return "\n".join([head, *summary(d, info["split"]), "", "## 대회별\n", *per_comp(d, sizes)])
 
 
 def records(df: pd.DataFrame) -> list[dict]:
@@ -302,6 +326,7 @@ def render_html(d: pd.DataFrame, sizes: dict) -> str:
                     train=sizes[c] and sizes[c][0], test=sizes[c] and sizes[c][1], cap=caps.get(c), basis=basis.get(c)) for c in comps],
         rerun=rerun_status(d, caps),  # md 해석 주의와 같은 문구 (예: `kumo 6/6, tabicl 3/6 (...)`)
         s1k_comps=dict(zip(["dbx", "all"], (s1k_titles(cs, comps) for cs in s1k_sets(d)))),  # 종합 s/1K 중앙값에 넣은 대회
+        env=env_info(d),  # 종합 s/1K 열 수 (split)·환경 문구 (all_dbx, envs, unknown). md 와 같은 값
         runs=records(runs.sort_values(["comp", "cv_rank"])),
         summary=records(summary_rows(d)),
     )
