@@ -10,7 +10,7 @@ Tabular Foundation Model(TabPFN, TabICL, Kumo 등)을 GBDT 베이스라인(Light
 
 ## 결과 요약
 
-13개 대회, 모두 5-fold CV. 대회별 표·분석은 [EXPERIMENTS.md](EXPERIMENTS.md),
+13개 대회, 모두 5-fold CV. 대회별 표는 [docs/leaderboard.md](docs/leaderboard.md), 분석은 [EXPERIMENTS.md](EXPERIMENTS.md),
 정렬·필터·차트로 보는 리더보드는 https://aiden-jeon.github.io/kaggle-master/ (`docs/leaderboard.html`, GitHub Pages).
 `(ctx 전체)` · `(ctx 20만)` = TFM 컨텍스트 상한(`tfm_max_rows: 10000`)을 풀고 다시 돌린 kumo.
 
