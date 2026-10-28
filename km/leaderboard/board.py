@@ -142,19 +142,22 @@ def best_per_base(d: pd.DataFrame) -> pd.DataFrame:
 
 
 DBX_ENVS = ["DBX H100", "DBX CPU4"]  # 종합 s/1K (DBX): 같은 시기 Databricks, 모델마다 둘 중 하나에서만 돌림
-ENV_DESC = {"DBX H100": "DBX H100 (TFM, GPU 1장, 10-23~)", "DBX CPU4": "DBX CPU4 (GBDT, serverless 4코어, 10-23~)",
-            "DBX A10G": "DBX A10G (10-22, GBDT 도 같은 노드)"}  # md 머리말 환경 목록 (없는 환경은 env() 값 그대로)
+# 머리말 환경 목록의 설명 (md 는 한국어, HTML 은 언어별). 없는 환경은 이름만 (HTML 은 envName 번역)
+ENV_DESC = {"DBX H100": ("DBX H100 (TFM, GPU 1장, 10-23~)", "DBX H100 (TFM, 1 GPU, since 10-23)"),
+            "DBX CPU4": ("DBX CPU4 (GBDT, serverless 4코어, 10-23~)", "DBX CPU4 (GBDT, serverless 4 cores, since 10-23)"),
+            "DBX A10G": ("DBX A10G (10-22, GBDT 도 같은 노드)", "DBX A10G (10-22, GBDTs on the same node)")}
 
 
-def mixed_env(d: pd.DataFrame) -> bool:
-    """DBX H100·CPU4 밖의 실행이 있는지. 없으면 종합 s/1K 는 한 열 (DBX 와 전체가 같은 값)."""
-    return not d.env.isin(DBX_ENVS).all()
-
-
-def present_envs(d: pd.DataFrame) -> list[str]:
-    """보드에 있는 환경. ENV_DESC 순서, 그 밖의 환경은 이름 순."""
-    have = set(d.env)
-    return [e for e in ENV_DESC if e in have] + sorted(have - set(ENV_DESC))
+def env_info(d: pd.DataFrame) -> dict:
+    """머리말·종합 표의 환경 문구에 쓰는 값. md·HTML 이 같은 값을 씀.
+    split: 종합 s/1K 를 DBX·전체 두 열로 (그 열이 쓰는 대회별 최고 설정 행 중 DBX H100·CPU4 밖이 있을 때만. 없으면 두 열이 같은 값)
+    all_dbx: 보드의 모든 실행 (변형 행 포함) 이 DBX H100·CPU4. envs: 보드에 있는 환경 [(이름, 한국어 설명, 영어 설명)],
+    ENV_DESC 순서 뒤에 나머지는 이름 순. 환경을 모르는 실행 ('—') 은 envs 에서 빼고 unknown 으로."""
+    have = set(d.env) - {"—"}
+    names = [e for e in ENV_DESC if e in have] + sorted(have - set(ENV_DESC))
+    best = best_per_base(d).dropna(subset=["s_per_1k"])
+    return dict(split=not best.env.isin(DBX_ENVS).all(), all_dbx=bool(d.env.isin(DBX_ENVS).all()),
+                envs=[(e, *ENV_DESC.get(e, (None, None))) for e in names], unknown=bool((d.env == "—").any()))
 
 
 def common_comps(b: pd.DataFrame) -> list[str]:
@@ -193,14 +196,14 @@ def summary_rows(d: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows).sort_values("pct")
 
 
-def summary(d: pd.DataFrame) -> list[str]:
-    mixed = mixed_env(d)
-    s1k_cols = ["s/1K (DBX)", "s/1K (전체)"] if mixed else ["s/1K"]
+def summary(d: pd.DataFrame, split: bool) -> list[str]:
+    """split: s/1K 를 DBX·전체 두 열로 (env_info)."""
+    s1k_cols = ["s/1K (DBX)", "s/1K (전체)"] if split else ["s/1K"]
     head = ["모델", "계열", "대회 수", "CV 1위", "평균 CV 순위", "최고 LB (상위 %)", *s1k_cols, "컨텍스트 변형"]
     out = ["| " + " | ".join(head) + " |", "|" + "---|" * len(head)]
     for r in summary_rows(d).itertuples():
         lb = fmt_pct(r.lb) + ("*" if r.lb_other else "") if pd.notna(r.lb) else "—"
-        s1k = [f"{v:.2f}" if pd.notna(v) else "—" for v in ((r.s1k, r.s1k_all) if mixed else (r.s1k,))]
+        s1k = [f"{v:.2f}" if pd.notna(v) else "—" for v in ((r.s1k, r.s1k_all) if split else (r.s1k,))]
         cells = [r.model, r.family, r.n, r.wins, f"{r.pct:.2f}", lb, *s1k, r.ctx or ""]
         out.append("| " + " | ".join(map(str, cells)) + " |")
     return out
@@ -292,16 +295,15 @@ def render(d: pd.DataFrame, sizes: dict) -> str:
         by_cap.setdefault(n, []).append(TITLES.get(c, c))
     capped = "; ".join(f"{n:,}행: {', '.join(cs)}" for n, cs in by_cap.items()) or "없음"
     dbx, every = (f"{len(t)}개: {', '.join(t) or '없음'}" for t in (s1k_titles(cs, comps) for cs in s1k_sets(d)))
-    if mixed_env(d):
-        env_note = f"**환경이 다르면 시간 비교 불가**: {' · '.join(ENV_DESC.get(e, e) for e in present_envs(d))}."
-        s1k_note = f"`DBX` = 2026-10-23 이후 Databricks 실행만 (TFM H100, GBDT CPU 4코어. {dbx}), `전체` = 환경 섞임 ({every})."
-    else:
-        env_note = (f"**환경**: 모든 실행이 Databricks. {' · '.join(ENV_DESC[e] for e in DBX_ENVS)}. "
-                    "같은 대회 안에서도 GBDT 와 TFM 은 하드웨어가 달라 시간은 계열 안에서 비교하는 게 정확함.")
-        s1k_note = f"넣은 대회 {dbx}."
+    info = env_info(d)
+    envs = " · ".join(ko or e for e, ko, _ in info["envs"]) + (" · — (환경 모름)" if info["unknown"] else "")
+    env_note = (f"**환경**: 모든 실행이 Databricks. {envs}. 같은 대회 안에서도 GBDT 와 TFM 은 하드웨어가 달라 시간은 계열 안에서 "
+                "비교하는 게 정확함." if info["all_dbx"] else f"**환경이 다르면 시간 비교 불가**: {envs}.")
+    s1k_note = (f"`DBX` = 2026-10-23 이후 Databricks 실행만 (TFM H100, GBDT CPU 4코어. {dbx}), `전체` = 환경 섞임 ({every})."
+                if info["split"] else f"넣은 대회 {dbx}.")
     head = HEADER.format(date=pd.Timestamp.now().strftime("%Y-%m-%d"), capped=capped, rerun=rerun_status(d, caps),
                          env_note=env_note, s1k_note=s1k_note)
-    return "\n".join([head, *summary(d), "", "## 대회별\n", *per_comp(d, sizes)])
+    return "\n".join([head, *summary(d, info["split"]), "", "## 대회별\n", *per_comp(d, sizes)])
 
 
 def records(df: pd.DataFrame) -> list[dict]:
@@ -324,8 +326,7 @@ def render_html(d: pd.DataFrame, sizes: dict) -> str:
                     train=sizes[c] and sizes[c][0], test=sizes[c] and sizes[c][1], cap=caps.get(c), basis=basis.get(c)) for c in comps],
         rerun=rerun_status(d, caps),  # md 해석 주의와 같은 문구 (예: `kumo 6/6, tabicl 3/6 (...)`)
         s1k_comps=dict(zip(["dbx", "all"], (s1k_titles(cs, comps) for cs in s1k_sets(d)))),  # 종합 s/1K 중앙값에 넣은 대회
-        mixed=mixed_env(d),  # False 면 종합 s/1K 는 한 열, 환경 설명도 Databricks 만
-        envs=present_envs(d),
+        env=env_info(d),  # 종합 s/1K 열 수 (split)·환경 문구 (all_dbx, envs, unknown). md 와 같은 값
         runs=records(runs.sort_values(["comp", "cv_rank"])),
         summary=records(summary_rows(d)),
     )

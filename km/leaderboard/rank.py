@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import functools
 import io
+import math
 import re
 import subprocess
 import time
@@ -265,15 +266,17 @@ def submit_pending(comp_name: str, n: int, known: dict | None, subs: list[dict],
         if (d.name, run_at) not in done and run_at > unknown_until.get(d.name, datetime.min):
             todo.append((t["cv"], d.name))
     higher = METRICS[comp.metric][1]
-    todo.sort(key=lambda x: (bool(OFF_BOARD.search(x[1])), -x[0] if higher else x[0]))
+    # (board 밖 모델인지, CV 좋은 순, 이름). CV 가 없으면 (test.json 의 null) 맨 뒤, 같은 CV 는 이름 순으로 고정
+    todo.sort(key=lambda x: (bool(OFF_BOARD.search(x[1])), math.inf if x[0] is None else -x[0] if higher else x[0], x[1]))
     sent = 0
     for cv, model in todo[:n]:
+        # "제출 중" 만 찍고 결과는 다음 줄 → 실패한 모델을 낸 것으로 읽지 않고, 다른 예외에도 어느 모델인지 남음
+        print(f"{comp_name}: {model} 제출 중 (CV {comp.metric}={'—' if cv is None else f'{cv:.5f}'})")
         try:
             push(comp_name, make_submission(comp_name, [model]), model)
         except subprocess.CalledProcessError:  # 대개 하루 제출 한도 초과
             print(f"{comp_name}: {model} 제출 실패 (대개 하루 제출 한도) → 중단")
             break
-        print(f"{comp_name}: {model} 제출 (CV {comp.metric}={cv:.5f})")  # 성공한 것만 → 실패한 모델을 낸 것으로 읽지 않게
         sent += 1
     if len(todo) > sent:
         print(f"{comp_name}: 남은 미제출 {len(todo) - sent}개 ({', '.join(m for _, m in todo[sent:])})")

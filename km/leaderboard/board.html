@@ -193,12 +193,12 @@ const I18N = {
       "<b>평균 CV 순위</b> = 대회마다 (순위−1)/(모델 수−1) 의 평균. 0 = 항상 1위, 1 = 항상 꼴찌. 모델마다 실행한 대회가 달라 대략적인 비교.",
       "종합·히트맵은 모델마다 대회별로 CV 가 가장 좋은 설정 하나만 셈 (컨텍스트 변형 <code>ctx 전체</code>·<code>ctx 20만</code>·<code>kNN 1000</code> 포함). 종합의 최고 LB 는 제출한 모든 설정 중 최고 (<b>*</b> = 최고 CV 설정이 아닌 설정의 제출).",
       "<b>시간</b> = 5-fold 합계 (학습 + 검증·테스트 예측). <b>s/1K</b> = 시간 ÷ 예측 행 수 × 1000 (예측 행 = 학습 행 + 테스트 행 × 5). 작은 대회는 고정 비용 때문에 s/1K 가 부풀려짐.",
-      // 함수 = DATA.mixed (DBX H100·CPU4 밖의 실행이 있는지) 에 따라 문구가 다름
-      mixed => mixed
-        ? "환경이 다르면 시간 비교 불가: <span class=\"envs\"></span>. <b>s/1K (DBX)</b> = H100·CPU4 실행만의 중앙값."
-        : "모든 실행이 Databricks: TFM 은 DBX H100 (GPU 1장), GBDT 는 DBX CPU4 (serverless 4코어). 같은 대회 안에서도 GBDT 와 TFM 은 하드웨어가 다름.",
-      mixed => "종합의 s/1K 중앙값은 모든 모델이 같이 돌린 대회만 셈 (모델마다 대회가 다르면 작은 대회의 고정 비용이 일부 모델에만 섞임). "
-        + (mixed ? "DBX <span class=\"s1kDbx\"></span>, 전체 <span class=\"s1kAll\"></span>." : "<span class=\"s1kDbx\"></span>."),
+      // 함수 = DATA.env (board.py env_info: all_dbx 모든 실행이 DBX H100·CPU4, split 종합 s/1K 두 열) 에 따라 문구가 다름
+      e => e.all_dbx
+        ? "모든 실행이 Databricks: <span class=\"envs\"></span>. 같은 대회 안에서도 GBDT 와 TFM 은 하드웨어가 다름."
+        : "환경이 다르면 시간 비교 불가: <span class=\"envs\"></span>." + (e.split ? " <b>s/1K (DBX)</b> = H100·CPU4 실행만의 중앙값." : ""),
+      e => "종합의 s/1K 중앙값은 모든 모델이 같이 돌린 대회만 셈 (모델마다 대회가 다르면 작은 대회의 고정 비용이 일부 모델에만 섞임). "
+        + (e.split ? "DBX <span class=\"s1kDbx\"></span>, 전체 <span class=\"s1kAll\"></span>." : "<span class=\"s1kDbx\"></span>."),
       "<b>LB</b> = Kaggle 리더보드 위치. 진행 중 대회는 public 점수, 종료 대회는 private 점수 기준 (대회별 상세의 <code>LB 기준</code>). 종료 대회는 늦은 제출이라 실제 순위표에는 없음. — = 미제출.",
       "TFM 컨텍스트 상한 <span class=\"caps\"></span> 은 무작위 샘플. 상한을 풀거나 늘려 다시 돌린 모델: <span class=\"rerun\"></span>. 다시 돌리지 않은 모델은 상한 그대로라 그 대회들의 순위 일부는 모델 차이가 아니라 컨텍스트 차이.",
       "Otto·GiveMeSomeCredit·Amazon 등 공개 데이터는 TFM 사전학습에 들어갔을 수 있어 CV 가 부풀었을 수 있음 (LB 는 영향 없음).",
@@ -210,11 +210,11 @@ const I18N = {
     low: "하위", high: "상위", notRun: "· = 미실행",
     speed: "속도 vs 성능",
     speedHelp: "환경별 탭. 가로 = 그 환경에서 잰 s/1K 중앙값 (그 탭의 모든 모델이 같이 돌린 대회만, 그런 대회가 없으면 모델마다 전부. 로그, 왼쪽이 빠름. 축 범위는 탭끼리 같음), 세로 = 평균 CV 순위 (전체 대회 기준, 위가 좋음). 그 환경에서 돌린 적 없는 모델은 빠짐.",
-    envNote: { "DBX": "2026-10-23 이후 Databricks. TFM 은 GPU 1×H100, GBDT 는 serverless CPU 4코어 (종합 표의 DBX s/1K 와 같은 값).",
+    envNote: { "DBX": e => `2026-10-23 이후 Databricks. TFM 은 GPU 1×H100, GBDT 는 serverless CPU 4코어 (종합 표의 ${e.split ? "s/1K (DBX)" : "s/1K"} 와 같은 값).`,
                "DBX A10G": "2026-10-22 Databricks GPU A10G. GBDT 도 같은 GPU 노드에서 돌림.",
                "Kaggle T4": "Kaggle Notebook (GPU T4). GBDT 도 같은 노트북에서 돌림." },
     envRuns: "중앙값 대회 수", envComps: cs => `중앙값 대회: ${cs.join(", ")}`,
-    compList: cs => `(${cs.length}개: ${cs.join(", ") || "없음"})`, noRuns: "이 환경에서 돌린 모델 없음", noShared: "모든 모델이 같이 돌린 대회가 없어 모델마다 이 환경에서 돌린 대회 전부의 중앙값 (대회가 달라 대략적인 비교).", detail: "대회별", variants: "컨텍스트 변형 행도 보기", whisker: "가로 막대 = ± fold std",
+    compList: cs => `(${cs.length}개: ${cs.join(", ") || "없음"})`, envUnknown: "— (환경 모름)", noRuns: "이 환경에서 돌린 모델 없음", noShared: "모든 모델이 같이 돌린 대회가 없어 모델마다 이 환경에서 돌린 대회 전부의 중앙값 (대회가 달라 대략적인 비교).", detail: "대회별", variants: "컨텍스트 변형 행도 보기", whisker: "가로 막대 = ± fold std",
     madeBy: "로 생성", data: "데이터",
     col: { model: "모델", family: "계열", n: "대회 수", wins: "CV 1위", pct: "평균 CV 순위", lb: "최고 LB (상위 %)",
            s1k: "s/1K (DBX)", s1k_all: "s/1K (전체)", s1k_one: "s/1K", ctx: "컨텍스트 변형", lbRank: "LB 순위", time: "시간", env: "환경" },
@@ -233,11 +233,11 @@ const I18N = {
       "<b>Mean CV rank</b> = average over competitions of (rank−1)/(models−1). 0 = always first, 1 = always last. Models ran on different sets of competitions, so this is a rough comparison.",
       "Summary and heatmap count only each model's best-CV configuration per competition (context variants <code>ctx full</code>·<code>ctx 200K</code>·<code>kNN 1000</code> included). Best LB in the summary is the best over every submitted configuration (<b>*</b> = from a configuration other than the best-CV one).",
       "<b>Time</b> = total over 5 folds (fit + validation/test prediction). <b>s/1K</b> = time ÷ predicted rows × 1000 (predicted rows = train rows + test rows × 5). Fixed overhead inflates s/1K on small competitions.",
-      mixed => mixed
-        ? "Times are not comparable across environments: <span class=\"envs\"></span>. <b>s/1K (DBX)</b> = median over H100·CPU4 runs only."
-        : "Every run is on Databricks: TFMs on DBX H100 (1 GPU), GBDTs on DBX CPU4 (serverless, 4 cores). GBDTs and TFMs use different hardware even within a competition.",
-      mixed => "Summary s/1K medians only count competitions every model ran (otherwise fixed overhead on small competitions enters only some models' medians). "
-        + (mixed ? "DBX <span class=\"s1kDbx\"></span>, all <span class=\"s1kAll\"></span>." : "<span class=\"s1kDbx\"></span>."),
+      e => e.all_dbx
+        ? "Every run is on Databricks: <span class=\"envs\"></span>. GBDTs and TFMs use different hardware even within a competition."
+        : "Times are not comparable across environments: <span class=\"envs\"></span>." + (e.split ? " <b>s/1K (DBX)</b> = median over H100·CPU4 runs only." : ""),
+      e => "Summary s/1K medians only count competitions every model ran (otherwise fixed overhead on small competitions enters only some models' medians). "
+        + (e.split ? "DBX <span class=\"s1kDbx\"></span>, all <span class=\"s1kAll\"></span>." : "<span class=\"s1kDbx\"></span>."),
       "<b>LB</b> = position on the Kaggle leaderboard: by public score for ongoing competitions, by private score for closed ones (<code>LB basis</code> in the per-competition detail). Closed competitions only take late submissions, so these entries are not on the real leaderboard. — = not submitted.",
       "The TFM context cap <span class=\"caps\"></span> uses a random sample. Models rerun with the cap lifted or raised: <span class=\"rerun\"></span>. Models not rerun keep the cap, so part of the ranking on those competitions reflects context size, not the model.",
       "Public datasets such as Otto·GiveMeSomeCredit·Amazon may be in TFM pretraining data, which could inflate CV (LB is unaffected).",
@@ -249,11 +249,11 @@ const I18N = {
     low: "Worse", high: "Better", notRun: "· = not run",
     speed: "Speed vs performance",
     speedHelp: "One tab per environment. x = median s/1K measured there (over competitions every model in the tab ran, or each model's own runs if there are none; log, left is faster; same axis range on every tab), y = mean CV rank (over all competitions, top is better). Models never run in that environment are omitted.",
-    envNote: { "DBX": "Databricks since 2026-10-23: TFMs on GPU 1×H100, GBDTs on serverless CPU with 4 cores (same values as the DBX s/1K in the summary).",
+    envNote: { "DBX": e => `Databricks since 2026-10-23: TFMs on GPU 1×H100, GBDTs on serverless CPU with 4 cores (same values as ${e.split ? "s/1K (DBX)" : "s/1K"} in the summary).`,
                "DBX A10G": "Databricks GPU A10G, 2026-10-22. GBDTs ran on the same GPU node.",
                "Kaggle T4": "Kaggle Notebook (GPU T4). GBDTs ran in the same notebook." },
     envRuns: "Comps in median", envComps: cs => `Competitions in the median: ${cs.join(", ")}`,
-    compList: cs => `(${cs.length}: ${cs.join(", ") || "none"})`, noRuns: "No models ran in this environment", noShared: "No competition was run by every model here, so each model's median is over all its runs in this environment (different competitions, rough comparison).", detail: "By competition", variants: "Show context-variant rows", whisker: "bar = ± fold std",
+    compList: cs => `(${cs.length}: ${cs.join(", ") || "none"})`, envUnknown: "— (unknown environment)", noRuns: "No models ran in this environment", noShared: "No competition was run by every model here, so each model's median is over all its runs in this environment (different competitions, rough comparison).", detail: "By competition", variants: "Show context-variant rows", whisker: "bar = ± fold std",
     madeBy: "generates this page", data: "Data:",
     col: { model: "Model", family: "Family", n: "Comps", wins: "CV wins", pct: "Mean CV rank", lb: "Best LB (top %)",
            s1k: "s/1K (DBX)", s1k_all: "s/1K (all)", s1k_one: "s/1K", ctx: "Context variants", lbRank: "LB rank", time: "Time", env: "Env" },
@@ -370,7 +370,7 @@ function renderSummary() {
     { key: "wins", name: C.wins, desc: true },
     { key: "pct", name: C.pct, fmt: fix2 },
     { key: "lb", name: C.lb, fmt: (v, r) => v == null ? "—" : pct(v) + (r.lb_other ? "*" : "") },
-    ...(DATA.mixed ? [{ key: "s1k", name: C.s1k, fmt: fix2 }, { key: "s1k_all", name: C.s1k_all, fmt: fix2 }]
+    ...(DATA.env.split ? [{ key: "s1k", name: C.s1k, fmt: fix2 }, { key: "s1k_all", name: C.s1k_all, fmt: fix2 }]
                    : [{ key: "s1k", name: C.s1k_one, fmt: fix2 }]),  // 환경이 하나면 DBX 와 전체가 같은 값
     { key: "ctx", name: C.ctx, desc: true, fmt: v => v || "" },
   ];
@@ -456,7 +456,8 @@ const SX0 = Math.floor(Math.min(...SPEED_LOG)), SX1 = Math.ceil(Math.max(...SPEE
 function renderScatter() {
   const box = $("scatter"); box.replaceChildren();
   const shared = SHARED[state.speed] && COMPS.filter(c => SHARED[state.speed].has(c.id)).map(c => c.title);
-  $("envNote").textContent = [T().envNote[state.speed], shared ? T().envComps(shared) : T().noShared].filter(Boolean).join(" ");
+  const note = T().envNote[state.speed];
+  $("envNote").textContent = [typeof note === "function" ? note(DATA.env) : note, shared ? T().envComps(shared) : T().noShared].filter(Boolean).join(" ");
   const sp = SPEED[state.speed] || {};
   const pts = SUMMARY.filter(r => famOk(r.family) && sp[r.model]);
   const W = Math.max(box.clientWidth, 320), H = 320, m = { l: 44, r: 16, t: 12, b: 36 };
@@ -602,8 +603,9 @@ function renderText() {
   const ul = $("notes"); ul.replaceChildren();
   for (const n of L.notes) {
     const li = el("li", {}, ul);
-    li.innerHTML = typeof n === "function" ? n(DATA.mixed) : n;  // 직접 쓴 문구만 (데이터는 아래 textContent 로)
-    for (const s of li.querySelectorAll(".envs")) s.textContent = DATA.envs.map(envName).join(" · ");
+    li.innerHTML = typeof n === "function" ? n(DATA.env) : n;  // 직접 쓴 문구만 (데이터는 아래 textContent 로)
+    const envs = DATA.env.envs.map(([e, ko, en]) => (state.lang === "ko" ? ko : en) || envName(e));
+    for (const s of li.querySelectorAll(".envs")) s.textContent = [...envs, ...(DATA.env.unknown ? [L.envUnknown] : [])].join(" · ");
     for (const s of li.querySelectorAll(".caps")) s.textContent = capText;
     for (const s of li.querySelectorAll(".rerun")) s.textContent = DATA.rerun === "없음" ? L.none : DATA.rerun;
     for (const [cls, cs] of [[".s1kDbx", DATA.s1k_comps.dbx], [".s1kAll", DATA.s1k_comps.all]])
